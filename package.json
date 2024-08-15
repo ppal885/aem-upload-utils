@@ -1,0 +1,22 @@
+{
+  "name": "aem-upload",
+  "version": "1.0.0",
+  "description": "AEM Upload project for Guides",
+  "main": "migrate-to-aem.js",
+  "scripts": {
+    "test": "npm test"
+  },
+  "dependencies": {
+    "axios": "^0.21.1",
+    "dotenv": "^10.0.0",
+    "fs": "0.0.1-security",
+    "path": "^0.12.7",
+    "@adobe/aem-upload": "^2.0.3"
+  },
+  "author": "pulgupta",
+  "license": "ISC",
+  "devDependencies": {},
+  "keywords": [
+    "aem-upload"
+  ]
+}
