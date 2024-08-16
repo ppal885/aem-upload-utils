@@ -3,7 +3,7 @@ const {
     FileSystemUpload
 } = require('@adobe/aem-upload');
 const credentials = Buffer.from('testadmin:testadmin').toString('base64')
-const options = new FileSystemUploadOptions().from()
+const options = new FileSystemUploadOptions()
     .withUrl('https://author-p111055-e1081044.adobeaemcloud.com/content/dam/ibm/4k')
     .withDeepUpload(true)
     .withMaxUploadFiles(50000)
