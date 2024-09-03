@@ -2,6 +2,7 @@ const {
     FileSystemUploadOptions,
     FileSystemUpload
 } = require('@adobe/aem-upload');
+const {RegularExpressions} = require("@adobe/aem-upload/src/constants");
 const credentials = Buffer.from('testadmin:testadmin').toString('base64')
 const options = new FileSystemUploadOptions()
     .withUrl('https://author-p111055-e1081044.adobeaemcloud.com/content/dam/ibm/4k')
@@ -12,6 +13,11 @@ const options = new FileSystemUploadOptions()
         headers: {
             Authorization: `Basic ${credentials}`
         }
+    })
+    .withFolderNodeNameProcessor(async (folderName) => {
+        return folderName.replace(RegularExpressions.INVALID_FOLDER_CHARACTERS_REGEX,
+            '-',
+        );
     });
 async function run() {
     // upload a single asset and all assets in a given folder
