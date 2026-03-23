@@ -1,22 +1,29 @@
 {
   "name": "aem-upload",
-  "version": "1.0.0",
-  "description": "AEM Upload project for Guides",
-  "main": "migrate-to-aem.js",
+  "version": "2.1.0",
+  "description": "GUIdes Upload Utility — Bulk asset upload for Adobe Experience Manager",
+  "main": "server.js",
   "scripts": {
-    "test": "npm test"
+    "start": "node --max-old-space-size=4096 server.js",
+    "start:low": "node --max-old-space-size=2048 server.js",
+    "test": "echo \"No tests configured yet\" && exit 0"
   },
   "dependencies": {
-    "axios": "^0.21.1",
-    "dotenv": "^10.0.0",
-    "fs": "0.0.1-security",
-    "path": "^0.12.7",
-    "@adobe/aem-upload": "^2.0.3"
+    "@adobe/aem-upload": "^2.0.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "express": "^4.22.1",
+    "express-rate-limit": "^7.5.0",
+    "multer": "^2.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "author": "pulgupta",
   "license": "ISC",
-  "devDependencies": {},
   "keywords": [
-    "aem-upload"
+    "aem-upload",
+    "aem-guides",
+    "dam"
   ]
 }

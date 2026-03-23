@@ -1,4 +1,7 @@
 .DS_Store
 .idea
+.cursor
 node_modules
-
+upload-history.json
+.env
+*.log

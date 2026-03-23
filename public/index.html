@@ -1,0 +1,3229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GUIdes Upload Utility</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231473E6'/><path d='M16 5L8 27h5.2l1.5-4.2h2.6L16 19.5l-1.8-5L16 10l4 11.5h-3.2L18.3 27H24L16 5z' fill='white'/></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module" src="https://jspm.dev/@spectrum-web-components/bundle/elements.js" async></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ["'Source Sans 3'", 'Inter', 'system-ui', 'sans-serif'],
+                        display: ["'Source Sans 3'", 'Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        adobe: { blue: '#1473E6', darkBlue: '#0D66D0', dark: '#1D1D1D', gray: '#4B4B4B', lightGray: '#F5F5F5' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* ─── Typography ─── */
+        body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+        h1, h2, h3, h4, h5, h6, label, th, button, .font-semibold, .font-bold, .font-medium {
+            font-family: 'Source Sans 3', 'Adobe Clean', Inter, system-ui, sans-serif;
+        }
+        input, select, textarea { font-family: 'Source Sans 3', Inter, system-ui, sans-serif; }
+        .text-xs, .text-sm { letter-spacing: 0.01em; }
+        /* ─── Core Animations ─── */
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { animation: spin 1s linear infinite; }
+        .field-error { border-color: #D7373F !important; box-shadow: 0 0 0 2px rgba(215,55,63,0.15) !important; background-color: #fff0f0 !important; }
+        .field-error::placeholder { color: #f87171 !important; }
+        .field-warning { border-color: #E68619 !important; box-shadow: 0 0 0 2px rgba(230,134,25,0.15) !important; }
+        .field-valid { border-color: #12805C !important; box-shadow: 0 0 0 2px rgba(18,128,92,0.15) !important; }
+        @keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-4px); } 40%,80% { transform: translateX(4px); } }
+        .shake { animation: shake 0.4s ease-in-out; }
+        .browse-entry { transition: background-color 0.1s; }
+        .browse-entry:hover { background-color: #eff6ff; }
+        th[draggable="true"] { cursor: grab; user-select: none; position: relative; }
+        th[draggable="true"]:hover { background-color: #e5e7eb; }
+        th[draggable="true"]::after { content: '⠿'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 10px; color: #9ca3af; opacity: 0; transition: opacity 0.15s; }
+        th[draggable="true"]:hover::after { opacity: 1; }
+        th.drag-over { background-color: #dbeafe !important; border-left: 2px solid #1473E6; }
+        @keyframes progress-stripe { 0% { background-position: 0 0; } 100% { background-position: 40px 0; } }
+        #dropZone.drag-over { border-color: #1473E6 !important; background-color: rgba(20,115,230,0.08) !important; transform: scale(1.01); }
+        .progress-gradient {
+            background-image: linear-gradient(135deg, rgba(255,255,255,0.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.15) 75%, transparent 75%, transparent);
+            background-size: 40px 40px;
+            animation: progress-stripe 1s linear infinite;
+        }
+        @keyframes checkmark-draw { to { stroke-dashoffset: 0; } }
+        .checkmark-animated { stroke-dasharray: 30; stroke-dashoffset: 30; animation: checkmark-draw 0.5s ease-out 0.2s forwards; }
+        @keyframes bar-glow { 0% { box-shadow: 0 0 8px rgba(18,128,92,0.6); } 100% { box-shadow: 0 0 0 rgba(18,128,92,0); } }
+        .bar-success-glow { animation: bar-glow 1.5s ease-out; }
+        @keyframes confetti-pop { 0% { transform: translateY(0) rotate(0deg); opacity:1; } 100% { transform: translateY(-60px) rotate(360deg); opacity:0; } }
+        .confetti-container { position: relative; overflow: visible; pointer-events: none; }
+        .confetti-piece { position: absolute; width: 6px; height: 6px; border-radius: 2px; animation: confetti-pop 1.2s ease-out forwards; }
+        @keyframes slide-down-in { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .slide-down-enter { animation: slide-down-in 0.35s ease-out; }
+        @keyframes border-pulse { 0%, 100% { border-color: #1473E6; } 50% { border-color: #93c5fd; } }
+        .drop-pulse { animation: border-pulse 1.2s ease-in-out infinite; }
+        #fullPageDropOverlay { transition: opacity 0.2s ease; }
+        .section-collapse { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; }
+        .section-expand { overflow: hidden; transition: max-height 0.35s ease; }
+        @keyframes pulse-dot { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+        .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+        .tree-toggle:hover { background-color: #eff6ff; }
+        .tree-node { user-select: none; }
+
+        /* ─── Spectrum Toast Container (for sp-toast elements) ─── */
+        #toastContainer { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; max-width: 500px; width: calc(100% - 40px); }
+        #toastContainer > * { pointer-events: auto; }
+
+        /* ─── Dark Mode ─── */
+        .dark .bg-white { background-color: #1a1a2e !important; }
+        .dark .bg-gray-50, .dark .bg-gray-100 { background-color: #16213e !important; }
+        .dark .bg-adobe-dark { background-color: #0f0f1a !important; }
+        .dark .text-gray-800, .dark .text-gray-900 { color: #e2e8f0 !important; }
+        .dark .text-gray-700 { color: #cbd5e1 !important; }
+        .dark .text-gray-600 { color: #94a3b8 !important; }
+        .dark .text-gray-500 { color: #64748b !important; }
+        .dark .text-gray-400 { color: #475569 !important; }
+        .dark .border-gray-200, .dark .border-gray-100 { border-color: #1e293b !important; }
+        .dark .border-gray-300 { border-color: #334155 !important; }
+        .dark body, .dark .bg-gray-50 { background-color: #0f172a !important; }
+        .dark input, .dark select, .dark textarea { background-color: #1e293b !important; color: #e2e8f0 !important; border-color: #334155 !important; }
+        .dark .shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+        .dark header { background-color: #1a1a2e !important; border-color: #1e293b !important; }
+        .dark header h1 { color: #e2e8f0 !important; }
+        .dark header p { color: #8e8e8e !important; }
+        .dark header .ml-auto button { background-color: #334155 !important; color: #94a3b8 !important; }
+        .dark header .ml-auto button:hover { background-color: #475569 !important; color: #e2e8f0 !important; }
+        .dark footer { background-color: #1a1a2e !important; border-color: #1e293b !important; }
+        .dark code { background-color: #334155 !important; color: #94a3b8 !important; }
+        .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b !important; }
+        .dark #confirmModal > div { background-color: #1e293b !important; }
+        .dark #confirmModal h3 { color: #e2e8f0 !important; }
+        .dark #confirmModal #confirmBody { color: #cbd5e1 !important; }
+        .dark #confirmModal .bg-gray-50 { background-color: #16213e !important; }
+        .dark #confirmModal hr { border-color: #334155 !important; }
+        .dark #fullPageDropOverlay > div { background-color: #1e293b !important; border-color: #1473E6 !important; color: #e2e8f0 !important; }
+        .dark #connLostBanner { background-color: #7f1d1d !important; }
+        .dark .tree-toggle:hover { background-color: #1e293b !important; }
+
+        /* Mobile history card layout */
+        @media (max-width: 768px) {
+            #histPanel table { display: none !important; }
+            #histPanel .hist-mobile-cards { display: block !important; }
+            #histControls { flex-direction: column; align-items: stretch !important; }
+            #histControls .min-w-\[200px\] { max-width: 100% !important; }
+        }
+        @media (min-width: 769px) {
+            #histPanel .hist-mobile-cards { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+<sp-theme id="spTheme" scale="medium" color="light" system="spectrum" style="display:contents;">
+
+<!-- Toast container (bottom-center, holds sp-toast elements) -->
+<div id="toastContainer" role="region" aria-label="Notifications"></div>
+
+<!-- Full-page drop overlay -->
+<div id="fullPageDropOverlay" class="hidden fixed inset-0 z-30 bg-adobe-blue/10 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
+    <div class="bg-white rounded-2xl shadow-2xl p-10 text-center border-2 border-dashed border-adobe-blue">
+        <svg class="w-16 h-16 text-adobe-blue mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+        <p class="text-lg font-semibold text-gray-800">Drop files anywhere</p>
+        <p class="text-sm text-gray-500 mt-1">Release to upload to server</p>
+    </div>
+</div>
+
+<!-- Connection lost banner -->
+<div id="connLostBanner" class="hidden bg-red-600 text-white">
+    <div class="max-w-5xl mx-auto px-6 py-2 flex items-center justify-center gap-2 text-sm">
+        <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+        <span>Server connection lost &mdash; retrying...</span>
+    </div>
+</div>
+
+<!-- Confirm Dialog (custom overlay with sp-button) -->
+<div id="confirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="confirmHeadline" style="background:rgba(0,0,0,0.4);backdrop-filter:blur(2px);">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" style="animation:slide-down-in 0.2s ease-out;">
+        <div class="flex items-center justify-between px-6 pt-5 pb-3">
+            <h3 id="confirmHeadline" class="text-lg font-semibold text-gray-900">Confirm Upload</h3>
+            <button onclick="closeConfirm()" class="text-gray-400 hover:text-gray-600 transition p-1 -mr-1" aria-label="Close">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <hr class="border-gray-200"/>
+        <div id="confirmBody" class="px-6 py-4" style="font-size:14px;line-height:1.6;"></div>
+        <div class="flex justify-end gap-2 px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <sp-button id="confirmCancelBtn" variant="secondary" treatment="outline" onclick="closeConfirm()">Cancel</sp-button>
+            <sp-button id="confirmOkBtn" variant="accent" onclick="handleConfirmOk()">Upload</sp-button>
+        </div>
+    </div>
+</div>
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 shadow-sm">
+    <div class="h-[3px]" style="background:linear-gradient(90deg,#1473E6 0%,#1473E6 100%);"></div>
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
+        <!-- Adobe Experience Manager product icon -->
+        <div class="w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0" style="background:#1473E6;">
+            <svg class="w-[22px] h-[22px]" viewBox="0 0 24 24" fill="none">
+                <path d="M12 4L5 20h4.5l1.3-3.2h6.4L18.5 20H23L16 4h-4zm0 5.4L14.6 15h-5.2L12 9.4z" fill="white"/>
+            </svg>
+        </div>
+        <div style="pointer-events:none;user-select:none;">
+            <h1 style="all:unset;display:block;font-family:'Source Sans 3','Adobe Clean',Inter,system-ui,sans-serif;font-size:1.15rem;font-weight:700;color:#1D1D1D;letter-spacing:-0.01em;line-height:1.2;">GUIdes Upload Utility</h1>
+            <p style="all:unset;display:block;font-family:'Source Sans 3','Adobe Clean',Inter,system-ui,sans-serif;font-size:0.8rem;font-weight:400;color:#8a8a8a;margin-top:2px;letter-spacing:0.02em;">Adobe Experience Manager</p>
+        </div>
+        <div class="ml-auto flex items-center gap-3">
+            <div id="connectionStatus" class="flex items-center gap-1.5 text-xs text-gray-500" title="Server connection status">
+                <span id="connDot" class="w-2 h-2 rounded-full bg-gray-400 transition-colors"></span>
+                <span id="connText" class="hidden sm:inline">Checking...</span>
+            </div>
+            <div class="relative">
+                <button onclick="toggleShortcutsHelp()" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">
+                    <span class="text-sm font-bold">?</span>
+                </button>
+                <div id="shortcutsTooltip" class="hidden absolute right-0 top-10 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 w-64 z-50 text-left">
+                    <h4 class="text-sm font-semibold text-gray-800 mb-2">Keyboard Shortcuts</h4>
+                    <div class="space-y-1.5 text-xs text-gray-600">
+                        <div class="flex justify-between"><span>Start upload</span><kbd class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 font-mono">Ctrl+Enter</kbd></div>
+                        <div class="flex justify-between"><span>Cancel upload</span><kbd class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 font-mono">Escape</kbd></div>
+                    </div>
+                </div>
+            </div>
+            <button onclick="toggleDarkMode()" id="darkModeBtn" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition" title="Toggle dark mode" aria-label="Toggle dark mode">
+                <svg id="sunIcon" class="h-4 w-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                <svg id="moonIcon" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+            </button>
+        </div>
+    </div>
+</header>
+
+<!-- Active uploads banner (shown when background uploads are running) -->
+<div id="activeUploadsBanner" class="hidden bg-blue-600 text-white">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+            <svg class="spinner h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            <span id="activeBannerText" class="text-sm font-medium truncate">Upload running in background...</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            <button onclick="reconnectActiveUpload()" class="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-medium rounded-lg transition">
+                View Progress
+            </button>
+            <button onclick="dismissBanner()" class="text-white/60 hover:text-white transition" aria-label="Dismiss banner">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Loading overlay shown until health check completes -->
+<div id="loadingOverlay" class="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center transition-opacity duration-300">
+    <div class="w-12 h-12 bg-adobe-blue rounded-xl flex items-center justify-center mb-4 shadow-lg shadow-adobe-blue/30">
+        <svg class="w-7 h-7 text-white spinner" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+    </div>
+    <p class="text-sm text-gray-500">Connecting to server...</p>
+</div>
+
+<main class="flex-1 max-w-5xl mx-auto w-full px-6 py-8 space-y-6">
+
+    <!-- 1. AEM Target (overflow-visible so Recent Targets dropdown is not clipped) -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">1</span> AEM Target</h2>
+            <p class="text-sm text-gray-500 mt-0.5 ml-8">Cloud (https://author-pXXX...), On-Prem (http://host:4502), or local (http://localhost:4502; for https use AEM_ALLOW_SELF_SIGNED=1)</p>
+        </div>
+        <div class="p-6">
+            <!-- Saved Presets -->
+            <div class="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Presets</span>
+                <div id="presetList" class="flex flex-wrap gap-1.5"></div>
+                <button onclick="saveCurrentPreset()" class="text-xs bg-adobe-blue text-white px-2.5 py-1 rounded hover:bg-adobe-darkBlue transition ml-auto" aria-label="Save current settings as preset">
+                    <svg class="inline h-3 w-3 mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    Save Preset
+                </button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="aemUrl" class="block text-sm font-medium text-gray-700 mb-1">AEM Author URL <span class="text-red-400">*</span></label>
+                    <div class="relative">
+                        <input id="aemUrl" type="text" placeholder="e.g. http://localhost:4502, http://host:4502, or https://author-p..adobeaemcloud.com"
+                            class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition"
+                            oninput="liveValidateUrl()" onblur="liveValidateUrl(true)" />
+                        <button onclick="toggleRecentTargets()" id="recentTargetsBtn" class="hidden absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:text-adobe-blue hover:bg-blue-50 transition" title="Recent targets" aria-label="Recent targets">
+                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </button>
+                        <div id="recentTargetsDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
+                            <div class="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">Recent Targets</div>
+                            <div id="recentTargetsList"></div>
+                        </div>
+                    </div>
+                    <p id="aemUrlErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                </div>
+                <div>
+                    <label for="damPath" class="block text-sm font-medium text-gray-700 mb-1">DAM Folder Path <span class="text-red-400">*</span></label>
+                    <input id="damPath" type="text" placeholder="content/dam/my-folder"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition"
+                        oninput="liveValidateDamPath()" onblur="liveValidateDamPath(true)" />
+                    <p id="damPathErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                    <p id="damPathHint" class="text-xs text-gray-400 mt-1 hidden"></p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. Configuration -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">2</span> Configuration</h2>
+        </div>
+        <div class="p-6 space-y-4">
+            <!-- Browser Upload -->
+            <div id="browserUploadSection">
+                <label for="browserFileInput" class="block text-sm font-medium text-gray-700 mb-1">Select Folder or Files</label>
+                <div id="dropZone" class="relative border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-adobe-blue hover:bg-blue-50/30 transition-all cursor-pointer"
+                     tabindex="0" role="button" aria-label="Drop zone: drag and drop files or press Enter to select a folder"
+                     onclick="pickFolder()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickFolder();}">
+                    <input type="file" id="browserFileInput" multiple class="hidden" onchange="onBrowserFilesSelected(this.files)" />
+                    <div class="flex flex-col items-center gap-3">
+                        <div class="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center">
+                            <svg class="w-7 h-7 text-adobe-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-700">Drag and drop a folder here, or click to select a folder</p>
+                            <p class="text-xs text-gray-400 mt-1">Entire folder structure (including subfolders) is preserved during upload</p>
+                            <p class="text-xs text-amber-600 mt-1" title="The file picker has a search box that filters results">Tip: If the folder appears empty, clear the search box in the file picker dialog</p>
+                        </div>
+                        <div class="flex gap-2 mt-1">
+                            <sp-button size="s" variant="accent" onclick="event.stopPropagation(); pickFolder()">
+                                <svg slot="icon" class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                                Select Folder
+                            </sp-button>
+                            <sp-button size="s" variant="secondary" treatment="outline" onclick="event.stopPropagation(); document.getElementById('browserFileInput').click()">
+                                Select Files
+                            </sp-button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Selected files preview -->
+                <div id="browserFilesPreview" class="hidden mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                        <div class="flex items-center gap-1.5">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                            <span class="text-gray-500">Files:</span>
+                            <span id="browserFileCount" class="font-semibold text-gray-800">0</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+                            <span class="text-gray-500">Total Size:</span>
+                            <span id="browserFileSize" class="font-semibold text-gray-800">0 B</span>
+                        </div>
+                        <button onclick="clearBrowserFiles()" class="text-xs text-red-500 hover:text-red-700 hover:underline ml-auto" aria-label="Clear selected files">Clear</button>
+                    </div>
+                    <!-- Folder info (shown when a folder is selected) -->
+                    <div id="browserFolderInfo" class="hidden flex items-center gap-1.5 mt-2 text-sm"></div>
+                    <div id="browserFileExtensions" class="mt-2 flex flex-wrap gap-1.5"></div>
+                    <!-- File type filter -->
+                    <div id="fileTypeFilterContainer" class="hidden mt-2 pt-2 border-t border-gray-100">
+                        <div class="flex items-center gap-2">
+                            <label for="fileTypeFilter" class="text-xs text-gray-500 shrink-0">Filter by type:</label>
+                            <input id="fileTypeFilter" type="text" placeholder="e.g. .xml,.dita,.ditamap (comma-separated)"
+                                class="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                            <button onclick="applyFileTypeFilter()" class="text-xs bg-adobe-blue text-white px-2.5 py-1 rounded hover:bg-adobe-darkBlue transition">Apply</button>
+                            <button onclick="clearFileTypeFilter()" class="text-xs text-gray-400 hover:text-gray-600 transition">Clear</button>
+                        </div>
+                        <p id="fileTypeFilterInfo" class="text-xs text-gray-400 mt-1 hidden"></p>
+                    </div>
+                    <!-- Folder tree preview -->
+                    <div id="folderTreeContainer" class="hidden mt-3 border-t border-gray-200 pt-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider">Folder Structure</span>
+                            <div class="flex gap-1">
+                                <button onclick="expandAllTree()" class="text-[10px] text-adobe-blue hover:underline" aria-label="Expand all folder tree nodes">Expand All</button>
+                                <span class="text-gray-300">|</span>
+                                <button onclick="collapseAllTree()" class="text-[10px] text-adobe-blue hover:underline" aria-label="Collapse all folder tree nodes">Collapse All</button>
+                            </div>
+                        </div>
+                        <ul id="folderTree" class="text-xs max-h-48 overflow-y-auto space-y-0.5"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username <span class="text-red-400">*</span></label>
+                    <input id="username" type="text" placeholder="admin"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition" />
+                    <p id="usernameErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password <span class="text-red-400">*</span></label>
+                    <div class="relative">
+                        <input id="password" type="password" placeholder="********"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none pr-14 transition" />
+                        <button type="button" onclick="togglePassword()" id="pwToggle"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs select-none px-1">Show</button>
+                    </div>
+                    <p id="passwordErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. Advanced Settings (collapsed) -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <button onclick="toggleAdvanced()" class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition">
+            <div class="flex items-center gap-2">
+                <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">3</span> Advanced Settings</h2>
+                <svg id="advChevron" class="h-4 w-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </div>
+            <span class="text-xs text-gray-400">Performance tuning</span>
+        </button>
+        <div id="advPanel" class="hidden px-6 pb-6 transition-all duration-200">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                <div>
+                    <label for="maxConcurrent" class="block text-sm font-medium text-gray-700 mb-1">Max Concurrent Uploads</label>
+                    <div class="flex items-center gap-3">
+                        <input id="maxConcurrent" type="range" min="1" max="10" value="2" aria-valuemin="1" aria-valuemax="10" aria-valuenow="2" aria-label="Max Concurrent Uploads" oninput="document.getElementById('maxConcVal').textContent=this.value;this.setAttribute('aria-valuenow',this.value)" class="flex-1 accent-adobe-blue" />
+                        <span id="maxConcVal" class="text-sm font-mono text-gray-700 w-8 text-right">2</span>
+                    </div>
+                </div>
+                <div>
+                    <label for="httpRetryCount" class="block text-sm font-medium text-gray-700 mb-1">HTTP Retry Count</label>
+                    <input id="httpRetryCount" type="number" min="0" max="10" value="5"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                </div>
+                <div>
+                    <label for="httpRetryDelay" class="block text-sm font-medium text-gray-700 mb-1">Retry Delay (seconds)</label>
+                    <input id="httpRetryDelay" type="number" min="1" max="30" value="8"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                </div>
+                <div>
+                    <label for="httpRequestTimeout" class="block text-sm font-medium text-gray-700 mb-1">Request Timeout (seconds)</label>
+                    <input id="httpRequestTimeout" type="number" min="10" max="300" value="120"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                </div>
+                <div>
+                    <label for="maxUploadFiles" class="block text-sm font-medium text-gray-700 mb-1">Max Upload Files</label>
+                    <input id="maxUploadFiles" type="number" min="100" max="200000" value="100000"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                </div>
+            </div>
+            <div class="flex flex-col gap-3 mt-4 pt-4 border-t border-gray-100">
+                <div class="flex items-center gap-2">
+                    <input id="overwriteExisting" type="checkbox" checked class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
+                    <label for="overwriteExisting" class="text-sm text-gray-700 cursor-pointer select-none">Overwrite existing assets <span class="text-gray-400" title="When checked, files already in AEM DAM will be replaced. Uncheck to see a reminder before upload. Note: skip-existing requires AEM API integration and is not yet supported.">(replaces files in DAM if they already exist)</span></label>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input id="dryRun" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
+                    <label for="dryRun" class="text-sm text-gray-700 cursor-pointer select-none">Dry run <span class="text-gray-400">(preview files without uploading)</span></label>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Upload / Cancel buttons -->
+    <div class="flex justify-center gap-3">
+        <sp-button id="uploadBtn" onclick="initiateUpload()" variant="accent" size="l">
+            <svg id="uploadIcon" slot="icon" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+            <svg id="uploadSpinner" class="hidden spinner h-5 w-5" slot="icon" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            <span id="uploadBtnText">Start Upload</span>
+        </sp-button>
+        <sp-button id="cancelBtn" onclick="cancelUpload()" variant="negative" size="l" style="display:none;">
+            Cancel
+        </sp-button>
+    </div>
+
+    <!-- Upload Queue -->
+    <section id="uploadQueueSection" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                <svg class="h-4 w-4 text-adobe-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                Upload Queue
+                <span id="queueCount" class="text-xs bg-adobe-blue text-white rounded-full px-2 py-0.5">0</span>
+            </h3>
+            <div class="flex gap-2">
+                <sp-button onclick="startQueue()" id="startQueueBtn" variant="accent" size="s" style="display:none;">Start Queue</sp-button>
+                <button onclick="clearQueue()" class="text-xs text-red-500 hover:text-red-700 hover:underline transition" aria-label="Clear upload queue">Clear</button>
+            </div>
+        </div>
+        <div id="queueList" class="divide-y divide-gray-100 max-h-48 overflow-y-auto"></div>
+    </section>
+
+    <!-- Transfer Progress (Browser → Server) — shown during chunked upload to server -->
+    <section id="transferPanel" class="hidden bg-white rounded-xl shadow-sm border border-blue-200 overflow-hidden mb-4">
+        <div class="px-6 py-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold" id="transferStepBadge">1</span>
+                    <h2 class="text-base font-semibold text-gray-800" id="transferTitle">Sending Files to Server</h2>
+                </div>
+                <div class="flex items-center gap-3 text-sm">
+                    <span id="transferSpeed" class="text-gray-500">-- MB/s</span>
+                    <span id="transferEta" class="text-gray-500">ETA --</span>
+                    <sp-button id="transferPauseBtn" onclick="pauseTransfer()" variant="secondary" size="s" style="display:none;" aria-label="Pause sending files to server">Pause</sp-button>
+                    <sp-button id="transferResumeBtn" onclick="resumeTransfer()" variant="accent" size="s" style="display:none;" aria-label="Resume sending files to server">Resume</sp-button>
+                </div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider">Files Sent</div>
+                    <div class="text-lg font-bold text-green-600" id="transferFilesSent">0 / 0</div>
+                </div>
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider">Data Sent</div>
+                    <div class="text-lg font-bold text-gray-800" id="transferBytesSent">0 B / 0 B</div>
+                </div>
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider">Chunk</div>
+                    <div class="text-lg font-bold text-blue-600" id="transferChunkInfo">0 / 0</div>
+                </div>
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider">Status</div>
+                    <div class="text-lg font-bold text-adobe-blue" id="transferStatus">Preparing...</div>
+                </div>
+            </div>
+        </div>
+        <div class="px-6 py-4">
+            <div class="flex items-center gap-3">
+                <div class="flex-1 bg-gray-200 rounded-full h-3 relative overflow-hidden">
+                    <div id="transferBar" class="bg-adobe-blue progress-gradient h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <span id="transferPct" class="text-sm font-semibold text-gray-600 w-12 text-right">0%</span>
+            </div>
+            <p class="mt-2 text-xs text-gray-400" id="transferDetail">Preparing to send files to server...</p>
+        </div>
+    </section>
+
+    <!-- Progress Panel -->
+    <section id="progressPanel" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <h2 class="text-base font-semibold text-gray-800">Upload Progress</h2>
+                <div class="flex items-center gap-3">
+                    <span id="elapsedTime" class="text-sm text-gray-500">0s</span>
+                    <span id="uploadSpeed" class="hidden text-sm text-gray-500">-- MB/s</span>
+                    <span id="uploadEta" class="hidden text-sm font-medium text-adobe-blue">ETA --</span>
+                    <sp-button id="cancelBtnInProgress" onclick="cancelUpload()" variant="negative" size="s" style="display:none;">
+                        Cancel Upload
+                    </sp-button>
+                </div>
+            </div>
+            <!-- Stats row -->
+            <div id="progressStats" class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3" aria-live="polite" aria-atomic="true">
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Uploaded</div>
+                    <div class="text-lg font-bold text-green-600" id="statUploaded">0</div>
+                </div>
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Remaining</div>
+                    <div class="text-lg font-bold text-blue-600" id="statRemaining">0</div>
+                </div>
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Failed</div>
+                    <div class="text-lg font-bold text-red-600" id="statFailed">0</div>
+                </div>
+                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Transferred</div>
+                    <div class="text-lg font-bold text-gray-800" id="statBytes">0 B</div>
+                </div>
+            </div>
+        </div>
+        <div class="px-6 py-4">
+            <!-- Progress bar -->
+            <div class="mb-4">
+                <div class="flex justify-between text-xs text-gray-500 mb-1">
+                    <span id="progressLabel">Upload Progress</span>
+                    <span id="progressPct">0%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <div id="progressBar" class="bg-adobe-blue h-2.5 rounded-full transition-all duration-300" style="width:0%"></div>
+                </div>
+            </div>
+            <div id="fileList" class="max-h-80 overflow-y-auto text-sm"></div>
+        </div>
+        <div id="summaryBar" class="hidden px-6 py-4 border-t border-gray-100"></div>
+    </section>
+
+    <!-- Upload History -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div onclick="toggleHistory()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleHistory();}" role="button" tabindex="0" aria-expanded="false" aria-label="Toggle upload history" id="histToggle" class="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition cursor-pointer select-none">
+            <div class="flex items-center gap-2">
+                <svg id="histChevron" class="h-4 w-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                <h2 class="text-base font-semibold text-gray-800">Upload History</h2>
+            </div>
+            <div class="flex items-center gap-3" onclick="event.stopPropagation()">
+                <button onclick="clearAllHistory()" id="clearHistoryBtn" class="hidden text-xs text-red-500 hover:text-red-700 hover:underline transition flex items-center gap-1"
+                    title="Clear all upload history" aria-label="Clear all upload history">
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    Clear All
+                </button>
+            </div>
+        </div>
+        <div id="histPanel" class="overflow-x-auto transition-all duration-200">
+            <!-- Search and filter controls -->
+            <div id="histControls" class="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
+                <div class="relative flex-1 min-w-[200px] max-w-xs">
+                    <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <input id="histSearch" type="text" placeholder="Search history..." oninput="filterHistory()"
+                        class="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-1 focus:ring-adobe-blue focus:border-transparent outline-none" aria-label="Search upload history" />
+                </div>
+                <sp-button-group id="histFilterPills">
+                    <sp-button onclick="setHistoryFilter('all')" class="hist-pill" data-filter="all" variant="accent" size="xs" selected>All</sp-button>
+                    <sp-button onclick="setHistoryFilter('success')" class="hist-pill" data-filter="success" variant="secondary" size="xs" treatment="outline">Success</sp-button>
+                    <sp-button onclick="setHistoryFilter('failed')" class="hist-pill" data-filter="failed" variant="secondary" size="xs" treatment="outline">Failed</sp-button>
+                </sp-button-group>
+            </div>
+            <table class="w-full text-sm text-left min-w-[800px]">
+                <thead class="text-xs text-gray-500 uppercase bg-gray-50" id="historyHead">
+                    <tr>
+                        <th scope="col" class="px-4 py-3" data-col="timestamp">Timestamp</th>
+                        <th scope="col" class="px-4 py-3" data-col="target">Target</th>
+                        <th scope="col" class="px-4 py-3" data-col="damPath">DAM Path</th>
+                        <th scope="col" class="px-4 py-3" data-col="localPath">Local Path</th>
+                        <th scope="col" class="px-4 py-3" data-col="files">Files</th>
+                        <th scope="col" class="px-4 py-3" data-col="size">Size</th>
+                        <th scope="col" class="px-4 py-3" data-col="duration">Duration</th>
+                        <th scope="col" class="px-4 py-3" data-col="status">Status</th>
+                        <th scope="col" class="px-4 py-3" data-col="actions"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody" class="divide-y divide-gray-100">
+                    <tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">No uploads yet</td></tr>
+                </tbody>
+            </table>
+            <!-- History pagination -->
+            <div id="histPagination" class="hidden px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                <span id="histPageInfo">Page 1 of 1</span>
+                <div class="flex gap-2">
+                    <button onclick="histPrevPage()" id="histPrevBtn" class="px-3 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition" disabled aria-label="Previous page">Prev</button>
+                    <button onclick="histNextPage()" id="histNextBtn" class="px-3 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition" disabled aria-label="Next page">Next</button>
+                </div>
+            </div>
+            <!-- Empty state -->
+            <div id="histEmptyState" class="hidden px-6 py-12 text-center">
+                <svg class="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+                <p class="text-sm font-medium text-gray-400">Your upload history will appear here</p>
+                <button onclick="window.scrollTo({top:0,behavior:'smooth'})" class="mt-2 text-xs text-adobe-blue hover:underline">Start an upload</button>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="border-t border-gray-200 bg-white mt-auto">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between text-xs text-gray-400" style="font-family:'Source Sans 3',Inter,system-ui,sans-serif;">
+        <span class="font-medium tracking-wide">GUIdes Upload Utility v2.0</span>
+        <span>Powered by <code class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-mono text-[11px]">@adobe/aem-upload</code></span>
+    </div>
+</footer>
+
+<!-- Floating mini-progress widget -->
+<div id="miniProgress" class="hidden fixed bottom-20 right-6 z-30 bg-white border border-gray-200 shadow-xl rounded-2xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:shadow-2xl transition-all duration-300 opacity-0 translate-y-4" role="button" tabindex="0" aria-label="View full upload progress" onclick="document.getElementById('progressPanel').scrollIntoView({behavior:'smooth',block:'center'})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();document.getElementById('progressPanel').scrollIntoView({behavior:'smooth',block:'center'});}" title="Click to view full progress">
+    <div class="relative w-11 h-11 shrink-0">
+        <svg class="w-11 h-11 -rotate-90" viewBox="0 0 44 44">
+            <circle cx="22" cy="22" r="18" stroke="#e5e7eb" stroke-width="4" fill="none"/>
+            <circle id="miniRing" cx="22" cy="22" r="18" stroke="#1473E6" stroke-width="4" fill="none" stroke-linecap="round"
+                stroke-dasharray="113.1" stroke-dashoffset="113.1" class="transition-all duration-500"/>
+        </svg>
+        <span id="miniPct" class="absolute inset-0 flex items-center justify-center text-xs font-bold text-adobe-blue">0%</span>
+    </div>
+    <div class="min-w-0">
+        <div id="miniFiles" class="text-xs font-semibold text-gray-800 truncate">0 / 0 files</div>
+        <div id="miniSpeed" class="text-[10px] text-gray-400 truncate">-- MB/s</div>
+    </div>
+</div>
+
+<script>
+// ═══ Error / message normalization (APIs may return strings or { message, code }) ═══
+function toErrorMessage(x) {
+    if (x == null || x === '') return 'Unknown error';
+    if (typeof x === 'string') return x;
+    if (typeof x === 'object') {
+        if (x.message != null && String(x.message).trim() !== '') return String(x.message);
+        if (typeof x.error === 'string') return x.error;
+        try { return JSON.stringify(x); } catch (_) { return String(x); }
+    }
+    return String(x);
+}
+
+// ═══ Client Logger (level: ?log=debug | localStorage guidesLogLevel = error|warn|info|debug) ═══
+const Logger = (() => {
+    const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
+    const prefix = '[GUIdes]';
+    const ts = () => new Date().toISOString().slice(11, 23);
+    function readLevel() {
+        try {
+            const q = new URLSearchParams(window.location.search).get('log');
+            if (q && LEVELS[q.toLowerCase()] !== undefined) return LEVELS[q.toLowerCase()];
+            const ls = localStorage.getItem('guidesLogLevel');
+            if (ls && LEVELS[ls.toLowerCase()] !== undefined) return LEVELS[ls.toLowerCase()];
+        } catch (_) { /* ignore */ }
+        return LEVELS.info;
+    }
+    function shouldLog(tag) {
+        return readLevel() >= LEVELS[tag];
+    }
+    return {
+        setLevel(name) {
+            if (LEVELS[name] === undefined) return;
+            try { localStorage.setItem('guidesLogLevel', name); } catch (_) {}
+        },
+        error: (...a) => { if (shouldLog('error')) console.error(`${ts()} ${prefix} ERROR`, ...a); },
+        warn:  (...a) => { if (shouldLog('warn'))  console.warn(`${ts()} ${prefix} WARN`, ...a); },
+        info:  (...a) => { if (shouldLog('info'))  console.log(`${ts()} ${prefix} INFO`, ...a); },
+        debug: (...a) => { if (shouldLog('debug')) console.log(`${ts()} ${prefix} DEBUG`, ...a); },
+    };
+})();
+
+// ═══ State ═══
+let uploading = false;
+let currentUploadId = null;
+/** Chunked browser→server transfer (before finalize); cancel uses this when currentUploadId is not set yet */
+let chunkSessionId = null;
+let chunkTransferAbort = false;
+const activeChunkXhrs = new Set();
+/** Active SSE for AEM upload progress (set in connectSSE) */
+let activeUploadEventSource = null;
+let elapsedInterval = null;
+let pendingUploadBody = null;
+const uploadMode = 'browser';
+
+// Byte-level tracking
+let totalBytesExpected = 0;
+let totalBytesTransferred = 0;
+let speedSamples = [];
+let ewmaSpeed = -1;
+let uploadStartMs = 0;
+
+// File list batching
+let fileMap = {};
+let fileMapSize = 0;
+let recentFileKeys = [];
+const RECENT_CAP = 60;
+let filesCompleted = 0;
+let filesFailed = 0;
+let totalFilesStarted = 0;
+let fileListDirty = false;
+let rafId = null;
+let uploadDoneReceived = false;
+
+function trackFileEntry(key) {
+    if (!(key in fileMap)) {
+        fileMapSize++;
+        recentFileKeys.push(key);
+        if (recentFileKeys.length > RECENT_CAP * 2) recentFileKeys = recentFileKeys.slice(-RECENT_CAP);
+    }
+    if (fileMapSize > 10000 && fileMapSize % 2000 === 0) pruneFileMap();
+}
+function pruneFileMap() {
+    const keepSet = new Set(recentFileKeys.slice(-RECENT_CAP));
+    let pruned = 0;
+    for (const key in fileMap) {
+        if (keepSet.has(key)) continue;
+        if (fileMap[key].status === 'error') continue;
+        if (fileMap[key].status === 'done') {
+            delete fileMap[key];
+            pruned++;
+        }
+    }
+    if (pruned > 0) fileMapSize -= pruned;
+}
+function resetFileMap() {
+    fileMap = {}; fileMapSize = 0; recentFileKeys = [];
+}
+
+// Throttled progress updates to avoid DOM thrashing on rapid fileprogress events
+let _progressThrottleTimer = null;
+let _fileListThrottleTimer = null;
+function throttledProgressUI() {
+    if (!_progressThrottleTimer) {
+        const uiDelay = fileMapSize > 5000 ? 100 : 50;
+        _progressThrottleTimer = setTimeout(() => {
+            _progressThrottleTimer = null;
+            updateProgressUI();
+            if (!_fileListThrottleTimer) {
+                const fileListDelay = fileMapSize > 5000 ? 500 : 100;
+                _fileListThrottleTimer = setTimeout(() => { _fileListThrottleTimer = null; scheduleFileListRender(); }, fileListDelay);
+            }
+        }, uiDelay);
+    }
+}
+
+// ═══ Init ═══
+const PAGE_TITLE = 'GUIdes Upload Utility';
+let bannerDismissed = false;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    Logger.info('GUIdes Upload Utility initializing...');
+    try {
+        const h = await fetch('/api/health');
+        const hd = await h.json();
+        Logger.info('Server health OK — auth:', hd.authEnabled ? 'enabled' : 'disabled');
+    } catch (e) {
+        Logger.error('Health check failed:', toErrorMessage(e));
+    }
+    // Dismiss loading overlay
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) { overlay.style.opacity = '0'; setTimeout(() => overlay.remove(), 300); }
+    loadHistory();
+    requestNotificationPermission();
+    checkForActiveUploads();
+    Logger.info('Initialization complete');
+});
+
+// ═══ Browser File Selection (full folder support) ═══
+
+const MAX_BROWSER_FILES = 100000;
+
+// Each entry: { file: File, relativePath: string }
+let browserFileEntries = [];
+
+// Uses the File System Access API (no Chrome confirmation dialog)
+// Falls back to <input webkitdirectory> for browsers that don't support it
+async function pickFolder() {
+    if (!window.showDirectoryPicker) {
+        // Fallback: create a temporary webkitdirectory input and click it
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.setAttribute('webkitdirectory', '');
+        inp.onchange = () => onBrowserFilesSelected(inp.files);
+        inp.click();
+        return;
+    }
+    let dirHandle;
+    try {
+        dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+    } catch (e) {
+        if (e.name !== 'AbortError') Logger.error('Folder picker error:', toErrorMessage(e));
+        return;
+    }
+    setDropZoneLoading(true);
+    const allFiles = [];
+    _readAborted = false;
+    try {
+        await readDirectoryHandle(dirHandle, dirHandle.name, allFiles, (count) => {
+            if (count % 200 === 0) updateDropZoneProgress(count);
+            if (count >= MAX_BROWSER_FILES) {
+                _readAborted = true;
+                throw new Error('File limit reached (' + MAX_BROWSER_FILES.toLocaleString() + ').');
+            }
+        });
+    } catch (err) {
+        const em = toErrorMessage(err);
+        Logger.error('Folder read error:', em);
+        showToast(em, 'error');
+    }
+    setDropZoneLoading(false);
+    if (allFiles.length > 0) {
+        setBrowserFileEntries(allFiles);
+    } else {
+        showToast('No files found in the selected folder', 'error');
+    }
+}
+
+async function readDirectoryHandle(dirHandle, parentPath, results, onProgress) {
+    for await (const [name, handle] of dirHandle.entries()) {
+        if (_readAborted) break;
+        if (handle.kind === 'file') {
+            const file = await handle.getFile();
+            const relPath = parentPath ? parentPath + '/' + name : name;
+            results.push({ file, relativePath: relPath });
+            if (onProgress) onProgress(results.length);
+        } else if (handle.kind === 'directory') {
+            await readDirectoryHandle(handle, parentPath ? parentPath + '/' + name : name, results, onProgress);
+        }
+    }
+}
+
+function initDropZone() {
+    const dropZone = document.getElementById('dropZone');
+    if (!dropZone || dropZone._dzInit) return;
+    dropZone._dzInit = true;
+
+    let dragCounter = 0; // Fix dragleave flicker on child elements
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
+    dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); dragCounter++; dropZone.classList.add('drag-over', 'drop-pulse'); });
+    dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; dropZone.classList.remove('drag-over', 'drop-pulse'); } });
+    dropZone.addEventListener('drop', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dragCounter = 0;
+        dropZone.classList.remove('drag-over', 'drop-pulse');
+        if (!e.dataTransfer.items || e.dataTransfer.items.length === 0) return;
+
+        // Check for webkitGetAsEntry support (not available in Firefox)
+        const items = Array.from(e.dataTransfer.items);
+        const hasEntryApi = items.some(i => typeof i.webkitGetAsEntry === 'function');
+
+        if (!hasEntryApi) {
+            // Firefox or older browser — folder drop loses structure
+            if (e.dataTransfer.files.length > 0) {
+                showToast('Folder structure not supported via drag-and-drop in this browser. Use "Select Folder" button instead for full folder upload.', 'warn');
+                onBrowserFilesSelected(e.dataTransfer.files);
+            }
+            return;
+        }
+
+        const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean);
+        if (entries.length === 0) return;
+
+        setDropZoneLoading(true);
+        const allFiles = [];
+        let readCount = 0;
+        _readAborted = false;
+        let limitReached = false;
+        try {
+            for (const entry of entries) {
+                if (_readAborted) break;
+                await readEntryRecursive(entry, '', allFiles, (count) => {
+                    readCount = count;
+                    if (count % 200 === 0) updateDropZoneProgress(count);
+                    if (count >= MAX_BROWSER_FILES) {
+                        _readAborted = true;
+                        limitReached = true;
+                        throw new Error('File limit reached (' + MAX_BROWSER_FILES.toLocaleString() + '). Please select a smaller folder.');
+                    }
+                });
+            }
+        } catch (err) {
+            const em = toErrorMessage(err);
+            Logger.error('Folder read error:', em);
+            showToast(em, limitReached ? 'warn' : 'error');
+        }
+        setDropZoneLoading(false);
+
+        if (allFiles.length > 0) {
+            setBrowserFileEntries(allFiles);
+        } else {
+            showToast('No files found in the dropped item(s)', 'error');
+        }
+    });
+}
+
+function setDropZoneLoading(loading) {
+    const dropZone = document.getElementById('dropZone');
+    const inner = dropZone?.querySelector('.flex.flex-col');
+    if (!inner) return;
+    if (loading) {
+        dropZone.style.pointerEvents = 'none';
+        dropZone.style.opacity = '0.6';
+        inner.dataset.origHtml = inner.innerHTML;
+        inner.innerHTML =
+            '<div class="flex flex-col items-center gap-2">' +
+            '<svg class="animate-spin h-8 w-8 text-adobe-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
+            '<p class="text-sm font-medium text-gray-600" id="dropZoneProgress">Reading folder...</p>' +
+            '</div>';
+    } else {
+        dropZone.style.pointerEvents = '';
+        dropZone.style.opacity = '';
+        if (inner.dataset.origHtml) {
+            inner.innerHTML = inner.dataset.origHtml;
+            delete inner.dataset.origHtml;
+        }
+    }
+}
+
+function updateDropZoneProgress(count) {
+    const el = document.getElementById('dropZoneProgress');
+    if (el) el.textContent = 'Reading folder... ' + count.toLocaleString() + ' files found';
+}
+
+// Shared abort flag for recursive folder reading
+let _readAborted = false;
+
+// Recursively reads a FileSystemEntry (file or directory)
+function readEntryRecursive(entry, parentPath, results, onProgress) {
+    return new Promise((resolve, reject) => {
+        if (_readAborted) return resolve();
+
+        if (entry.isFile) {
+            entry.file((file) => {
+                if (_readAborted) return resolve();
+                const relPath = parentPath ? parentPath + '/' + file.name : file.name;
+                results.push({ file, relativePath: relPath });
+                if (onProgress) {
+                    try { onProgress(results.length); } catch (e) { reject(e); return; }
+                }
+                resolve();
+            }, (err) => { Logger.warn('Skipping unreadable file:', entry.name); resolve(); });
+        } else if (entry.isDirectory) {
+            const dirPath = parentPath ? parentPath + '/' + entry.name : entry.name;
+            const reader = entry.createReader();
+            const allEntries = [];
+
+            function readBatch() {
+                if (_readAborted) return resolve();
+                reader.readEntries(async (batch) => {
+                    if (_readAborted) return resolve();
+                    if (batch.length === 0) {
+                        try {
+                            for (const child of allEntries) {
+                                if (_readAborted) break;
+                                await readEntryRecursive(child, dirPath, results, onProgress);
+                            }
+                        } catch (e) { reject(e); return; }
+                        resolve();
+                    } else {
+                        allEntries.push(...batch);
+                        readBatch();
+                    }
+                }, (err) => { Logger.warn('Skipping unreadable directory:', entry.name); resolve(); });
+            }
+            readBatch();
+        } else {
+            resolve();
+        }
+    });
+}
+
+// Called when user selects files via <input type="file"> (both file + folder picker)
+function onBrowserFilesSelected(files) {
+    if (!files || files.length === 0) return;
+
+    const entries = [];
+    let hasRelPaths = false;
+    for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const relPath = f.webkitRelativePath || f.name;
+        if (f.webkitRelativePath && f.webkitRelativePath.includes('/')) hasRelPaths = true;
+        entries.push({ file: f, relativePath: relPath });
+    }
+    if (!hasRelPaths && entries.length > 0) {
+        Logger.warn('No folder structure detected (webkitRelativePath empty). Files will be uploaded flat.');
+    }
+    setBrowserFileEntries(entries);
+}
+
+// Common handler to update state and preview from file entries
+function setBrowserFileEntries(entries) {
+    browserFileEntries = entries;
+    Logger.info('Files selected:', entries.length, entries.length > 0 ? '(root: ' + getRootFolderName(entries) + ')' : '');
+
+    let totalSize = 0;
+    const extensions = {};
+    const folderSet = new Set();
+    for (const { file, relativePath } of entries) {
+        totalSize += file.size;
+        const ext = file.name.includes('.') ? ('.' + file.name.split('.').pop().toLowerCase()) : '(no ext)';
+        extensions[ext] = (extensions[ext] || 0) + 1;
+        const parts = relativePath.split('/');
+        if (parts.length > 1) {
+            for (let i = 1; i < parts.length; i++) {
+                folderSet.add(parts.slice(0, i).join('/'));
+            }
+        }
+    }
+
+    const previewEl = document.getElementById('browserFilesPreview');
+    previewEl.classList.remove('hidden');
+    document.getElementById('browserFileCount').textContent = entries.length.toLocaleString();
+    document.getElementById('browserFileSize').textContent = fmtBytes(totalSize);
+
+    // Show folder info
+    const folderInfoEl = document.getElementById('browserFolderInfo');
+    if (folderInfoEl) {
+        const rootName = getRootFolderName(entries);
+        if (rootName && folderSet.size > 0) {
+            folderInfoEl.classList.remove('hidden');
+            folderInfoEl.innerHTML =
+                '<svg class="h-4 w-4 text-adobe-blue shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>' +
+                '<span class="text-gray-500">Folder:</span>' +
+                '<span class="font-semibold text-adobe-blue">' + esc(rootName) + '</span>' +
+                '<span class="text-gray-400">(' + folderSet.size + ' subfolder' + (folderSet.size !== 1 ? 's' : '') + ')</span>';
+        } else {
+            folderInfoEl.classList.add('hidden');
+        }
+    }
+
+    const extEl = document.getElementById('browserFileExtensions');
+    const sorted = Object.entries(extensions).sort((a, b) => b[1] - a[1]).slice(0, 15);
+    extEl.innerHTML = sorted.map(([ext, count]) =>
+        '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700">' + esc(ext) + ' <span class="ml-1 text-gray-400">' + count + '</span></span>'
+    ).join('');
+    showToast(entries.length + ' file(s) selected (' + fmtBytes(totalSize) + ')' + (folderSet.size > 0 ? ' in ' + folderSet.size + ' folders' : ''), 'success');
+    renderFolderTree(entries);
+
+    // Show file type filter when files are selected
+    const ftContainer = document.getElementById('fileTypeFilterContainer');
+    if (ftContainer && entries.length > 0) ftContainer.classList.remove('hidden');
+}
+
+let _allBrowserFileEntries = []; // Unfiltered copy for filter reset
+
+function applyFileTypeFilter() {
+    const raw = val('fileTypeFilter').trim();
+    if (!raw) return;
+    if (_allBrowserFileEntries.length === 0) _allBrowserFileEntries = [...browserFileEntries];
+    const exts = raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean).map(e => e.startsWith('.') ? e : '.' + e);
+    if (exts.length === 0) return;
+    const filtered = _allBrowserFileEntries.filter(({ file }) => {
+        const name = file.name.toLowerCase();
+        return exts.some(ext => name.endsWith(ext));
+    });
+    const infoEl = document.getElementById('fileTypeFilterInfo');
+    if (filtered.length === 0) {
+        infoEl.classList.remove('hidden');
+        infoEl.textContent = `No files match ${exts.join(', ')}. Filter not applied.`;
+        return;
+    }
+    infoEl.classList.remove('hidden');
+    infoEl.textContent = `Filtered: ${filtered.length} of ${_allBrowserFileEntries.length} files match ${exts.join(', ')}`;
+    setBrowserFileEntries(filtered);
+}
+
+function clearFileTypeFilter() {
+    document.getElementById('fileTypeFilter').value = '';
+    const infoEl = document.getElementById('fileTypeFilterInfo');
+    infoEl.classList.add('hidden');
+    infoEl.textContent = '';
+    if (_allBrowserFileEntries.length > 0) {
+        const restored = _allBrowserFileEntries;
+        _allBrowserFileEntries = [];
+        setBrowserFileEntries(restored);
+    }
+}
+
+function getRootFolderName(entries) {
+    if (!entries || entries.length === 0) return '';
+    const first = entries[0].relativePath;
+    const parts = first.split('/');
+    return parts.length > 1 ? parts[0] : '';
+}
+
+function clearBrowserFiles() {
+    browserFileEntries = [];
+    document.getElementById('browserFilesPreview').classList.add('hidden');
+    const folderInfoEl = document.getElementById('browserFolderInfo');
+    if (folderInfoEl) folderInfoEl.classList.add('hidden');
+    document.getElementById('folderTreeContainer').classList.add('hidden');
+    document.getElementById('browserFileInput').value = '';
+}
+
+// ═══ Background Upload Recovery ═══
+async function checkForActiveUploads() {
+    const savedId = localStorage.getItem('activeUploadId');
+    try {
+        const r = await fetch('/api/upload/active');
+        const active = await r.json();
+        if (active.length > 0) {
+            Logger.info('Active uploads found:', active.length, savedId ? '(reconnecting to ' + savedId + ')' : '');
+            const upload = savedId ? (active.find(a => a.uploadId === savedId) || active[0]) : active[0];
+            showActiveBanner(upload);
+            if (savedId && active.find(a => a.uploadId === savedId) && !uploading) {
+                reconnectActiveUpload();
+            }
+        } else {
+            localStorage.removeItem('activeUploadId');
+            hideActiveBanner();
+        }
+    } catch (e) {
+        Logger.debug('Active uploads check failed:', toErrorMessage(e));
+    }
+}
+
+function showActiveBanner(upload) {
+    if (bannerDismissed || uploading) return;
+    const pct = upload.totalBytes > 0 ? Math.round((upload.transferredBytes / upload.totalBytes) * 100) : 0;
+    const text = upload.target + ' — ' + upload.completedFiles + '/' + upload.totalFiles + ' files (' + pct + '%) — ' + fmtDuration(upload.elapsedMs);
+    document.getElementById('activeBannerText').textContent = 'Background upload: ' + text;
+    document.getElementById('activeUploadsBanner').classList.remove('hidden');
+    window._activeBannerUploadId = upload.uploadId;
+}
+
+function hideActiveBanner() {
+    document.getElementById('activeUploadsBanner').classList.add('hidden');
+}
+
+function dismissBanner() {
+    bannerDismissed = true;
+    hideActiveBanner();
+}
+
+async function reconnectActiveUpload() {
+    const uploadId = window._activeBannerUploadId || localStorage.getItem('activeUploadId');
+    if (!uploadId) { showToast('No active upload to reconnect to', 'info'); return; }
+
+    try {
+        const r = await fetch('/api/upload/status/' + uploadId);
+        const status = await r.json();
+        if (!r.ok || status.done) {
+            showToast('Upload already finished', 'info');
+            localStorage.removeItem('activeUploadId');
+            hideActiveBanner();
+            loadHistory();
+            return;
+        }
+
+        currentUploadId = uploadId;
+        localStorage.setItem('activeUploadId', uploadId);
+        setUploading(true);
+        resetProgress();
+        hideActiveBanner();
+        bannerDismissed = false;
+
+        totalFilesStarted = status.totalFiles;
+        filesCompleted = status.completedFiles;
+        filesFailed = status.failedFiles;
+        totalBytesExpected = status.totalBytes;
+        totalBytesTransferred = status.transferredBytes;
+        uploadStartMs = Date.now() - status.elapsedMs;
+        updateProgressUI();
+
+        connectSSE(uploadId);
+        showToast('Reconnected to background upload', 'success');
+    } catch (e) {
+        showToast('Failed to reconnect: ' + toErrorMessage(e), 'error');
+    }
+}
+
+// ═══ Notification Support ═══
+function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
+
+function sendNotification(title, body, isSuccess) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+            const n = new Notification(title, {
+                body: body,
+                icon: isSuccess ? undefined : undefined,
+                tag: 'upload-complete',
+            });
+            n.onclick = () => { window.focus(); n.close(); };
+            setTimeout(() => n.close(), 8000);
+        } catch(_) {}
+    }
+}
+
+function updatePageTitle(pct) {
+    if (uploading && pct >= 0) {
+        document.title = pct + '% — ' + PAGE_TITLE;
+    } else {
+        document.title = PAGE_TITLE;
+    }
+}
+
+// ═══ Visibility API — pause heavy UI when tab hidden ═══
+let tabHidden = false;
+document.addEventListener('visibilitychange', () => {
+    tabHidden = document.hidden;
+    if (!document.hidden && uploading) {
+        updateProgressUI();
+        scheduleFileListRender();
+    }
+    if (!document.hidden && !uploading) {
+        checkForActiveUploads();
+    }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !uploading) {
+        e.preventDefault();
+        initiateUpload();
+    } else if (e.key === 'Enter' && tag !== 'INPUT' && tag !== 'TEXTAREA' && !uploading && !document.getElementById('confirmModal').classList.contains('hidden')) {
+        handleConfirmOk();
+    } else if (e.key === 'Escape') {
+        const rtDropdown = document.getElementById('recentTargetsDropdown');
+        if (rtDropdown && !rtDropdown.classList.contains('hidden')) { rtDropdown.classList.add('hidden'); }
+        else if (!document.getElementById('shortcutsTooltip').classList.contains('hidden')) { document.getElementById('shortcutsTooltip').classList.add('hidden'); }
+        else if (!document.getElementById('confirmModal').classList.contains('hidden')) { closeConfirm(); }
+        else if (uploading) { cancelUpload(); }
+    }
+});
+
+
+// ═══ Advanced Settings (smooth transition) ═══
+function toggleAdvanced() {
+    const p = document.getElementById('advPanel');
+    const c = document.getElementById('advChevron');
+    if (p.classList.contains('hidden')) {
+        p.classList.remove('hidden');
+        p.style.maxHeight = '0px'; p.style.overflow = 'hidden';
+        requestAnimationFrame(() => { p.style.transition = 'max-height 0.35s ease'; p.style.maxHeight = p.scrollHeight + 'px'; });
+        setTimeout(() => { p.style.maxHeight = ''; p.style.overflow = ''; p.style.transition = ''; }, 350);
+        c.style.transform = 'rotate(180deg)';
+    } else {
+        p.style.maxHeight = p.scrollHeight + 'px'; p.style.overflow = 'hidden';
+        requestAnimationFrame(() => { p.style.transition = 'max-height 0.35s ease'; p.style.maxHeight = '0px'; });
+        setTimeout(() => { p.classList.add('hidden'); p.style.maxHeight = ''; p.style.overflow = ''; p.style.transition = ''; }, 350);
+        c.style.transform = '';
+    }
+}
+
+// ═══ History Collapse (smooth transition) ═══
+function toggleHistory() {
+    const p = document.getElementById('histPanel');
+    const c = document.getElementById('histChevron');
+    const toggle = document.getElementById('histToggle');
+    if (p.classList.contains('hidden')) {
+        p.classList.remove('hidden');
+        p.style.maxHeight = '0px'; p.style.overflow = 'hidden';
+        requestAnimationFrame(() => { p.style.transition = 'max-height 0.35s ease'; p.style.maxHeight = p.scrollHeight + 'px'; });
+        setTimeout(() => { p.style.maxHeight = ''; p.style.overflow = ''; p.style.transition = ''; }, 350);
+        c.style.transform = 'rotate(90deg)';
+        if (toggle) toggle.setAttribute('aria-expanded', 'true');
+        localStorage.setItem('historyCollapsed', '0');
+    } else {
+        p.style.maxHeight = p.scrollHeight + 'px'; p.style.overflow = 'hidden';
+        requestAnimationFrame(() => { p.style.transition = 'max-height 0.35s ease'; p.style.maxHeight = '0px'; });
+        setTimeout(() => { p.classList.add('hidden'); p.style.maxHeight = ''; p.style.overflow = ''; p.style.transition = ''; }, 350);
+        c.style.transform = '';
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        localStorage.setItem('historyCollapsed', '1');
+    }
+}
+
+function initHistoryCollapse(hasEntries) {
+    const saved = localStorage.getItem('historyCollapsed');
+    const shouldCollapse = saved === '1' || (saved === null && !hasEntries);
+    const p = document.getElementById('histPanel');
+    const c = document.getElementById('histChevron');
+    const toggle = document.getElementById('histToggle');
+    if (shouldCollapse) {
+        p.classList.add('hidden');
+        c.style.transform = '';
+    } else {
+        p.classList.remove('hidden');
+        c.style.transform = 'rotate(90deg)';
+    }
+    if (toggle) toggle.setAttribute('aria-expanded', !shouldCollapse);
+}
+
+// ═══ Draggable History Columns ═══
+const DEFAULT_COL_ORDER = ['timestamp','target','damPath','localPath','files','size','duration','status','actions'];
+let histColOrder = JSON.parse(localStorage.getItem('histColOrder') || 'null') || [...DEFAULT_COL_ORDER];
+
+function initDraggableColumns() {
+    const ths = document.querySelectorAll('#historyHead th[data-col]');
+    ths.forEach(th => {
+        if (th.dataset.col === 'actions') return;
+        if (th._dragInit) return;
+        th._dragInit = true;
+        th.draggable = true;
+        th.addEventListener('dragstart', onColDragStart);
+        th.addEventListener('dragover', onColDragOver);
+        th.addEventListener('dragleave', onColDragLeave);
+        th.addEventListener('drop', onColDrop);
+        th.addEventListener('dragend', onColDragEnd);
+    });
+}
+
+let dragSrcCol = null;
+function onColDragStart(e) { dragSrcCol = this; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', this.dataset.col); this.style.opacity = '0.5'; }
+function onColDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-over'); }
+function onColDragLeave() { this.classList.remove('drag-over'); }
+function onColDragEnd() { this.style.opacity = '1'; document.querySelectorAll('#historyHead th').forEach(th => th.classList.remove('drag-over')); }
+function onColDrop(e) {
+    e.preventDefault(); this.classList.remove('drag-over');
+    if (dragSrcCol === this) return;
+    const fromCol = dragSrcCol.dataset.col;
+    const toCol = this.dataset.col;
+    if (!fromCol || !toCol || toCol === 'actions') return;
+    const fromIdx = histColOrder.indexOf(fromCol);
+    const toIdx = histColOrder.indexOf(toCol);
+    if (fromIdx < 0 || toIdx < 0) return;
+    histColOrder.splice(fromIdx, 1);
+    histColOrder.splice(toIdx, 0, fromCol);
+    localStorage.setItem('histColOrder', JSON.stringify(histColOrder));
+    reorderHistoryColumns();
+}
+
+function reorderHistoryColumns() {
+    const table = document.querySelector('#histPanel table');
+    if (!table) return;
+    const rows = table.querySelectorAll('tr');
+    rows.forEach(row => {
+        const cells = Array.from(row.children);
+        const cellMap = {};
+        cells.forEach(cell => {
+            const col = cell.dataset ? (cell.dataset.col || cell.getAttribute('data-col')) : null;
+            if (col) cellMap[col] = cell;
+        });
+        if (Object.keys(cellMap).length === 0) return;
+        histColOrder.forEach(col => {
+            if (cellMap[col]) row.appendChild(cellMap[col]);
+        });
+    });
+}
+
+// ═══ Password Toggle ═══
+function togglePassword() {
+    const pw = document.getElementById('password');
+    const btn = document.getElementById('pwToggle');
+    pw.type = pw.type === 'password' ? 'text' : 'password';
+    btn.textContent = pw.type === 'password' ? 'Show' : 'Hide';
+}
+
+// ═══ Inline Validation ═══
+const REQUIRED_FIELDS = [
+    ['aemUrl', 'AEM Author URL is required'],
+    ['damPath', 'DAM folder path is required'],
+    ['username', 'Username is required'],
+    ['password', 'Password is required'],
+];
+
+REQUIRED_FIELDS.forEach(([id]) => {
+    const el = document.getElementById(id);
+    if (el) {
+        el.addEventListener('input', () => clearFieldError(id));
+        el.addEventListener('focus', () => clearFieldError(id));
+    }
+});
+
+function setFieldError(id, msg) {
+    const input = document.getElementById(id);
+    const errEl = document.getElementById(id + 'Err');
+    if (input) {
+        input.classList.add('field-error');
+        input.classList.remove('shake');
+        void input.offsetWidth;
+        input.classList.add('shake');
+    }
+    if (errEl) {
+        errEl.innerHTML = `<span class="inline-flex items-center gap-1"><svg class="h-3.5 w-3.5 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>${esc(msg)}</span>`;
+        errEl.classList.remove('hidden');
+    }
+}
+function clearFieldError(id) {
+    const input = document.getElementById(id);
+    const errEl = document.getElementById(id + 'Err');
+    if (input) { input.classList.remove('field-error'); input.classList.remove('shake'); }
+    if (errEl) errEl.classList.add('hidden');
+}
+function clearFieldErrors() {
+    REQUIRED_FIELDS.forEach(([id]) => clearFieldError(id));
+}
+
+function validateForm() {
+    clearFieldErrors();
+    let ok = true;
+    let firstBadId = null;
+    REQUIRED_FIELDS.forEach(([id, msg]) => {
+        const el = document.getElementById(id);
+        if (el && !el.value.trim()) {
+            setFieldError(id, msg);
+            if (!firstBadId) firstBadId = id;
+            ok = false;
+        }
+    });
+    const aemUrlVal = (document.getElementById('aemUrl')?.value || '').trim();
+    if (aemUrlVal && !/^https?:\/\/.+/i.test(aemUrlVal)) {
+        setFieldError('aemUrl', 'URL must start with http:// or https://');
+        if (!firstBadId) firstBadId = 'aemUrl';
+        ok = false;
+    }
+    const damPathVal = (document.getElementById('damPath')?.value || '').trim();
+    if (damPathVal && !damPathVal.startsWith('content/dam')) {
+        setFieldError('damPath', 'DAM path should start with content/dam');
+        if (!firstBadId) firstBadId = 'damPath';
+        ok = false;
+    }
+    if (!browserFileEntries || browserFileEntries.length === 0) {
+        showToast('Please select files or a folder to upload', 'error');
+        ok = false;
+    }
+    if (!ok) {
+        const missing = REQUIRED_FIELDS.filter(([id]) => { const el = document.getElementById(id); return el && !el.value.trim(); }).length;
+        if (missing > 0) showToast(`Please fill in ${missing} required field${missing > 1 ? 's' : ''} marked in red`, 'error');
+        if (firstBadId) {
+            const el = document.getElementById(firstBadId);
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => el.focus(), 400);
+        }
+    }
+    return ok;
+}
+
+// ═══ Confirm + Upload ═══
+async function initiateUpload() {
+    if (uploading) return;
+    if (!validateForm()) return;
+    if (!browserFileEntries || browserFileEntries.length === 0) {
+        showToast('No files selected. Drag and drop a folder or use the file picker first.', 'error');
+        document.getElementById('dropZone')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+    Logger.info('Upload initiated');
+
+    const aemUrlEl = document.getElementById('aemUrl');
+    const rawAem = aemUrlEl ? aemUrlEl.value.trim() : '';
+    const baseUrl = normalizeAemBaseUrl(rawAem);
+    if (aemUrlEl && baseUrl !== rawAem) aemUrlEl.value = baseUrl;
+    const damPath = val('damPath');
+    const username = val('username'), password = val('password');
+    const isDryRun = document.getElementById('dryRun').checked;
+
+    const totalSize = browserFileEntries.reduce((s, e) => s + e.file.size, 0);
+    const countStr = browserFileEntries.length.toLocaleString() + ' files';
+    const rootFolder = getRootFolderName(browserFileEntries);
+    const sizeStr = ' (' + fmtBytes(totalSize) + ')';
+
+    if (isDryRun) {
+        showToast('Dry run: ' + countStr + sizeStr + ' would be uploaded. No data was sent.', 'info');
+        return;
+    }
+
+    const folderNote = rootFolder ? '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> (full directory structure will be preserved)</p>' : '';
+    const largeTip = browserFileEntries.length > 5000
+        ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + ') &mdash; AEM concurrency auto-capped to 2 for stability.</p>'
+        : '';
+    const overwriteChecked = document.getElementById('overwriteExisting').checked;
+    const overwriteNote = !overwriteChecked
+        ? '<p class="mt-2 text-xs text-amber-600 bg-amber-50 rounded p-2">&#9888; Overwrite is disabled. Existing assets in AEM DAM will still be replaced (skip-existing is not yet supported). Uncheck is a reminder only.</p>'
+        : '';
+    let maxUploadFiles = parseInt(val('maxUploadFiles')) || 50000;
+    if (browserFileEntries.length > maxUploadFiles) {
+        maxUploadFiles = Math.max(browserFileEntries.length, maxUploadFiles);
+        document.getElementById('maxUploadFiles').value = maxUploadFiles;
+        showToast('Adjusted Max Upload Files to ' + maxUploadFiles.toLocaleString() + ' to match your selection.', 'info');
+    }
+    document.getElementById('confirmBody').innerHTML =
+        '<p>You are about to upload <strong>' + countStr + sizeStr + '</strong> from your browser to:</p>' +
+        '<p class="mt-2 font-mono text-xs bg-gray-50 rounded p-2 break-all">' + esc(baseUrl) + '/' + esc(damPath) + '</p>' +
+        folderNote + largeTip + overwriteNote +
+        '<p class="mt-2 text-xs text-gray-400">Files will be transferred: Browser &rarr; Server &rarr; AEM</p>';
+    pendingUploadBody = { baseUrl, damPath, username, password,
+        maxConcurrent: parseInt(val('maxConcurrent')) || 2,
+        maxUploadFiles,
+        httpRetryCount: parseInt(val('httpRetryCount')) || 5,
+        httpRetryDelay: (parseInt(val('httpRetryDelay')) || 8) * 1000,
+        httpRequestTimeout: (parseInt(val('httpRequestTimeout')) || 60) * 1000,
+    };
+    const modal = document.getElementById('confirmModal');
+    modal.classList.remove('hidden');
+    trapFocusInModal(modal);
+}
+
+let _modalFocusTrap = null;
+let _modalPreviousFocus = null;
+
+function trapFocusInModal(modal) {
+    _modalPreviousFocus = document.activeElement;
+    const focusable = modal.querySelectorAll('button, sp-button, [tabindex]:not([tabindex="-1"]), input, select, textarea, a[href]');
+    if (focusable.length) focusable[0].focus();
+    if (_modalFocusTrap) modal.removeEventListener('keydown', _modalFocusTrap);
+    _modalFocusTrap = (e) => {
+        if (e.key !== 'Tab') return;
+        const nodes = modal.querySelectorAll('button, sp-button, [tabindex]:not([tabindex="-1"]), input, select, textarea, a[href]');
+        if (!nodes.length) return;
+        const first = nodes[0], last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    modal.addEventListener('keydown', _modalFocusTrap);
+}
+
+function closeConfirm() {
+    const modal = document.getElementById('confirmModal');
+    modal.classList.add('hidden');
+    if (_modalFocusTrap) { modal.removeEventListener('keydown', _modalFocusTrap); _modalFocusTrap = null; }
+    if (_modalPreviousFocus) { try { _modalPreviousFocus.focus(); } catch (_) {} _modalPreviousFocus = null; }
+    pendingUploadBody = null;
+    document.getElementById('confirmHeadline').textContent = 'Confirm Upload';
+    document.getElementById('confirmOkBtn').textContent = 'Upload';
+    window._customConfirmHandler = null;
+}
+
+async function confirmUpload() {
+    document.getElementById('confirmModal').classList.add('hidden');
+    if (!pendingUploadBody) return;
+
+    setUploading(true);
+    resetProgress();
+
+    try {
+        Logger.info('Starting browser upload, files:', browserFileEntries?.length || 0);
+        await doBrowserUpload(pendingUploadBody);
+    } catch (e) {
+        if (e.message === 'TRANSFER_CANCELLED') {
+            chunkSessionId = null;
+            chunkTransferAbort = false;
+            activeChunkXhrs.clear();
+            if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+            setUploading(false);
+            pendingUploadBody = null;
+            return;
+        }
+        Logger.error('Upload failed:', toErrorMessage(e));
+        if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+        showSummary(false, 0, 0, 0, [toErrorMessage(e)]);
+        setUploading(false);
+    }
+    pendingUploadBody = null;
+}
+
+// ═══ Browser Upload Flow (Chunked with Progress) ═══
+const CHUNK_SIZE = 1000; // files per chunk
+const MAX_CHUNK_RETRIES = 2;
+
+async function doBrowserUpload(config) {
+    if (!browserFileEntries || browserFileEntries.length === 0) {
+        throw new Error('No files selected');
+    }
+
+    chunkTransferAbort = false;
+    chunkSessionId = null;
+    activeChunkXhrs.clear();
+
+    const fileCount = browserFileEntries.length;
+    const totalSize = browserFileEntries.reduce((s, e) => s + e.file.size, 0);
+
+    const allRelativePaths = browserFileEntries.map(entry => entry.relativePath || entry.file.name);
+
+    Logger.info('Starting chunked upload:', fileCount, 'files (' + fmtBytes(totalSize) + ')');
+    Logger.debug('First 5 relative paths:', allRelativePaths.slice(0, 5));
+
+    // Show transfer progress panel
+    showTransferPanel(fileCount, totalSize);
+
+    // ─── Phase 1: Init session ───
+    updateTransferStatus('Initializing...');
+    updateTransferDetail('Creating upload session on server...');
+
+    const initRes = await fetchJsonSafe('/api/upload/browser/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            baseUrl: normalizeAemBaseUrl(config.baseUrl),
+            damPath: config.damPath,
+            username: config.username,
+            password: config.password,
+            maxConcurrent: config.maxConcurrent,
+            maxUploadFiles: config.maxUploadFiles,
+            httpRetryCount: config.httpRetryCount,
+            httpRetryDelay: config.httpRetryDelay,
+            httpRequestTimeout: config.httpRequestTimeout,
+        }),
+    });
+    if (!initRes.ok) {
+        hideTransferPanel();
+        throw new Error(toErrorMessage(initRes.data.error || 'Failed to create upload session'));
+    }
+    const { sessionId } = initRes.data;
+    chunkSessionId = sessionId;
+    Logger.info('Upload session created:', sessionId);
+
+    // ─── Phase 2: Send chunks with XHR (upload progress) ───
+    const totalChunks = Math.ceil(fileCount / CHUNK_SIZE);
+    let filesSent = 0;
+    let bytesSent = 0;
+    const transferStartMs = Date.now();
+
+    updateTransferStatus('Sending...');
+    const pauseBtn = document.getElementById('transferPauseBtn');
+    const resumeBtn = document.getElementById('transferResumeBtn');
+    if (pauseBtn) pauseBtn.style.display = '';
+    if (resumeBtn) resumeBtn.style.display = 'none';
+    showToast('Sending ' + fileCount + ' file(s) (' + fmtBytes(totalSize) + ') in ' + totalChunks + ' chunk(s)...', 'info');
+
+    // Build all chunk descriptors upfront
+    const chunks = [];
+    for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+        const start = chunkIdx * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, fileCount);
+        chunks.push({
+            idx: chunkIdx,
+            entries: browserFileEntries.slice(start, end),
+            paths: allRelativePaths.slice(start, end),
+            bytes: browserFileEntries.slice(start, end).reduce((s, e) => s + e.file.size, 0),
+        });
+    }
+
+    // Send chunks with limited concurrency (5 in parallel)
+    const PARALLEL = 5;
+    let chunksCompleted = 0;
+    let chunkError = null;
+    const inflightBytes = {};  // track partial progress per chunk for accurate totals
+
+    async function sendOneChunk(chunk) {
+        const formData = new FormData();
+        formData.append('chunkIndex', String(chunk.idx));
+        formData.append('totalChunks', String(totalChunks));
+        for (let i = 0; i < chunk.entries.length; i++) {
+            formData.append('files', chunk.entries[i].file, chunk.entries[i].file.name);
+        }
+        formData.append('_relativePaths', JSON.stringify(chunk.paths));
+
+        inflightBytes[chunk.idx] = 0;
+
+        for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+            if (chunkTransferAbort) throw new Error('TRANSFER_CANCELLED');
+            if (attempt > 0) {
+                Logger.warn('Retrying chunk ' + (chunk.idx + 1) + ' (attempt ' + (attempt + 1) + ')');
+                inflightBytes[chunk.idx] = 0;
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+            try {
+                await sendChunkWithProgress(sessionId, formData, (chunkLoaded) => {
+                    inflightBytes[chunk.idx] = chunkLoaded;
+                    const allInflight = Object.values(inflightBytes).reduce((a, b) => a + b, 0);
+                    const totalLoaded = bytesSent + allInflight;
+                    const pct = totalSize > 0 ? Math.min(Math.round((totalLoaded / totalSize) * 100), 99) : 0;
+                    updateTransferBar(pct);
+                    updateTransferBytes(totalLoaded, totalSize);
+                    const elapsed = (Date.now() - transferStartMs) / 1000;
+                    if (elapsed > 0.5) {
+                        const speed = totalLoaded / elapsed;
+                        const remaining = totalSize - totalLoaded;
+                        const etaMs = speed > 0 ? Math.ceil((remaining / speed) * 1000) : 0;
+                        updateTransferSpeedEta(fmtBytes(speed) + '/s', etaMs > 0 ? fmtDuration(etaMs) : '--');
+                    }
+                });
+                delete inflightBytes[chunk.idx];
+                bytesSent += chunk.bytes;
+                filesSent += chunk.entries.length;
+                chunksCompleted++;
+                updateTransferFiles(filesSent, fileCount);
+                updateTransferChunk(chunksCompleted, totalChunks);
+                updateTransferDetail('Sent ' + chunksCompleted + ' of ' + totalChunks + ' chunks (' + filesSent.toLocaleString() + ' files)...');
+                return;
+            } catch (e) {
+                delete inflightBytes[chunk.idx];
+                if (attempt === MAX_CHUNK_RETRIES) throw e;
+                Logger.error('Chunk ' + (chunk.idx + 1) + ' failed:', toErrorMessage(e));
+            }
+        }
+    }
+
+    // Process chunks with concurrency pool (workers never throw — errors collected via chunkError)
+    let cursor = 0;
+    async function worker() {
+        while (cursor < chunks.length && !chunkError && !chunkTransferAbort) {
+            while (_transferPaused && _transferPausedPromise) {
+                await _transferPausedPromise;
+            }
+            if (cursor >= chunks.length || chunkError || chunkTransferAbort) break;
+            const chunk = chunks[cursor++];
+            try {
+                await sendOneChunk(chunk);
+            } catch (e) {
+                if (!chunkError) chunkError = e;
+                return;
+            }
+        }
+    }
+    const workers = [];
+    for (let w = 0; w < Math.min(PARALLEL, totalChunks); w++) workers.push(worker());
+    await Promise.all(workers);
+    if (chunkTransferAbort) {
+        hideTransferPanel();
+        throw new Error('TRANSFER_CANCELLED');
+    }
+    if (chunkError) {
+        hideTransferPanel();
+        const ce = toErrorMessage(chunkError);
+        if (/cancel/i.test(ce)) throw new Error('TRANSFER_CANCELLED');
+        throw new Error('Failed to send chunks: ' + ce);
+    }
+
+    // ─── Phase 3: Finalize — start AEM upload ───
+    updateTransferBar(100);
+    updateTransferStatus('Finalizing...');
+    updateTransferDetail('All files sent. Starting AEM upload...');
+    Logger.info('All chunks sent, finalizing upload session:', sessionId);
+
+    if (chunkTransferAbort) {
+        hideTransferPanel();
+        throw new Error('TRANSFER_CANCELLED');
+    }
+
+    const finalRes = await fetchJsonSafe('/api/upload/browser/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+        signal: AbortSignal.timeout(30 * 60 * 1000),
+    });
+    if (!finalRes.ok) {
+        hideTransferPanel();
+        throw new Error(toErrorMessage(finalRes.data.error || 'Failed to finalize upload'));
+    }
+
+    const { uploadId } = finalRes.data;
+    chunkSessionId = null;
+    currentUploadId = uploadId;
+    Logger.info('Upload session finalized:', uploadId);
+    localStorage.setItem('activeUploadId', uploadId);
+    broadcastTabEvent('upload_started', { target: config.baseUrl || config.damPath });
+
+    // Defer clearing browserFileEntries until upload completes (success or fail)
+    // so Retry works when AEM upload fails
+
+    // Transition: transfer done → AEM upload in progress
+    hideTransferPanel();
+    showToast('Files transferred to server. AEM upload starting...', 'success');
+
+    connectSSE(uploadId);
+}
+
+// Send a single chunk via XHR (supports upload.onprogress for byte-level tracking)
+function sendChunkWithProgress(sessionId, formData, onProgress) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        activeChunkXhrs.add(xhr);
+        xhr.open('POST', '/api/upload/browser/chunk/' + sessionId, true);
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && onProgress) {
+                onProgress(e.loaded);
+            }
+        };
+
+        xhr.onload = () => {
+            activeChunkXhrs.delete(xhr);
+            if (xhr.status >= 200 && xhr.status < 300) {
+                let data;
+                try { data = JSON.parse(xhr.responseText); } catch (_) {}
+                resolve(data);
+            } else {
+                let errMsg = 'Server error (HTTP ' + xhr.status + ')';
+                try {
+                    const d = JSON.parse(xhr.responseText);
+                    if (d.error != null) errMsg = toErrorMessage(d.error);
+                } catch (_) {
+                    if (xhr.responseText) errMsg = xhr.responseText.slice(0, 200);
+                }
+                reject(new Error(errMsg));
+            }
+        };
+
+        xhr.onerror = () => {
+            activeChunkXhrs.delete(xhr);
+            reject(new Error('Network error while sending files to server'));
+        };
+        xhr.onabort = () => {
+            activeChunkXhrs.delete(xhr);
+            reject(new Error('Transfer cancelled'));
+        };
+        xhr.ontimeout = () => {
+            activeChunkXhrs.delete(xhr);
+            reject(new Error('Chunk upload timed out — try again or use smaller batches'));
+        };
+        xhr.timeout = 15 * 60 * 1000; // 15 min per chunk (large chunks on slow networks)
+
+        xhr.send(formData);
+    });
+}
+
+// Safe fetch wrapper that handles non-JSON responses gracefully
+async function fetchJsonSafe(url, options) {
+    let r;
+    try {
+        r = await fetch(url, options);
+    } catch (e) {
+        return { ok: false, status: 0, data: { error: 'Network error: ' + toErrorMessage(e) } };
+    }
+    let data;
+    try {
+        const text = await r.text();
+        try { data = JSON.parse(text); } catch (_) {
+            data = { error: text || 'Server returned non-JSON response (HTTP ' + r.status + ')' };
+        }
+    } catch (e) {
+        data = { error: 'Failed to read response (HTTP ' + r.status + '): ' + toErrorMessage(e) };
+    }
+    return { ok: r.ok, status: r.status, data };
+}
+
+// ═══ Transfer Progress UI ═══
+let _transferPaused = false;
+let _transferPausedPromise = null;
+let _transferPausedResolve = null;
+
+function pauseTransfer() {
+    _transferPaused = true;
+    _transferPausedPromise = new Promise(r => { _transferPausedResolve = r; });
+    const pauseBtn = document.getElementById('transferPauseBtn');
+    const resumeBtn = document.getElementById('transferResumeBtn');
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    if (resumeBtn) resumeBtn.style.display = '';
+    updateTransferStatus('Paused');
+}
+
+function resumeTransfer() {
+    _transferPaused = false;
+    if (_transferPausedResolve) {
+        _transferPausedResolve();
+        _transferPausedResolve = null;
+        _transferPausedPromise = null;
+    }
+    const pauseBtn = document.getElementById('transferPauseBtn');
+    const resumeBtn = document.getElementById('transferResumeBtn');
+    if (pauseBtn) pauseBtn.style.display = '';
+    if (resumeBtn) resumeBtn.style.display = 'none';
+    updateTransferStatus('Sending...');
+}
+
+function showTransferPanel(totalFiles, totalBytes) {
+    _transferPaused = false;
+    _transferPausedPromise = null;
+    _transferPausedResolve = null;
+    const panel = document.getElementById('transferPanel');
+    panel.classList.remove('hidden');
+    document.getElementById('transferFilesSent').textContent = '0 / ' + totalFiles.toLocaleString();
+    document.getElementById('transferBytesSent').textContent = '0 B / ' + fmtBytes(totalBytes);
+    document.getElementById('transferChunkInfo').textContent = '0 / 0';
+    document.getElementById('transferStatus').textContent = 'Preparing...';
+    document.getElementById('transferBar').style.width = '0%';
+    document.getElementById('transferPct').textContent = '0%';
+    document.getElementById('transferDetail').textContent = 'Preparing to send files to server...';
+    document.getElementById('transferSpeed').textContent = '-- MB/s';
+    document.getElementById('transferEta').textContent = 'ETA --';
+    document.getElementById('transferStepBadge').textContent = '1';
+    document.getElementById('transferTitle').textContent = 'Sending Files to Server';
+    const pauseBtn = document.getElementById('transferPauseBtn');
+    const resumeBtn = document.getElementById('transferResumeBtn');
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    if (resumeBtn) resumeBtn.style.display = 'none';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function hideTransferPanel() {
+    document.getElementById('transferPanel').classList.add('hidden');
+    const pauseBtn = document.getElementById('transferPauseBtn');
+    const resumeBtn = document.getElementById('transferResumeBtn');
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    if (resumeBtn) resumeBtn.style.display = 'none';
+}
+
+function updateTransferBar(pct) {
+    document.getElementById('transferBar').style.width = pct + '%';
+    document.getElementById('transferPct').textContent = pct + '%';
+}
+
+function updateTransferFiles(sent, total) {
+    document.getElementById('transferFilesSent').textContent = sent.toLocaleString() + ' / ' + total.toLocaleString();
+}
+
+function updateTransferBytes(sent, total) {
+    document.getElementById('transferBytesSent').textContent = fmtBytes(sent) + ' / ' + fmtBytes(total);
+}
+
+function updateTransferChunk(current, total) {
+    document.getElementById('transferChunkInfo').textContent = current + ' / ' + total;
+}
+
+function updateTransferStatus(text) {
+    document.getElementById('transferStatus').textContent = text;
+}
+
+function updateTransferDetail(text) {
+    document.getElementById('transferDetail').textContent = text;
+}
+
+function updateTransferSpeedEta(speed, eta) {
+    document.getElementById('transferSpeed').textContent = speed;
+    document.getElementById('transferEta').textContent = 'ETA ' + eta;
+}
+
+function updateTransferStepBadge(step, title) {
+    document.getElementById('transferStepBadge').textContent = String(step);
+    document.getElementById('transferTitle').textContent = title;
+}
+
+// ═══ Cancel ═══
+async function cancelUpload() {
+    if (chunkSessionId && !currentUploadId) {
+        chunkTransferAbort = true;
+        for (const xhr of activeChunkXhrs) {
+            try { xhr.abort(); } catch (_) {}
+        }
+        activeChunkXhrs.clear();
+        const sid = chunkSessionId;
+        chunkSessionId = null;
+        try {
+            await fetch('/api/upload/browser/cancel/' + sid, { method: 'POST' });
+        } catch (e) {
+            Logger.error('Chunk session cancel failed:', toErrorMessage(e));
+        }
+        hideTransferPanel();
+        setUploading(false);
+        showToast('Transfer cancelled', 'info');
+        return;
+    }
+    if (!currentUploadId) return;
+    try {
+        Logger.info('Cancel requested for upload:', currentUploadId);
+        const res = await fetch('/api/upload/cancel/' + currentUploadId, { method: 'POST' });
+        if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            showToast(toErrorMessage(j.error || 'Cancel failed'), 'error');
+            return;
+        }
+        showToast('Upload cancelled', 'info');
+        const id = currentUploadId;
+        const deadline = Date.now() + 45000;
+        while (Date.now() < deadline) {
+            if (!uploading) return;
+            try {
+                const st = await fetch('/api/upload/status/' + id);
+                if (st.ok) {
+                    const j = await st.json();
+                    if (j.done) {
+                        if (uploading) setUploading(false);
+                        return;
+                    }
+                } else break;
+            } catch (_) { /* ignore */ }
+            await new Promise(r => setTimeout(r, 350));
+        }
+        if (uploading) setUploading(false);
+        if (activeUploadEventSource) {
+            try { activeUploadEventSource.close(); } catch (_) {}
+            activeUploadEventSource = null;
+        }
+    } catch (e) {
+        Logger.error('Cancel request failed:', toErrorMessage(e));
+    }
+}
+
+// ═══ Upload State ═══
+function setUploading(state) {
+    uploading = state;
+    document.getElementById('uploadBtn').disabled = state;
+    document.getElementById('uploadIcon').classList.toggle('hidden', state);
+    document.getElementById('uploadSpinner').classList.toggle('hidden', !state);
+    document.getElementById('uploadBtnText').textContent = state ? 'Uploading...' : 'Start Upload';
+    document.getElementById('cancelBtn').style.display = state ? '' : 'none';
+    document.getElementById('cancelBtnInProgress').style.display = state ? '' : 'none';
+    showMiniProgress(state);
+
+    // Disable/enable all input controls during upload to prevent accidental changes
+    const controlIds = ['aemUrl', 'damPath', 'username', 'password',
+        'maxConcurrent', 'maxUploadFiles', 'httpRetryCount', 'httpRetryDelay',
+        'httpRequestTimeout', 'dryRun'];
+    controlIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = state;
+    });
+    // Disable drop zone and file pickers
+    const dropZone = document.getElementById('dropZone');
+    if (dropZone) { dropZone.style.pointerEvents = state ? 'none' : ''; dropZone.style.opacity = state ? '0.5' : ''; }
+}
+
+// ═══ Mini Progress Widget ═══
+function showMiniProgress(show) {
+    const el = document.getElementById('miniProgress');
+    if (show) {
+        el.classList.remove('hidden');
+        requestAnimationFrame(() => { el.classList.remove('opacity-0', 'translate-y-4'); el.classList.add('opacity-100', 'translate-y-0'); });
+    } else {
+        el.classList.add('opacity-0', 'translate-y-4');
+        el.classList.remove('opacity-100', 'translate-y-0');
+        setTimeout(() => el.classList.add('hidden'), 300);
+    }
+}
+
+function updateMiniProgress(pct, uploaded, total, speedText) {
+    const circumference = 2 * Math.PI * 18;
+    const offset = circumference - (pct / 100) * circumference;
+    document.getElementById('miniRing').style.strokeDashoffset = offset;
+    document.getElementById('miniPct').textContent = pct + '%';
+    document.getElementById('miniFiles').textContent = uploaded + ' / ' + total + ' files';
+    document.getElementById('miniSpeed').textContent = speedText || '-- MB/s';
+}
+
+// ═══ Progress ═══
+function resetProgress() {
+    resetFileMap(); filesCompleted = 0; filesFailed = 0; totalFilesStarted = 0;
+    totalBytesExpected = 0; totalBytesTransferred = 0; uploadDoneReceived = false;
+    speedSamples = []; ewmaSpeed = -1; uploadStartMs = Date.now();
+    fileListDirty = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    if (_progressThrottleTimer) { clearTimeout(_progressThrottleTimer); _progressThrottleTimer = null; }
+    if (_fileListThrottleTimer) { clearTimeout(_fileListThrottleTimer); _fileListThrottleTimer = null; }
+
+    document.getElementById('progressPanel').classList.add('hidden');
+    const progBar = document.getElementById('progressBar');
+    progBar.style.width = '0%';
+    progBar.classList.remove('bg-green-500');
+    progBar.classList.add('bg-adobe-blue');
+    document.getElementById('progressLabel').textContent = 'Upload Progress';
+    document.getElementById('progressPct').textContent = '0%';
+    document.getElementById('statUploaded').textContent = '0';
+    document.getElementById('statRemaining').textContent = '0';
+    document.getElementById('statFailed').textContent = '0';
+    document.getElementById('statBytes').textContent = '0 B';
+    document.getElementById('uploadSpeed').classList.add('hidden');
+    document.getElementById('uploadEta').classList.add('hidden');
+    document.getElementById('fileList').innerHTML = '';
+    document.getElementById('summaryBar').classList.add('hidden');
+    document.getElementById('summaryBar').innerHTML = '';
+    document.getElementById('elapsedTime').textContent = '0s';
+    updateMiniProgress(0, 0, 0, '-- MB/s');
+
+    if (elapsedInterval) clearInterval(elapsedInterval);
+    elapsedInterval = setInterval(() => {
+        const s = Math.floor((Date.now() - uploadStartMs) / 1000);
+        document.getElementById('elapsedTime').textContent = s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`;
+    }, 1000);
+}
+
+function updateProgressUI() {
+    const filesSucceeded = filesCompleted - filesFailed;
+    const remaining = totalFilesStarted - filesCompleted;
+    const filePct = totalFilesStarted > 0 ? Math.round((filesCompleted / totalFilesStarted) * 100) : 0;
+    let bytePct = 0;
+    if (totalBytesExpected > 0 && totalBytesTransferred >= 0) {
+        bytePct = Math.min(99, Math.round((totalBytesTransferred / totalBytesExpected) * 100));
+    }
+    // Batched SSE (filebatch) can arrive ~150ms after fileprogress, so file counts stay 0
+    // while bytes already move — use max(file, byte) so the bar reflects real transfer early.
+    // Cap at 99% until the server sends the 'done' event.
+    let pct = 0;
+    if (uploadDoneReceived) {
+        pct = 100;
+    } else {
+        pct = Math.min(99, Math.max(filePct, bytePct));
+    }
+
+    updatePageTitle(pct);
+
+    // Skip heavy DOM updates when tab is hidden (data still tracked in JS)
+    if (tabHidden) return;
+
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressLabel').textContent = pct + '% — Upload Progress';
+    document.getElementById('progressPct').textContent = pct + '%';
+
+    // Stat cards
+    document.getElementById('statUploaded').textContent = filesSucceeded;
+    document.getElementById('statRemaining').textContent = remaining >= 0 ? remaining : 0;
+    document.getElementById('statFailed').textContent = filesFailed;
+    document.getElementById('statBytes').textContent = fmtBytes(totalBytesTransferred) + ' / ' + fmtBytes(totalBytesExpected);
+
+    // Speed + ETA (EWMA smoothing with 3s warmup)
+    let speedStr = '';
+    const now = Date.now();
+    const elapsed = (now - uploadStartMs) / 1000;
+    speedSamples.push({ t: now, b: totalBytesTransferred });
+    if (speedSamples.length > 20) speedSamples.shift();
+    if (speedSamples.length >= 2) {
+        const oldest = speedSamples[0];
+        const dt = (now - oldest.t) / 1000;
+        const db = totalBytesTransferred - oldest.b;
+        if (dt > 0 && db >= 0) {
+            const rawSpeed = db / dt;
+            const alpha = 0.3;
+            ewmaSpeed = ewmaSpeed < 0 ? rawSpeed : alpha * rawSpeed + (1 - alpha) * ewmaSpeed;
+            speedStr = fmtBytes(ewmaSpeed) + '/s';
+            const speedEl = document.getElementById('uploadSpeed');
+            speedEl.textContent = speedStr;
+            speedEl.classList.remove('hidden');
+            const etaEl = document.getElementById('uploadEta');
+            if (elapsed < 3) {
+                etaEl.textContent = 'Calculating...';
+                etaEl.classList.remove('hidden');
+            } else if (ewmaSpeed > 0 && totalBytesExpected > totalBytesTransferred) {
+                const remain = (totalBytesExpected - totalBytesTransferred) / ewmaSpeed;
+                etaEl.textContent = remain > 3600 ? 'ETA > 1h' : 'ETA ' + fmtDuration(remain * 1000);
+                etaEl.classList.remove('hidden');
+            }
+        }
+    }
+
+    // Update floating mini-widget
+    updateMiniProgress(pct, filesSucceeded, totalFilesStarted, speedStr);
+}
+
+// Batched DOM rendering
+function scheduleFileListRender() {
+    if (fileListDirty) return;
+    fileListDirty = true;
+    rafId = requestAnimationFrame(flushFileList);
+}
+
+function flushFileList() {
+    fileListDirty = false;
+    const container = document.getElementById('fileList');
+    const total = Math.max(fileMapSize, totalFilesStarted);
+    if (total === 0) {
+        container.innerHTML = '<div class="flex items-center justify-center gap-2 py-6 text-gray-400 text-xs"><span class="pulse-dot">&#9679;</span> Waiting for files...</div>';
+        return;
+    }
+
+    const MAX_VISIBLE = 50;
+    let html = '';
+
+    if (total > MAX_VISIBLE) {
+        const inFlight = Math.max(0, total - filesCompleted - filesFailed);
+        html += `<div class="flex items-center gap-3 py-2 px-3 mb-2 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-200">
+            <span class="font-semibold">${total.toLocaleString()} files total</span>
+            <span class="text-green-600">${filesCompleted.toLocaleString()} done</span>
+            ${filesFailed > 0 ? `<span class="text-red-600">${filesFailed} failed</span>` : ''}
+            ${inFlight > 0 ? `<span class="text-blue-600">${inFlight.toLocaleString()} in progress</span>` : ''}
+            <span class="text-gray-400 ml-auto">Showing last ${MAX_VISIBLE}</span>
+        </div>`;
+        const tail = recentFileKeys.slice(-MAX_VISIBLE);
+        for (const key of tail) {
+            const info = fileMap[key];
+            if (info) html += renderFileRow(key, info);
+        }
+    } else {
+        for (const key of recentFileKeys) {
+            const info = fileMap[key];
+            if (info) html += renderFileRow(key, info);
+        }
+    }
+    const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+    container.innerHTML = html;
+    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+}
+
+function renderFileRow(fileName, info) {
+    let icon = '', cls = '';
+    if (info.status === 'uploading') {
+        icon = `<svg class="spinner h-4 w-4 text-adobe-blue shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>`;
+        cls = 'text-gray-700';
+    } else if (info.status === 'done') {
+        icon = `<svg class="h-4 w-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>`;
+        cls = 'text-gray-500';
+    } else if (info.status === 'error') {
+        icon = `<svg class="h-4 w-4 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>`;
+        cls = 'text-red-600';
+    }
+    const pct = info.status === 'uploading' && info.transferred && info.size ? ` <span class="text-xs text-gray-400">${Math.round(info.transferred/info.size*100)}%</span>` : '';
+    return `<div class="flex items-center gap-2 py-1 px-2 rounded ${cls}">${icon}<span class="truncate flex-1 font-mono text-xs">${esc(fileName)}</span><span class="text-xs text-gray-400 shrink-0">${fmtBytes(info.size)}</span>${pct}</div>`;
+}
+
+// ═══ SSE ═══
+function connectSSE(uploadId) {
+    Logger.info('SSE connecting:', uploadId);
+
+    // Reset counters before replay — the SSE stream replays all buffered
+    // events from the start, so counters rebuild correctly from zero.
+    totalFilesStarted = 0;
+    filesCompleted = 0;
+    filesFailed = 0;
+    totalBytesExpected = 0;
+    totalBytesTransferred = 0;
+    uploadDoneReceived = false;
+    resetFileMap();
+    speedSamples = [];
+    uploadStartMs = uploadStartMs || Date.now();
+
+    // Show the AEM upload progress panel now that the server-side upload is starting
+    document.getElementById('progressPanel').classList.remove('hidden');
+    document.getElementById('progressPanel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    const es = new EventSource('/api/upload/stream/' + uploadId);
+    activeUploadEventSource = es;
+    let reconnects = 0;
+    let _doneReceived = false;
+
+    es.addEventListener('filestart', (e) => {
+        const d = JSON.parse(e.data);
+        totalFilesStarted++;
+        if (d.totalBytes != null) totalBytesExpected = d.totalBytes;
+        trackFileEntry(d.fileName);
+        fileMap[d.fileName] = { status: 'uploading', size: d.fileSize || 0, transferred: 0 };
+        throttledProgressUI();
+    });
+
+    es.addEventListener('fileprogress', (e) => {
+        const d = JSON.parse(e.data);
+        if (fileMap[d.fileName]) { fileMap[d.fileName].transferred = d.transferred; }
+        if (d.transferredBytes != null) totalBytesTransferred = d.transferredBytes;
+        if (d.totalBytes != null) totalBytesExpected = d.totalBytes;
+        throttledProgressUI();
+    });
+
+    es.addEventListener('fileend', (e) => {
+        const d = JSON.parse(e.data);
+        if (fileMap[d.fileName]) fileMap[d.fileName].status = 'done';
+        filesCompleted++;
+        if (d.transferredBytes != null) totalBytesTransferred = d.transferredBytes;
+        throttledProgressUI();
+    });
+
+    es.addEventListener('fileerror', (e) => {
+        const d = JSON.parse(e.data);
+        const errMsg = toErrorMessage((d.errors && d.errors.length > 0) ? d.errors[0] : 'Upload failed');
+        if (fileMap[d.fileName]) {
+            fileMap[d.fileName].status = 'error';
+            fileMap[d.fileName].errorMessage = errMsg;
+        }
+        filesCompleted++;
+        filesFailed++;
+        throttledProgressUI();
+    });
+
+    es.addEventListener('filebatch', (e) => {
+        const d = JSON.parse(e.data);
+        totalBytesTransferred = d.transferredBytes != null ? d.transferredBytes : totalBytesTransferred;
+        totalBytesExpected = d.totalBytes != null ? d.totalBytes : totalBytesExpected;
+        for (const f of d.files) {
+            if (f.event === 'filestart') {
+                totalFilesStarted++;
+                trackFileEntry(f.fileName);
+                fileMap[f.fileName] = { status: 'uploading', size: f.fileSize || 0, transferred: 0 };
+            } else if (f.event === 'fileend') {
+                if (fileMap[f.fileName]) fileMap[f.fileName].status = 'done';
+                filesCompleted++;
+            } else if (f.event === 'fileerror') {
+                const errMsg = toErrorMessage((f.errors && f.errors.length > 0) ? f.errors[0] : 'Upload failed');
+                if (fileMap[f.fileName]) { fileMap[f.fileName].status = 'error'; fileMap[f.fileName].errorMessage = errMsg; }
+                filesCompleted++;
+                filesFailed++;
+            } else if (f.event === 'filecancelled') {
+                if (fileMap[f.fileName]) fileMap[f.fileName].status = 'error';
+            }
+        }
+        // Use server totals when available (authoritative for large uploads)
+        if (d.totalFiles != null && d.totalFiles > 0) totalFilesStarted = d.totalFiles;
+        if (d.completedFiles != null) filesCompleted = d.completedFiles;
+        if (d.failedFiles != null) filesFailed = d.failedFiles;
+        throttledProgressUI();
+    });
+
+    es.addEventListener('done', (e) => {
+        _doneReceived = true;
+        uploadDoneReceived = true;
+        const d = JSON.parse(e.data);
+        Logger.info('Upload done:', d.success ? 'SUCCESS' : 'FAILED', '— files:', d.totalFiles, 'errors:', d.errorCount, 'duration:', d.duration + 'ms');
+        es.close();
+        activeUploadEventSource = null;
+        if (elapsedInterval) clearInterval(elapsedInterval);
+        if (d.duration) document.getElementById('elapsedTime').textContent = fmtDuration(d.duration);
+        localStorage.removeItem('activeUploadId');
+        updatePageTitle(-1);
+        window._lastUploadErrorRows = [];
+        if (d.errors && Array.isArray(d.errors) && d.errors.length) {
+            d.errors.forEach((line) => {
+                const msg = toErrorMessage(line);
+                const m = /^([^:\r\n]+):\s*([\s\S]+)$/.exec(msg);
+                if (m && m[1].length < 512) {
+                    window._lastUploadErrorRows.push({ file: m[1].trim(), message: m[2].trim(), code: 'SUMMARY' });
+                } else {
+                    window._lastUploadErrorRows.push({ file: '—', message: msg, code: 'SUMMARY' });
+                }
+            });
+        }
+        if (d.fileErrors && typeof d.fileErrors === 'object') {
+            Object.entries(d.fileErrors).forEach(([name, errInfo]) => {
+                let msg = 'Upload failed';
+                let code = 'UNKNOWN';
+                if (typeof errInfo === 'object' && errInfo !== null) {
+                    msg = toErrorMessage(errInfo.message || errInfo);
+                    code = errInfo.code != null ? String(errInfo.code) : 'UNKNOWN';
+                } else {
+                    msg = toErrorMessage(errInfo);
+                }
+                window._lastUploadErrorRows.push({ file: name, message: msg, code });
+                if (fileMap[name]) {
+                    fileMap[name].errorMessage = msg;
+                    fileMap[name].errorCode = code;
+                }
+            });
+        }
+        showSummary(d.success, d.totalFiles, d.errorCount, d.duration, d.errors, d.cancelled, d.totalBytes);
+        setUploading(false);
+        if (d.success) browserFileEntries = []; // Free memory only on success; keep for Retry on failure
+        broadcastTabEvent('upload_done');
+        loadHistory();
+        hideActiveBanner();
+
+        let toastMsg;
+        let toastVariant = d.success ? 'success' : 'error';
+        if (d.success) {
+            toastMsg = `Upload complete: ${d.totalFiles} file(s)`;
+        } else if (d.cancelled) {
+            toastMsg = 'Upload cancelled';
+            toastVariant = 'warn';
+        } else if (d.errorCount > 0) {
+            toastMsg = `Upload finished with ${d.errorCount} error(s)`;
+        } else {
+            toastMsg = 'Upload finished with errors';
+        }
+        showToast(toastMsg, toastVariant);
+
+        if (document.hidden) {
+            let nTitle;
+            let nBody;
+            if (d.success) {
+                nTitle = 'Upload Complete';
+                nBody = d.totalFiles + ' file(s) uploaded in ' + fmtDuration(d.duration);
+            } else if (d.cancelled) {
+                nTitle = 'Upload Cancelled';
+                nBody = d.totalFiles + ' file(s) — upload was cancelled.';
+            } else {
+                nTitle = 'Upload Finished with Errors';
+                nBody = d.errorCount + ' error(s) out of ' + d.totalFiles + ' file(s).';
+            }
+            sendNotification(nTitle, nBody, d.success);
+        }
+    });
+
+    es.onerror = () => {
+        es.close();
+        if (activeUploadEventSource === es) activeUploadEventSource = null;
+        if (_doneReceived) return;
+        if (uploading && reconnects < 10) {
+            reconnects++;
+            const delay = Math.min(2000 * reconnects, 15000);
+            Logger.warn('SSE connection lost, reconnecting in', delay + 'ms (attempt', reconnects + '/10)');
+            setTimeout(() => { if (uploading) connectSSE(uploadId); }, delay);
+        } else if (uploading) {
+            Logger.warn('SSE reconnection exhausted — upload continues in background');
+            showToast('Connection lost — upload continues in background. Refresh to reconnect.', 'info');
+            setUploading(false);
+            updatePageTitle(-1);
+            bannerDismissed = false;
+            checkForActiveUploads();
+        }
+    };
+}
+
+// ═══ Summary ═══
+function showSummary(success, totalFiles, errorCount, duration, errors, cancelled, totalBytes) {
+    hideTransferPanel();
+    const bar = document.getElementById('summaryBar');
+    bar.classList.remove('hidden');
+    const dur = duration ? fmtDuration(duration) : '--';
+    const sizeStr = totalBytes ? ` (${fmtBytes(totalBytes)})` : '';
+    const progBar = document.getElementById('progressBar');
+    progBar.style.width = '100%';
+    const doneLabel = success ? '100% — Upload Complete' : '100% — Upload Failed';
+    document.getElementById('progressLabel').textContent = doneLabel;
+    document.getElementById('progressPct').textContent = '100%';
+    if (success) progBar.classList.replace('bg-adobe-blue', 'bg-green-500');
+
+    // Sync progress stats with final values from the done event
+    const uploaded = Math.max(0, totalFiles - errorCount);
+    document.getElementById('statUploaded').textContent = uploaded;
+    document.getElementById('statRemaining').textContent = '0';
+    document.getElementById('statFailed').textContent = errorCount;
+    if (totalBytes) document.getElementById('statBytes').textContent = fmtBytes(totalBytes) + ' / ' + fmtBytes(totalBytes);
+    document.getElementById('uploadSpeed').classList.add('hidden');
+    document.getElementById('uploadEta').classList.add('hidden');
+    updateMiniProgress(100, uploaded, totalFiles, 'Done');
+
+    let extraBtns = '';
+    if (errors && errors.length > 0) {
+        extraBtns = `<button onclick="downloadErrorReport()" class="mt-2 text-xs text-red-600 underline hover:no-underline">Download Error Report</button>`;
+    }
+
+    if (success) {
+        bar.innerHTML = `<div class="confetti-container slide-down-enter flex items-center gap-3 text-green-700 bg-green-50 rounded-lg p-4 relative overflow-visible">
+            <svg class="h-7 w-7 shrink-0" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><circle cx="12" cy="12" r="10" opacity="0.2"/><path class="checkmark-animated" stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4"/></svg>
+            <div><div class="font-semibold">Upload Complete</div><div class="text-sm">${totalFiles} file(s)${sizeStr} uploaded in ${dur}</div></div></div>`;
+        spawnConfetti(bar);
+        saveRecentTarget();
+    } else {
+        const cancelOnly = cancelled && (!errors || errors.length === 0);
+        const failTitle = cancelOnly ? 'Upload Cancelled' : ('Upload Finished with Errors' + (cancelled ? ' (cancelled)' : ''));
+        const errList = errors && errors.length ? `<ul class="mt-1 text-xs list-disc list-inside max-h-32 overflow-y-auto">${errors.slice(0, 20).map((e) => `<li>${esc(toErrorMessage(e))}</li>`).join('')}</ul>` : '';
+        const retryBtn = `<button onclick="retryLastUpload()" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-white bg-adobe-blue hover:bg-adobe-darkBlue rounded-lg px-3 py-1.5 transition">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Retry Upload</button>`;
+        const statsLine = cancelOnly
+            ? `${totalFiles} file(s) were in progress when cancelled (${dur}).`
+            : `${totalFiles} file(s) processed, ${errorCount} error(s) in ${dur}`;
+        bar.innerHTML = `<div class="flex items-start gap-3 text-red-700 bg-red-50 rounded-lg p-4 dark:bg-red-900/30 dark:text-red-300">
+            <svg class="h-6 w-6 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div><div class="font-semibold">${failTitle}</div>
+            <div class="text-sm">${statsLine}</div>
+            ${errList}<div class="flex flex-wrap gap-2">${retryBtn}${extraBtns}</div></div></div>`;
+    }
+}
+
+// ═══ Error Report Export ═══
+function csvEscapeCell(val) {
+    const s = val == null ? '' : String(val);
+    return '"' + s.replace(/"/g, '""').replace(/\r\n/g, '\n').replace(/\r/g, '\n') + '"';
+}
+
+function downloadErrorReport() {
+    const rows = [['File', 'Error', 'Code']];
+    const seen = new Set();
+    function addRow(file, message, code) {
+        const f = file == null ? '' : String(file);
+        const m = toErrorMessage(message);
+        const c = code == null ? 'UNKNOWN' : String(code);
+        const key = f + '\0' + m + '\0' + c;
+        if (seen.has(key)) return;
+        seen.add(key);
+        rows.push([f, m, c]);
+    }
+    Object.entries(fileMap).forEach(([name, info]) => {
+        if (info && info.status === 'error') {
+            addRow(name, info.errorMessage, info.errorCode);
+        }
+    });
+    if (window._lastUploadErrorRows && window._lastUploadErrorRows.length) {
+        window._lastUploadErrorRows.forEach((r) => {
+            if (!r) return;
+            const f = r.file != null && String(r.file).trim() !== '' ? String(r.file) : '—';
+            addRow(f, r.message, r.code);
+        });
+    }
+    if (rows.length <= 1) {
+        showToast('No error details to export. Run an upload that fails or open the error summary first.', 'warn');
+        return;
+    }
+    const csv = '\uFEFF' + rows.map((r) => r.map(csvEscapeCell).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = `upload-errors-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 2500);
+    showToast('Error report downloaded (' + (rows.length - 1) + ' row(s))', 'success');
+}
+
+// ═══ History ═══
+async function loadHistory() {
+    try {
+        const r = await fetch('/api/upload/history');
+        const list = await r.json();
+        initHistoryCollapse(list.length > 0);
+        window._historyData = list;
+        document.getElementById('clearHistoryBtn').classList.toggle('hidden', list.length === 0);
+        document.getElementById('histControls').classList.toggle('hidden', list.length === 0);
+        renderFilteredHistory();
+        initDraggableColumns();
+    } catch (e) {
+        Logger.warn('Failed to load upload history:', toErrorMessage(e));
+    }
+}
+
+function rerunUpload(idx) {
+    const h = window._historyData && window._historyData[idx];
+    if (!h) return;
+    document.getElementById('aemUrl').value = h.baseUrl || '';
+    document.getElementById('damPath').value = h.damPath || '';
+    clearBrowserFiles();
+    showToast('Settings pre-filled. Please select files/folder to upload.', 'info');
+    clearFieldErrors();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function deleteHistoryItem(uploadId) {
+    try {
+        const r = await fetch('/api/upload/history/' + encodeURIComponent(uploadId), { method: 'DELETE' });
+        if (!r.ok) {
+            let msg = 'Delete failed (HTTP ' + r.status + ')';
+            try {
+                const d = await r.json();
+                if (d.error) msg = toErrorMessage(d.error);
+            } catch (_) { /* non-JSON body */ }
+            throw new Error(msg);
+        }
+        showToast('History entry deleted', 'info');
+        loadHistory();
+    } catch (e) {
+        showToast(toErrorMessage(e), 'error');
+    }
+}
+
+function clearAllHistory() {
+    showCustomConfirm('Clear All History', 'Delete all upload history? This cannot be undone.', async () => {
+        try {
+            const r = await fetch('/api/upload/history', { method: 'DELETE' });
+            if (!r.ok) {
+                let msg = 'Clear failed (HTTP ' + r.status + ')';
+                try {
+                    const d = await r.json();
+                    if (d.error) msg = toErrorMessage(d.error);
+                } catch (_) {}
+                throw new Error(msg);
+            }
+            showToast('All history cleared', 'info');
+            loadHistory();
+        } catch (e) {
+            showToast(toErrorMessage(e), 'error');
+        }
+    });
+}
+
+function showCustomConfirm(title, message, onConfirm) {
+    document.getElementById('confirmHeadline').textContent = title;
+    document.getElementById('confirmOkBtn').textContent = 'Confirm';
+    document.getElementById('confirmBody').innerHTML = `<p>${esc(message)}</p>`;
+    window._customConfirmHandler = onConfirm;
+    const modal = document.getElementById('confirmModal');
+    modal.classList.remove('hidden');
+    trapFocusInModal(modal);
+}
+
+// ═══ Spectrum Toast Notifications (using sp-toast web component) ═══
+function showToast(msg, type) {
+    const container = document.getElementById('toastContainer');
+    const variantMap = { success: 'positive', error: 'negative', warn: 'warning', info: 'info' };
+    const el = document.createElement('sp-toast');
+    el.setAttribute('open', '');
+    el.setAttribute('variant', variantMap[type] || 'info');
+    el.setAttribute('timeout', '6000');
+    el.textContent = msg;
+    el.addEventListener('close', () => el.remove());
+    container.appendChild(el);
+}
+
+// ═══ Helpers ═══
+function val(id) { return document.getElementById(id).value.trim(); }
+function fmtBytes(b) {
+    if (!b || b <= 0 || !isFinite(b)) return '0 B';
+    const k = 1024, s = ['B','KB','MB','GB','TB'];
+    const i = Math.min(Math.floor(Math.log(b)/Math.log(k)), s.length - 1);
+    return parseFloat((b/Math.pow(k,i)).toFixed(1)) + ' ' + s[i];
+}
+function fmtDuration(ms) {
+    if (!ms) return '0s';
+    const s = Math.floor(ms/1000);
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's';
+    return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+}
+function fmtTimestamp(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+function esc(s) {
+    const t = s == null ? '' : (typeof s === 'string' ? s : toErrorMessage(s));
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+}
+
+// ═══ Enhancement: Confetti Celebration ═══
+function spawnConfetti(container) {
+    const colors = ['#22c55e','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#06b6d4'];
+    for (let i = 0; i < 24; i++) {
+        const piece = document.createElement('span');
+        piece.className = 'confetti-piece';
+        piece.style.left = (20 + Math.random() * 60) + '%';
+        piece.style.top = '50%';
+        piece.style.backgroundColor = colors[i % colors.length];
+        piece.style.animationDelay = (Math.random() * 0.4) + 's';
+        piece.style.animationDuration = (0.8 + Math.random() * 0.6) + 's';
+        const el = container.querySelector('.confetti-container') || container;
+        el.appendChild(piece);
+    }
+    setTimeout(() => container.querySelectorAll('.confetti-piece').forEach(p => p.remove()), 2000);
+}
+
+// ═══ Enhancement: Dark Mode ═══
+function initDarkMode() {
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = saved ? saved === 'dark' : prefersDark;
+    applyDarkMode(isDark);
+}
+function toggleDarkMode() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    const spTheme = document.getElementById('spTheme');
+    if (spTheme) spTheme.color = isDark ? 'dark' : 'light';
+    updateDarkModeIcons(isDark);
+}
+function applyDarkMode(isDark) {
+    document.documentElement.classList.toggle('dark', isDark);
+    const spTheme = document.getElementById('spTheme');
+    if (spTheme) spTheme.color = isDark ? 'dark' : 'light';
+    updateDarkModeIcons(isDark);
+}
+function updateDarkModeIcons(isDark) {
+    document.getElementById('sunIcon').classList.toggle('hidden', !isDark);
+    document.getElementById('moonIcon').classList.toggle('hidden', isDark);
+}
+
+// ═══ Enhancement: Keyboard Shortcuts Help ═══
+function toggleShortcutsHelp() {
+    document.getElementById('shortcutsTooltip').classList.toggle('hidden');
+}
+document.addEventListener('click', (e) => {
+    const tooltip = document.getElementById('shortcutsTooltip');
+    if (tooltip && !tooltip.classList.contains('hidden') && !e.target.closest('#shortcutsTooltip') && !e.target.closest('[onclick*="toggleShortcutsHelp"]')) {
+        tooltip.classList.add('hidden');
+    }
+});
+
+// ═══ Enhancement: Connection Status ═══
+let connHealthy = true;
+let connCheckInterval = null;
+function initConnectionStatus() {
+    checkConnection();
+    connCheckInterval = setInterval(checkConnection, 30000);
+}
+async function checkConnection() {
+    try {
+        const r = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
+        if (r.ok) {
+            if (!connHealthy) {
+                connHealthy = true;
+                showToast('Server connection restored', 'success');
+            }
+            setConnectionUI(true);
+        } else { setConnectionUI(false); }
+    } catch {
+        if (connHealthy) connHealthy = false;
+        setConnectionUI(false);
+    }
+}
+function setConnectionUI(ok) {
+    const dot = document.getElementById('connDot');
+    const text = document.getElementById('connText');
+    const banner = document.getElementById('connLostBanner');
+    if (ok) {
+        dot.className = 'w-2 h-2 rounded-full bg-green-400 transition-colors';
+        text.textContent = 'Connected';
+        banner.classList.add('hidden');
+    } else {
+        dot.className = 'w-2 h-2 rounded-full bg-red-400 transition-colors';
+        text.textContent = 'Disconnected';
+        banner.classList.remove('hidden');
+    }
+}
+
+// ═══ Enhancement: Recent Targets ═══
+function getRecentTargets() {
+    try { return JSON.parse(localStorage.getItem('recentTargets') || '[]'); } catch { return []; }
+}
+function saveRecentTarget() {
+    const baseUrl = normalizeAemBaseUrl(val('aemUrl')), damPath = val('damPath'), username = val('username');
+    if (!baseUrl || !damPath) return;
+    const key = targetIdentityKey(baseUrl, damPath);
+    let targets = getRecentTargets();
+    targets = targets.filter(t => targetIdentityKey(t.baseUrl || '', t.damPath || '') !== key);
+    targets.unshift({ baseUrl, damPath, username, ts: Date.now() });
+    if (targets.length > 10) targets = targets.slice(0, 10);
+    localStorage.setItem('recentTargets', JSON.stringify(targets));
+    updateRecentTargetsBtn();
+}
+function updateRecentTargetsBtn() {
+    const btn = document.getElementById('recentTargetsBtn');
+    btn.classList.toggle('hidden', getRecentTargets().length === 0);
+}
+function toggleRecentTargets() {
+    const dd = document.getElementById('recentTargetsDropdown');
+    if (!dd.classList.contains('hidden')) { dd.classList.add('hidden'); return; }
+    const targets = getRecentTargets();
+    const list = document.getElementById('recentTargetsList');
+    if (targets.length === 0) { list.innerHTML = '<div class="px-3 py-4 text-center text-xs text-gray-400">No recent targets</div>'; }
+    else {
+        list.innerHTML = targets.map((t, i) => `<div class="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 cursor-pointer group transition" onclick="applyRecentTarget(${i})">
+            <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-gray-800 truncate">${esc(t.baseUrl)}</div>
+                <div class="text-[10px] text-gray-400 truncate">/${esc(t.damPath)} &middot; ${esc(t.username || '')}</div>
+            </div>
+            <button onclick="event.stopPropagation(); removeRecentTarget(${i})" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition" title="Remove" aria-label="Remove recent target">
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>`).join('');
+    }
+    dd.classList.remove('hidden');
+}
+function applyRecentTarget(idx) {
+    const targets = getRecentTargets();
+    const t = targets[idx]; if (!t) return;
+    document.getElementById('aemUrl').value = t.baseUrl;
+    document.getElementById('damPath').value = t.damPath;
+    if (t.username) document.getElementById('username').value = t.username;
+    document.getElementById('recentTargetsDropdown').classList.add('hidden');
+    showToast('Target loaded from recent history', 'info');
+}
+function removeRecentTarget(idx) {
+    let targets = getRecentTargets();
+    targets.splice(idx, 1);
+    localStorage.setItem('recentTargets', JSON.stringify(targets));
+    toggleRecentTargets();
+    updateRecentTargetsBtn();
+}
+document.addEventListener('click', (e) => {
+    const dd = document.getElementById('recentTargetsDropdown');
+    if (dd && !dd.classList.contains('hidden') && !e.target.closest('#recentTargetsDropdown') && !e.target.closest('#recentTargetsBtn')) {
+        dd.classList.add('hidden');
+    }
+});
+
+// ═══ Enhancement: Folder Tree Preview ═══
+function buildFolderTree(entries) {
+    const root = { children: {}, files: 0, totalFiles: 0 };
+    for (const { relativePath } of entries) {
+        const parts = relativePath.split('/');
+        let node = root;
+        for (let i = 0; i < parts.length - 1; i++) {
+            if (!node.children[parts[i]]) node.children[parts[i]] = { children: {}, files: 0, totalFiles: 0 };
+            node = node.children[parts[i]];
+        }
+        node.files++;
+        node.totalFiles++;
+    }
+    function countTotal(n) { n.totalFiles = n.files; for (const c of Object.values(n.children)) { countTotal(c); n.totalFiles += c.totalFiles; } }
+    countTotal(root);
+    return root;
+}
+function renderFolderTree(entries) {
+    const container = document.getElementById('folderTreeContainer');
+    const ul = document.getElementById('folderTree');
+    if (!entries || entries.length === 0) { container.classList.add('hidden'); return; }
+    container.classList.remove('hidden');
+    const tree = buildFolderTree(entries);
+    let html = '';
+    let nodeCount = 0;
+    const MAX_NODES = 500;
+    function render(node, depth) {
+        const sorted = Object.entries(node.children).sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [name, child] of sorted) {
+            if (nodeCount >= MAX_NODES) return;
+            nodeCount++;
+            const hasChildren = Object.keys(child.children).length > 0;
+            const indent = depth * 16;
+            html += `<li class="tree-node" style="padding-left:${indent}px">`;
+            html += `<div class="flex items-center gap-1.5 py-0.5 px-1 rounded tree-toggle cursor-pointer" onclick="this.parentElement.querySelector('ul')?.classList.toggle('hidden');this.querySelector('.tree-arrow')?.classList.toggle('rotate-90')">`;
+            if (hasChildren) html += `<svg class="tree-arrow h-3 w-3 text-gray-400 transition-transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`;
+            else html += `<span class="w-3"></span>`;
+            html += `<svg class="h-3.5 w-3.5 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>`;
+            html += `<span class="text-gray-700">${esc(name)}</span>`;
+            html += `<span class="text-gray-400 ml-auto">${child.totalFiles}</span>`;
+            html += `</div>`;
+            if (hasChildren) { html += `<ul class="space-y-0.5">`; render(child, depth + 1); html += `</ul>`; }
+            html += `</li>`;
+        }
+        if (node.files > 0 && depth > 0) {
+            html += `<li style="padding-left:${depth * 16}px"><div class="flex items-center gap-1.5 py-0.5 px-1 text-gray-400"><span class="w-3"></span><svg class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><span>${node.files} file(s)</span></div></li>`;
+        }
+    }
+    render(tree, 0);
+    if (nodeCount >= MAX_NODES) html += `<li class="text-gray-400 text-center py-1">... and more folders</li>`;
+    ul.innerHTML = html;
+}
+function expandAllTree() { document.querySelectorAll('#folderTree ul').forEach(u => u.classList.remove('hidden')); document.querySelectorAll('#folderTree .tree-arrow').forEach(a => a.classList.add('rotate-90')); }
+function collapseAllTree() { document.querySelectorAll('#folderTree ul ul').forEach(u => u.classList.add('hidden')); document.querySelectorAll('#folderTree .tree-arrow').forEach(a => a.classList.remove('rotate-90')); }
+
+// ═══ Enhancement: History Search, Filter, Pagination ═══
+let historyFilter = 'all';
+let historyPage = 0;
+const HIST_PAGE_SIZE = 20;
+
+function setHistoryFilter(filter) {
+    historyFilter = filter;
+    historyPage = 0;
+    document.querySelectorAll('.hist-pill').forEach(btn => {
+        if (btn.dataset.filter === filter) {
+            btn.variant = 'accent'; btn.treatment = 'fill'; btn.setAttribute('selected', '');
+        } else {
+            btn.variant = 'secondary'; btn.treatment = 'outline'; btn.removeAttribute('selected');
+        }
+    });
+    renderFilteredHistory();
+}
+function filterHistory() { historyPage = 0; renderFilteredHistory(); }
+
+function getFilteredHistory() {
+    const data = window._historyData || [];
+    const search = (document.getElementById('histSearch')?.value || '').toLowerCase().trim();
+    return data.filter(h => {
+        if (historyFilter === 'success' && !h.success) return false;
+        if (historyFilter === 'failed' && h.success) return false;
+        if (search) {
+            const haystack = [h.damPath, h.target, h.localPath, h.baseUrl].join(' ').toLowerCase();
+            if (!haystack.includes(search)) return false;
+        }
+        return true;
+    });
+}
+
+function renderFilteredHistory() {
+    const filtered = getFilteredHistory();
+    const tbody = document.getElementById('historyBody');
+    const emptyState = document.getElementById('histEmptyState');
+    const pagination = document.getElementById('histPagination');
+    const totalPages = Math.max(1, Math.ceil(filtered.length / HIST_PAGE_SIZE));
+    historyPage = Math.min(historyPage, totalPages - 1);
+    const start = historyPage * HIST_PAGE_SIZE;
+    const page = filtered.slice(start, start + HIST_PAGE_SIZE);
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        pagination.classList.add('hidden');
+        return;
+    }
+    emptyState.classList.add('hidden');
+
+    tbody.innerHTML = page.map((h) => {
+        const origIdx = (window._historyData || []).indexOf(h);
+        return `<tr class="hover:bg-gray-50">
+            <td data-col="timestamp" class="px-4 py-3 text-gray-600 whitespace-nowrap text-xs" title="${fmtTimestamp(h.timestamp)}">${timeAgo(h.timestamp)}</td>
+            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs">${esc(h.target)}</td>
+            <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-500 max-w-[120px] truncate" title="/${esc(h.damPath)}">/${esc(h.damPath)}</td>
+            <td data-col="localPath" class="px-4 py-3 font-mono text-xs text-gray-500 max-w-[150px] truncate" title="${esc(h.localPath||'')}">${esc(h.localPath||'--')}</td>
+            <td data-col="files" class="px-4 py-3 text-gray-600 text-xs">${h.totalFiles}</td>
+            <td data-col="size" class="px-4 py-3 text-gray-600 text-xs">${fmtBytes(h.totalBytes||0)}</td>
+            <td data-col="duration" class="px-4 py-3 text-gray-500 text-xs">${fmtDuration(h.duration)}</td>
+            <td data-col="status" class="px-4 py-3">${h.success
+                ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Success</span>'
+                : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Failed</span>'}</td>
+            <td data-col="actions" class="px-4 py-3"><div class="flex items-center gap-2">
+                <button onclick="rerunUpload(${origIdx})" class="text-xs text-adobe-blue hover:underline">Re-run</button>
+                <button onclick="deleteHistoryItem('${h.uploadId}')" class="text-gray-300 hover:text-red-500 transition" title="Delete" aria-label="Delete history entry"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+            </div></td></tr>`;
+    }).join('');
+
+    if (totalPages > 1) {
+        pagination.classList.remove('hidden');
+        document.getElementById('histPageInfo').textContent = `Page ${historyPage + 1} of ${totalPages}`;
+        document.getElementById('histPrevBtn').disabled = historyPage === 0;
+        document.getElementById('histNextBtn').disabled = historyPage >= totalPages - 1;
+    } else {
+        pagination.classList.add('hidden');
+    }
+    reorderHistoryColumns();
+}
+
+function histPrevPage() { if (historyPage > 0) { historyPage--; renderFilteredHistory(); } }
+function histNextPage() { historyPage++; renderFilteredHistory(); }
+
+function timeAgo(iso) {
+    const d = new Date(iso);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 172800) return 'Yesterday';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+    return fmtTimestamp(iso);
+}
+
+// ═══ Enhancement: Full-Page Drop Overlay ═══
+let pageDragCounter = 0;
+document.addEventListener('dragenter', (e) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    pageDragCounter++;
+    document.getElementById('fullPageDropOverlay').classList.remove('hidden');
+});
+document.addEventListener('dragleave', () => {
+    pageDragCounter--;
+    if (pageDragCounter <= 0) { pageDragCounter = 0; document.getElementById('fullPageDropOverlay').classList.add('hidden'); }
+});
+document.addEventListener('drop', () => {
+    pageDragCounter = 0;
+    document.getElementById('fullPageDropOverlay').classList.add('hidden');
+});
+document.addEventListener('dragover', (e) => e.preventDefault());
+
+// ═══ Enhancement: Upload Queue ═══
+let uploadQueue = [];
+let queueRunning = false;
+
+function loadQueue() {
+    try { uploadQueue = JSON.parse(localStorage.getItem('uploadQueue') || '[]'); } catch { uploadQueue = []; }
+    renderQueue();
+}
+function saveQueue() { localStorage.setItem('uploadQueue', JSON.stringify(uploadQueue)); }
+
+function addToQueue() {
+    const config = gatherUploadConfig();
+    if (!config) return;
+    uploadQueue.push({ id: Date.now(), config, status: 'queued', label: config.damPath || 'Upload' });
+    saveQueue();
+    renderQueue();
+    showToast('Added to upload queue', 'info');
+}
+
+function gatherUploadConfig() {
+    const baseUrl = normalizeAemBaseUrl(val('aemUrl')), damPath = val('damPath'), username = val('username'), password = val('password');
+    if (!baseUrl || !damPath || !username || !password) { showToast('Fill in all required fields first', 'warn'); return null; }
+    return { baseUrl, damPath, username, password, mode: 'browser',
+        maxConcurrent: parseInt(document.getElementById('maxConcurrent').value),
+    };
+}
+
+function renderQueue() {
+    const section = document.getElementById('uploadQueueSection');
+    const list = document.getElementById('queueList');
+    document.getElementById('queueCount').textContent = uploadQueue.length;
+    if (uploadQueue.length === 0) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+    document.getElementById('startQueueBtn').style.display = (queueRunning || uploadQueue.every(q => q.status !== 'queued')) ? 'none' : '';
+    list.innerHTML = uploadQueue.map((q, i) => {
+        const statusColors = { queued: 'text-gray-500', uploading: 'text-adobe-blue', done: 'text-green-600', failed: 'text-red-600' };
+        const statusIcons = { queued: '&#9679;', uploading: '<svg class="spinner inline h-3 w-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>', done: '&#10003;', failed: '&#10007;' };
+        return `<div class="px-4 py-2.5 flex items-center gap-3 text-sm"><span class="${statusColors[q.status]}">${statusIcons[q.status]}</span>
+            <div class="flex-1 min-w-0"><div class="font-medium text-gray-800 truncate text-xs">${esc(q.label)}</div>
+            <div class="text-[10px] text-gray-400 truncate">${esc(q.config.baseUrl)}</div></div>
+            ${q.status === 'queued' ? `<button onclick="removeFromQueue(${i})" class="text-gray-300 hover:text-red-500 transition" aria-label="Remove from queue"><svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function removeFromQueue(idx) { uploadQueue.splice(idx, 1); saveQueue(); renderQueue(); }
+function clearQueue() { uploadQueue = []; saveQueue(); renderQueue(); }
+
+async function startQueue() {
+    if (queueRunning) return;
+    queueRunning = true;
+    renderQueue();
+    for (const item of uploadQueue) {
+        if (item.status !== 'queued') continue;
+        item.status = 'uploading';
+        renderQueue();
+        try {
+            document.getElementById('aemUrl').value = item.config.baseUrl;
+            document.getElementById('damPath').value = item.config.damPath;
+            document.getElementById('username').value = item.config.username;
+            document.getElementById('password').value = item.config.password;
+            item.status = 'done';
+        } catch { item.status = 'failed'; }
+        renderQueue();
+    }
+    queueRunning = false;
+    saveQueue();
+    renderQueue();
+    showToast('Queue completed', 'success');
+}
+
+// ═══ AEM URL normalization (matches server upload-service) ═══
+function normalizeAemBaseUrl(raw) {
+    if (raw == null) return '';
+    let s = String(raw).trim();
+    if (!s) return '';
+    s = s.replace(/^(https?):{2,}(\/\/)(.*)$/i, '$1://$3');
+    s = s.replace(/^(https?:\/\/)\/+/, '$1');
+    return s;
+}
+
+/** Dedupe recent targets when only http vs https (or port) changes */
+function targetIdentityKey(baseUrl, damPath) {
+    try {
+        const u = new URL(baseUrl);
+        const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+        const host = u.hostname.toLowerCase();
+        const dam = (damPath || '').replace(/\/+$/, '').trim();
+        return host + ':' + port + '|' + dam;
+    } catch {
+        return baseUrl + '|' + damPath;
+    }
+}
+
+// ═══ Real-time URL validation ═══
+function liveValidateUrl(isFinal) {
+    const el = document.getElementById('aemUrl');
+    const errEl = document.getElementById('aemUrlErr');
+    let v = el.value.trim();
+    const norm = normalizeAemBaseUrl(v);
+    if (norm !== v) el.value = norm;
+    v = el.value.trim();
+    el.classList.remove('field-error', 'field-valid', 'field-warning');
+    errEl.classList.add('hidden');
+    if (!v) return;
+    if (!/^https?:\/\//i.test(v)) {
+        el.classList.add('field-error');
+        errEl.textContent = 'URL must start with http:// or https://';
+        errEl.classList.remove('hidden');
+        return;
+    }
+    try {
+        const parsed = new URL(v);
+        if (!parsed.hostname) throw new Error('empty host');
+        if (isFinal) el.classList.add('field-valid');
+    } catch {
+        el.classList.add('field-error');
+        errEl.textContent = 'Invalid URL format';
+        errEl.classList.remove('hidden');
+    }
+}
+
+// ═══ Real-time DAM path validation ═══
+function liveValidateDamPath(isFinal) {
+    const el = document.getElementById('damPath');
+    const errEl = document.getElementById('damPathErr');
+    const hintEl = document.getElementById('damPathHint');
+    let v = el.value.trim();
+    el.classList.remove('field-error', 'field-valid', 'field-warning');
+    errEl.classList.add('hidden');
+    hintEl.classList.add('hidden');
+    if (!v) return;
+    if (v.startsWith('/')) {
+        v = v.replace(/^\/+/, '');
+        el.value = v;
+    }
+    if (!v.startsWith('content/dam')) {
+        if (v.startsWith('dam/') || v.startsWith('dam')) {
+            hintEl.textContent = 'Tip: Prefix with "content/" — full path should be content/dam/...';
+            hintEl.classList.remove('hidden');
+            el.classList.add('field-warning');
+        } else {
+            el.classList.add('field-error');
+            errEl.textContent = 'DAM path should start with content/dam';
+            errEl.classList.remove('hidden');
+        }
+        return;
+    }
+    if (v.includes('..')) {
+        el.classList.add('field-error');
+        errEl.textContent = 'Path must not contain directory traversal (..)';
+        errEl.classList.remove('hidden');
+        return;
+    }
+    if (isFinal) el.classList.add('field-valid');
+}
+
+// ═══ Offline detection ═══
+let isOffline = false;
+function handleOnlineStatus() {
+    if (!navigator.onLine && !isOffline) {
+        isOffline = true;
+        showToast('You are offline. Uploads will not work until connectivity is restored.', 'warn');
+        setConnectionUI(false);
+    } else if (navigator.onLine && isOffline) {
+        isOffline = false;
+        showToast('Back online. Checking server...', 'info');
+        checkConnection();
+    }
+}
+
+// ═══ Retry last upload ═══
+function retryLastUpload() {
+    if (uploading) {
+        showToast('An upload is already in progress', 'warn');
+        return;
+    }
+    document.getElementById('summaryBar').classList.add('hidden');
+    document.getElementById('summaryBar').innerHTML = '';
+    document.getElementById('progressPanel').classList.add('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => initiateUpload(), 300);
+}
+
+// ═══ Init Enhancements ═══
+function handleConfirmOk() {
+    if (window._customConfirmHandler) {
+        const handler = window._customConfirmHandler;
+        window._customConfirmHandler = null;
+        document.getElementById('confirmModal').classList.add('hidden');
+        document.getElementById('confirmHeadline').textContent = 'Confirm Upload';
+        document.getElementById('confirmOkBtn').textContent = 'Upload';
+        handler();
+    } else {
+        confirmUpload();
+    }
+}
+
+// ═══ Saved Presets ═══
+const PRESETS_KEY = 'guides_upload_presets';
+
+function loadPresets() {
+    try { return JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch (_) { return []; }
+}
+
+function renderPresets() {
+    const list = document.getElementById('presetList');
+    if (!list) return;
+    const presets = loadPresets();
+    if (presets.length === 0) {
+        list.innerHTML = '<span class="text-xs text-gray-400 italic">No saved presets</span>';
+        return;
+    }
+    list.innerHTML = presets.map((p, i) => `
+        <span class="inline-flex items-center gap-1 bg-blue-50 text-adobe-blue text-xs font-medium px-2.5 py-1 rounded-full cursor-pointer hover:bg-blue-100 transition group" onclick="applyPreset(${i})">
+            ${esc(p.name)}
+            <button onclick="event.stopPropagation();deletePreset(${i})" class="opacity-0 group-hover:opacity-100 transition text-red-400 hover:text-red-600 ml-0.5" aria-label="Delete preset ${esc(p.name)}">&times;</button>
+        </span>`).join('');
+}
+
+function saveCurrentPreset() {
+    const url = normalizeAemBaseUrl(val('aemUrl').trim());
+    const dam = val('damPath').trim();
+    const user = val('username').trim();
+    if (!url && !dam) { showToast('Fill in at least AEM URL or DAM Path before saving', 'warn'); return; }
+    const name = prompt('Preset name:', dam ? dam.split('/').pop() : url);
+    if (!name) return;
+    const presets = loadPresets();
+    presets.push({
+        name,
+        aemUrl: url,
+        damPath: dam,
+        username: user,
+        maxConcurrent: val('maxConcurrent'),
+        httpRetryCount: val('httpRetryCount'),
+        httpRetryDelay: val('httpRetryDelay'),
+        httpRequestTimeout: val('httpRequestTimeout'),
+        maxUploadFiles: val('maxUploadFiles'),
+    });
+    localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
+    renderPresets();
+    showToast('Preset "' + name + '" saved', 'success');
+}
+
+function applyPreset(idx) {
+    const presets = loadPresets();
+    const p = presets[idx];
+    if (!p) return;
+    if (p.aemUrl) document.getElementById('aemUrl').value = p.aemUrl;
+    if (p.damPath) document.getElementById('damPath').value = p.damPath;
+    if (p.username) document.getElementById('username').value = p.username;
+    if (p.maxConcurrent) { document.getElementById('maxConcurrent').value = p.maxConcurrent; document.getElementById('maxConcVal').textContent = p.maxConcurrent; }
+    if (p.httpRetryCount) document.getElementById('httpRetryCount').value = p.httpRetryCount;
+    if (p.httpRetryDelay) document.getElementById('httpRetryDelay').value = p.httpRetryDelay;
+    if (p.httpRequestTimeout) document.getElementById('httpRequestTimeout').value = p.httpRequestTimeout;
+    if (p.maxUploadFiles) document.getElementById('maxUploadFiles').value = p.maxUploadFiles;
+    liveValidateUrl();
+    liveValidateDamPath();
+    showToast('Preset "' + p.name + '" applied', 'info');
+}
+
+function deletePreset(idx) {
+    const presets = loadPresets();
+    const name = presets[idx]?.name || '';
+    presets.splice(idx, 1);
+    localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
+    renderPresets();
+    showToast('Preset "' + name + '" deleted', 'info');
+}
+
+// ═══ Multi-Tab Coordination ═══
+let _uploadChannel = null;
+try {
+    _uploadChannel = new BroadcastChannel('guides_upload_coord');
+    _uploadChannel.onmessage = (ev) => {
+        const msg = ev.data;
+        if (msg.type === 'upload_started' && !uploading) {
+            showToast('Upload started in another tab: ' + (msg.target || ''), 'info');
+        }
+        if (msg.type === 'upload_done') {
+            loadHistory();
+        }
+    };
+} catch (_) {
+    Logger.debug('BroadcastChannel not supported');
+}
+
+function broadcastTabEvent(type, detail) {
+    if (_uploadChannel) {
+        try { _uploadChannel.postMessage({ type, ...detail }); } catch (_) {}
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initDarkMode();
+    initConnectionStatus();
+    updateRecentTargetsBtn();
+    loadQueue();
+    initDropZone();
+    renderPresets();
+
+    window.addEventListener('online', handleOnlineStatus);
+    window.addEventListener('offline', handleOnlineStatus);
+
+    // Close dialog on overlay click
+    document.getElementById('confirmModal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeConfirm();
+    });
+});
+</script>
+</sp-theme>
+</body>
+</html>
