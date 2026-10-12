@@ -28,6 +28,7 @@ const FILE_ERRORS_CAP = parseInt(process.env.FILE_ERRORS_CAP) || 1000;
 // Staged files take at least one filesystem block each, so many small files need far more
 // space than their byte total suggests.
 const TEMP_SPACE_PER_FILE_BYTES = 4096;
+const DEFAULT_UPLOAD_PIPELINES = parseInt(process.env.UPLOAD_PIPELINES, 10) || 4;
 const TEMP_SPACE_MARGIN = 1.2;
 
 // ─── Multer config for browser file uploads ───
@@ -262,7 +263,7 @@ function createBroadcast(session) {
     return function broadcast(eventName, data) {
         const payload = JSON.stringify(data);
         const msg = `event: ${eventName}\ndata: ${payload}\n\n`;
-        if (eventName !== 'fileprogress' && session.events.length < SSE_EVENT_CAP) {
+        if (eventName === 'done' || (eventName !== 'fileprogress' && session.events.length < SSE_EVENT_CAP)) {
             session.events.push({ eventName, data });
         }
         session.listeners.forEach((sseRes) => {
@@ -286,7 +287,7 @@ function emitUserCancelledUpload(uploadId, session, uploadKey) {
             totalFiles: session.totalFiles || 0,
             totalBytes: session.totalBytes || 0,
             transferredBytes: session.transferredBytes || 0,
-            errorCount: 0,
+            errorCount: session.failedFiles || 0,
             errors: [],
             uploadedFiles: Math.max(0, (session.completedFiles || 0) - (session.failedFiles || 0)),
             fileErrors: session.fileErrors || {},
@@ -297,7 +298,7 @@ function emitUserCancelledUpload(uploadId, session, uploadKey) {
     session.done = true;
     session.doneTime = Date.now();
     session.userCancelled = true;
-    if (uploadKey) activeUploads.delete(uploadKey);
+    if (uploadKey && activeUploads.get(uploadKey) === uploadId) activeUploads.delete(uploadKey);
     uploadHistory.unshift({
         uploadId,
         target: meta.target,
@@ -307,7 +308,7 @@ function emitUserCancelledUpload(uploadId, session, uploadKey) {
         totalFiles: session.totalFiles || 0,
         totalBytes: session.totalBytes || 0,
         success: false,
-        errorCount: 0,
+        errorCount: session.failedFiles || 0,
         errors: [],
         uploadedFiles: Math.max(0, (session.completedFiles || 0) - (session.failedFiles || 0)),
         cancelled: true,
@@ -406,6 +407,8 @@ app.use(express.static(nodePath.join(__dirname, 'public'), {
 // ─── In-memory stores ───
 const uploadSessions = new Map();
 const browserUploadSessions = new Map(); // Chunked browser upload sessions
+// Chunk session id -> AEM upload id, so a cancel for the session still reaches the started upload
+const finalizedBrowserSessions = new Map();
 let uploadHistory = [];
 
 // Session reaper: clean up stuck/orphaned sessions every 2 minutes
@@ -418,7 +421,7 @@ setInterval(() => {
     uploadSessions.forEach((session, uploadId) => {
         const startAge = now - session.meta.startTime;
         const doneAge = session.doneTime ? now - session.doneTime : 0;
-        if (session.done && doneAge > SESSION_DONE_LINGER_MS) {
+        if (session.done && doneAge > SESSION_DONE_LINGER_MS && session.runSettled !== false) {
             if (session.tempDir) cleanupTempDir(session.tempDir).catch(() => {});
             session.listeners.forEach((res) => { try { res.end(); } catch (_) {} });
             uploadSessions.delete(uploadId);
@@ -458,18 +461,31 @@ let historyWriteQueued = false;
 async function loadHistoryFromDisk() {
     try {
         const data = await fsPromises.readFile(HISTORY_FILE, 'utf-8');
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        if (!Array.isArray(parsed)) throw new Error('history file is not a JSON array');
+        return parsed;
     } catch (e) {
-        if (e.code !== 'ENOENT') log.warn('Failed to load history:', e.message);
+        if (e.code === 'ENOENT') return [];
+        // Keep the unreadable file; the next save would otherwise replace it with an empty list
+        const backup = `${HISTORY_FILE}.unreadable-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+        try { await fsPromises.copyFile(HISTORY_FILE, backup); } catch (_) { /* nothing to keep */ }
+        log.error(`Failed to load history (${e.message}); kept the file as ${nodePath.basename(backup)} and started with an empty history`);
         return [];
     }
+}
+
+function historyWritesIdle() {
+    return !historyWriteInProgress && !historyWriteQueued;
 }
 
 async function saveHistoryToDisk() {
     if (historyWriteInProgress) { historyWriteQueued = true; return; }
     historyWriteInProgress = true;
     try {
-        await fsPromises.writeFile(HISTORY_FILE, JSON.stringify(uploadHistory, null, 2));
+        // Write then rename, so a crash mid-write cannot leave a truncated history file
+        const tmpFile = HISTORY_FILE + '.tmp';
+        await fsPromises.writeFile(tmpFile, JSON.stringify(uploadHistory, null, 2));
+        await fsPromises.rename(tmpFile, HISTORY_FILE);
     } catch (e) {
         log.error('Failed to save history:', e.message);
     } finally {
@@ -608,7 +624,7 @@ function clampUploadParams(raw) {
         httpRetryCount: Math.min(Math.max(intOrDefault(raw.httpRetryCount, 5), 0), 10),
         httpRetryDelay: Math.min(Math.max(intOrDefault(raw.httpRetryDelay, 8000), 0), 60000),
         httpRequestTimeout: Math.min(Math.max(intOrDefault(raw.httpRequestTimeout, 120000), 5000), 600000),
-        uploadPipelines: Math.min(Math.max(intOrDefault(raw.uploadPipelines, 4), 1), 8),
+        uploadPipelines: Math.min(Math.max(intOrDefault(raw.uploadPipelines, DEFAULT_UPLOAD_PIPELINES), 1), 8),
     };
 }
 
@@ -659,11 +675,15 @@ app.get('/api/scan', async (req, res) => {
 // ─── API: start upload ───
 app.post('/api/upload', uploadLimiter, async (req, res) => {
     const {
-        targetId, baseUrl, damPath, localPath,
+        targetId, baseUrl, damPath, localPath: rawLocalPath,
         username, password,
         maxConcurrent, maxUploadFiles,
         httpRetryCount, httpRetryDelay, httpRequestTimeout
     } = req.body;
+
+    // Validation, the duplicate guard and the upload must all use the same path
+    const localPath = typeof rawLocalPath === 'string' && rawLocalPath.trim()
+        ? nodePath.resolve(rawLocalPath.trim()) : rawLocalPath;
 
     // Resolve target
     let resolvedBaseUrl = baseUrl;
@@ -755,6 +775,12 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
     log.info(`Upload started: ${uploadId} → ${resolvedBaseUrl}/${resolvedDamPath}`);
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
+        if (eventName === 'uploadplan') {
+            session.meta.expectedFiles = data.files;
+            session.meta.expectedBytes = data.bytes;
+            broadcast('uploadplan', { expectedFiles: data.files, expectedBytes: data.bytes });
+            return;
+        }
         session.totalBytes = data.totalBytes || session.totalBytes;
         session.transferredBytes = data.transferredBytes || session.transferredBytes;
         if (eventName === 'filestart') session.totalFiles++;
@@ -778,6 +804,9 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
 
     // Store cancel function
     session.cancelFn = cancelFn;
+    session.runSettled = false;
+    // Cancel can arrive between the response with the uploadId and this point
+    if (session.userCancelled) cancelFn();
 
     uploadPromise.then((result) => {
         if (session.userCancelled) {
@@ -837,8 +866,9 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
         } catch (e) { log.error('broadcast error in .catch:', e.message); }
     }).finally(() => {
         session.done = true;
+        session.runSettled = true;
         session.doneTime = Date.now();
-        activeUploads.delete(uploadKey);
+        if (activeUploads.get(uploadKey) === uploadId) activeUploads.delete(uploadKey);
         // Free heavy buffers after SSE clients have had time to receive the done event
         setTimeout(() => {
             session.events = [];
@@ -981,6 +1011,12 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
     log.info(`Browser upload started: ${uploadId} (${req.files.length} files, ${contentChildren.length} top-level paths) → ${normalizedBaseUrl}/${damPath}`);
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
+        if (eventName === 'uploadplan') {
+            session.meta.expectedFiles = data.files;
+            session.meta.expectedBytes = data.bytes;
+            broadcast('uploadplan', { expectedFiles: data.files, expectedBytes: data.bytes });
+            return;
+        }
         session.totalBytes = data.totalBytes || session.totalBytes;
         session.transferredBytes = data.transferredBytes || session.transferredBytes;
         if (eventName === 'filestart') session.totalFiles++;
@@ -1002,6 +1038,9 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
     });
 
     session.cancelFn = cancelFn;
+    session.runSettled = false;
+    // Cancel can arrive between the response with the uploadId and this point
+    if (session.userCancelled) cancelFn();
 
     uploadPromise.then((result) => {
         if (session.userCancelled) {
@@ -1058,8 +1097,9 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
         } catch (e) { log.error('broadcast error in browser .catch:', e.message); }
     }).finally(() => {
         session.done = true;
+        session.runSettled = true;
         session.doneTime = Date.now();
-        activeUploads.delete(uploadKey);
+        if (activeUploads.get(uploadKey) === uploadId) activeUploads.delete(uploadKey);
         setTimeout(() => cleanupTempDir(tempDir).catch(() => {}), 30000);
         setTimeout(() => {
             session.events = [];
@@ -1128,10 +1168,21 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
 app.post('/api/upload/browser/cancel/:sessionId', uploadLimiter, (req, res) => {
     const session = browserUploadSessions.get(req.params.sessionId);
     if (!session) {
+        const startedId = finalizedBrowserSessions.get(req.params.sessionId);
+        const started = startedId && uploadSessions.get(startedId);
+        if (started && !started.done) {
+            if (typeof started.cancelFn === 'function') { try { started.cancelFn(); } catch (_) {} }
+            emitUserCancelledUpload(startedId, started, started.uploadKey);
+            log.info(`Browser session ${req.params.sessionId} cancelled after its AEM upload ${startedId} started`);
+            return res.json({ message: 'Upload cancelled', uploadId: startedId });
+        }
         return res.status(404).json({ error: 'Upload session not found or already cancelled' });
     }
     if (session.finalized) {
-        return res.status(409).json({ error: 'Session already finalized; cancel the AEM upload instead' });
+        // Finalize checks this flag before starting the AEM upload
+        session.cancelRequested = true;
+        log.info(`Cancel requested for session ${req.params.sessionId} while finalizing`);
+        return res.status(202).json({ message: 'Cancelling; the AEM upload will not start' });
     }
     const tempDir = session.tempDir;
     const sid = req.params.sessionId;
@@ -1245,6 +1296,12 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     session.config = null;
     browserUploadSessions.delete(sessionId);
 
+    if (session.cancelRequested) {
+        log.info(`[finalize] Session ${sessionId}: cancelled while finalizing; AEM upload not started`);
+        cleanupTempDir(tempDir).catch(() => {});
+        return res.status(409).json({ error: 'Upload cancelled', code: 'CANCELLED' });
+    }
+
     // Determine target label
     let targetLabel = 'Custom';
     const match = Object.values(TARGETS).find(t => t.baseUrl === baseUrl);
@@ -1259,6 +1316,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 
     const uploadId = crypto.randomUUID();
     const startTime = Date.now();
+    finalizedBrowserSessions.set(sessionId, uploadId);
 
     const uploadSession = {
         listeners: new Set(),
@@ -1345,6 +1403,12 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     }
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
+        if (eventName === 'uploadplan') {
+            uploadSession.meta.expectedFiles = data.files;
+            uploadSession.meta.expectedBytes = data.bytes;
+            broadcast('uploadplan', { expectedFiles: data.files, expectedBytes: data.bytes });
+            return;
+        }
         uploadSession.totalBytes = data.totalBytes || uploadSession.totalBytes;
         uploadSession.transferredBytes = data.transferredBytes || uploadSession.transferredBytes;
         if (eventName === 'filestart') uploadSession.totalFiles++;
@@ -1379,6 +1443,9 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     });
 
     uploadSession.cancelFn = cancelFn;
+    uploadSession.runSettled = false;
+    // Cancel can arrive between the response with the uploadId and this point
+    if (uploadSession.userCancelled) cancelFn();
 
     uploadPromise.then((result) => {
         if (uploadSession.userCancelled) {
@@ -1437,8 +1504,10 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
         } catch (e) { log.error('broadcast error in chunked browser .catch:', e.message); }
     }).finally(() => {
         uploadSession.done = true;
+        uploadSession.runSettled = true;
+        finalizedBrowserSessions.delete(sessionId);
         uploadSession.doneTime = Date.now();
-        activeUploads.delete(uploadKey);
+        if (activeUploads.get(uploadKey) === uploadId) activeUploads.delete(uploadKey);
         setTimeout(() => cleanupTempDir(tempDir).catch(() => {}), 30000);
         setTimeout(() => {
             uploadSession.events = [];
@@ -1721,7 +1790,32 @@ let server;
 
 async function shutdown(signal) {
     log.info(`${signal} received. Shutting down gracefully...`);
+    uploadSessions.forEach((session, uploadId) => {
+        if (session.done) return;
+        const meta = session.meta;
+        uploadHistory.unshift({
+            uploadId,
+            target: meta.target,
+            baseUrl: meta.baseUrl,
+            damPath: meta.damPath,
+            localPath: meta.localPath,
+            totalFiles: session.totalFiles || 0,
+            totalBytes: session.totalBytes || 0,
+            uploadedFiles: Math.max(0, (session.completedFiles || 0) - (session.failedFiles || 0)),
+            success: false,
+            partial: false,
+            errorCount: session.failedFiles || 0,
+            errors: ['Interrupted: the upload server was stopped or restarted during this upload'],
+            interrupted: true,
+            cancelled: false,
+            duration: Date.now() - meta.startTime,
+            timestamp: new Date().toISOString(),
+        });
+        log.warn(`Upload ${uploadId} interrupted by shutdown (${session.completedFiles || 0} files done)`);
+    });
+    if (uploadHistory.length > MAX_HISTORY) uploadHistory.length = MAX_HISTORY;
     await saveHistoryToDisk();
+    for (let i = 0; i < 100 && !historyWritesIdle(); i++) await new Promise((r) => setTimeout(r, 50));
 
     // Clean up temp directories from in-progress browser uploads
     const cleanupPromises = [];
@@ -1759,9 +1853,10 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // ─── Start ───
 (async () => {
     uploadHistory = await loadHistoryFromDisk();
-    try { await sweepStaleTempDirs(); } catch (e) { log.warn('Temp dir sweep failed:', e.message); }
     const tempFree = await getTempFreeBytes();
     server = app.listen(PORT, () => {
+        // Only after the port is ours: a second instance must not delete the running one's temp dirs
+        sweepStaleTempDirs().catch((e) => log.warn('Temp dir sweep failed:', e.message));
         log.info(`GUIdes Upload Utility running at http://localhost:${PORT}`);
         log.info(`Platform: ${process.platform}, Node: ${process.version}, PID: ${process.pid}`);
         log.info(`Heap limit: ${(require('v8').getHeapStatistics().heap_size_limit / 1048576).toFixed(0)} MB`);
@@ -1772,6 +1867,11 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
         if (API_KEY) log.info('API key authentication is ENABLED');
         else log.warn('API key authentication is DISABLED (set API_KEY env var to enable)');
         if (BROWSE_ROOTS.length > 0) log.info('Browse roots restricted to: ' + BROWSE_ROOTS.join(', '));
+    });
+    server.on('error', (err) => {
+        // Exit without the shutdown handler, which would save this process's history over the live one's
+        log.error(`Cannot listen on port ${PORT}: ${err.code || err.message}. Is another instance running?`);
+        process.exit(1);
     });
 
     // Periodic memory monitoring — log heap usage every 5 minutes
