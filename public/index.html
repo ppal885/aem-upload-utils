@@ -701,6 +701,7 @@ let totalBytesExpected = 0;
 let totalBytesTransferred = 0;
 let speedSamples = [];
 let ewmaSpeed = -1;
+let ewmaFileRate = -1;
 let uploadStartMs = 0;
 
 // File list batching
@@ -2263,7 +2264,7 @@ function resetProgress() {
     resetFileMap(); filesCompleted = 0; filesFailed = 0; totalFilesStarted = 0;
     totalBytesExpected = 0; totalBytesTransferred = 0; uploadDoneReceived = false;
     uploadExpectedFiles = 0; uploadExpectedBytes = 0; _lastAnnouncedDecile = -1;
-    speedSamples = []; ewmaSpeed = -1; uploadStartMs = Date.now();
+    speedSamples = []; ewmaSpeed = -1; ewmaFileRate = -1; uploadStartMs = Date.now();
     fileListDirty = false;
     if (rafId) cancelAnimationFrame(rafId);
     if (_progressThrottleTimer) { clearTimeout(_progressThrottleTimer); _progressThrottleTimer = null; }
@@ -2305,12 +2306,14 @@ function updateProgressUI() {
     if (byteTotal > 0 && totalBytesTransferred >= 0) {
         bytePct = Math.min(99, Math.round((totalBytesTransferred / byteTotal) * 100));
     }
-    // Batched SSE (filebatch) can arrive ~150ms after fileprogress, so file counts stay 0
-    // while bytes already move — use max(file, byte) so the bar reflects real transfer early.
+    // Bytes run ahead of finished files (content is sent before AEM completes each file), so once
+    // files are finishing the bar follows files; bytes only cover the start, before the first file ends.
     // Cap at 99% until the server sends the 'done' event.
     let pct = 0;
     if (uploadDoneReceived) {
         pct = 100;
+    } else if (fileTotal > 0 && filesCompleted > 0) {
+        pct = Math.min(99, filePct);
     } else {
         pct = Math.min(99, Math.max(filePct, bytePct));
     }
@@ -2336,27 +2339,36 @@ function updateProgressUI() {
     let speedStr = '';
     const now = Date.now();
     const elapsed = (now - uploadStartMs) / 1000;
-    speedSamples.push({ t: now, b: totalBytesTransferred });
+    speedSamples.push({ t: now, b: totalBytesTransferred, f: filesCompleted });
     if (speedSamples.length > 20) speedSamples.shift();
     if (speedSamples.length >= 2) {
         const oldest = speedSamples[0];
         const dt = (now - oldest.t) / 1000;
         const db = totalBytesTransferred - oldest.b;
+        const df = filesCompleted - oldest.f;
         if (dt > 0 && db >= 0) {
             const rawSpeed = db / dt;
             const alpha = 0.3;
             ewmaSpeed = ewmaSpeed < 0 ? rawSpeed : alpha * rawSpeed + (1 - alpha) * ewmaSpeed;
-            speedStr = fmtBytes(ewmaSpeed) + '/s';
+            if (df >= 0) {
+                const rawFileRate = df / dt;
+                ewmaFileRate = ewmaFileRate < 0 ? rawFileRate : alpha * rawFileRate + (1 - alpha) * ewmaFileRate;
+            }
+            // Many small files: files per second says more than bytes per second
+            speedStr = ewmaFileRate > 0 ? ewmaFileRate.toFixed(1) + ' files/s' : fmtBytes(ewmaSpeed) + '/s';
             const speedEl = document.getElementById('uploadSpeed');
             speedEl.textContent = speedStr;
             speedEl.classList.remove('hidden');
             const etaEl = document.getElementById('uploadEta');
+            const filesLeft = fileTotal - filesCompleted;
             if (elapsed < 3) {
                 etaEl.textContent = 'Calculating...';
                 etaEl.classList.remove('hidden');
+            } else if (ewmaFileRate > 0 && filesLeft > 0) {
+                etaEl.textContent = 'ETA ' + fmtDuration((filesLeft / ewmaFileRate) * 1000);
+                etaEl.classList.remove('hidden');
             } else if (ewmaSpeed > 0 && byteTotal > totalBytesTransferred) {
-                const remain = (byteTotal - totalBytesTransferred) / ewmaSpeed;
-                etaEl.textContent = remain > 3600 ? 'ETA > 1h' : 'ETA ' + fmtDuration(remain * 1000);
+                etaEl.textContent = 'ETA ' + fmtDuration(((byteTotal - totalBytesTransferred) / ewmaSpeed) * 1000);
                 etaEl.classList.remove('hidden');
             }
         }
@@ -2386,12 +2398,13 @@ function flushFileList() {
     let html = '';
 
     if (total > MAX_VISIBLE) {
-        const inFlight = Math.max(0, total - filesCompleted - filesFailed);
+        // filesCompleted counts failed files too
+        const waiting = Math.max(0, total - filesCompleted);
         html += `<div class="flex items-center gap-3 py-2 px-3 mb-2 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-200">
             <span class="font-semibold">${total.toLocaleString()} files total</span>
-            <span class="text-green-600">${filesCompleted.toLocaleString()} done</span>
+            <span class="text-green-600">${(filesCompleted - filesFailed).toLocaleString()} done</span>
             ${filesFailed > 0 ? `<span class="text-red-600">${filesFailed} failed</span>` : ''}
-            ${inFlight > 0 ? `<span class="text-blue-600">${inFlight.toLocaleString()} in progress</span>` : ''}
+            ${waiting > 0 ? `<span class="text-blue-600">${waiting.toLocaleString()} remaining</span>` : ''}
             <span class="text-gray-400 ml-auto">Showing last ${MAX_VISIBLE}</span>
         </div>`;
         const tail = recentFileKeys.slice(-MAX_VISIBLE);
@@ -2471,6 +2484,7 @@ function connectSSE(uploadId, isReconnect = false) {
     uploadDoneReceived = false;
     resetFileMap();
     speedSamples = [];
+    ewmaFileRate = -1;
     uploadStartMs = uploadStartMs || Date.now();
 
     // Show the AEM upload progress panel now that the server-side upload is starting
