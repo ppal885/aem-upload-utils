@@ -111,10 +111,7 @@
         .dark #connLostBanner { background-color: #7f1d1d !important; }
         .dark .tree-toggle:hover { background-color: #1e293b !important; }
 
-        /* Mobile history card layout */
         @media (max-width: 768px) {
-            #histPanel table { display: none !important; }
-            #histPanel .hist-mobile-cards { display: block !important; }
             #histControls { flex-direction: column; align-items: stretch !important; }
             #histControls .min-w-\[200px\] { max-width: 100% !important; }
         }
@@ -709,6 +706,9 @@ const RECENT_CAP = 60;
 let filesCompleted = 0;
 let filesFailed = 0;
 let totalFilesStarted = 0;
+// Full size of the upload, known before AEM starts; totalFilesStarted/totalBytesExpected only grow as files start
+let uploadExpectedFiles = 0;
+let uploadExpectedBytes = 0;
 let fileListDirty = false;
 let rafId = null;
 let uploadDoneReceived = false;
@@ -1128,8 +1128,9 @@ async function checkForActiveUploads() {
 
 function showActiveBanner(upload) {
     if (bannerDismissed || uploading) return;
-    const pct = upload.totalBytes > 0 ? Math.round((upload.transferredBytes / upload.totalBytes) * 100) : 0;
-    const text = upload.target + ' — ' + upload.completedFiles + '/' + upload.totalFiles + ' files (' + pct + '%) — ' + fmtDuration(upload.elapsedMs);
+    const fileTotal = Math.max(upload.totalFiles || 0, upload.expectedFiles || 0);
+    const pct = fileTotal > 0 ? Math.min(99, Math.round((upload.completedFiles / fileTotal) * 100)) : 0;
+    const text = upload.target + ' — ' + upload.completedFiles + '/' + fileTotal + ' files (' + pct + '%) — ' + fmtDuration(upload.elapsedMs);
     document.getElementById('activeBannerText').textContent = 'Background upload: ' + text;
     document.getElementById('activeUploadsBanner').classList.remove('hidden');
     window._activeBannerUploadId = upload.uploadId;
@@ -1171,6 +1172,8 @@ async function reconnectActiveUpload() {
         filesFailed = status.failedFiles;
         totalBytesExpected = status.totalBytes;
         totalBytesTransferred = status.transferredBytes;
+        uploadExpectedFiles = status.expectedFiles || 0;
+        uploadExpectedBytes = status.expectedBytes || 0;
         uploadStartMs = Date.now() - status.elapsedMs;
         updateProgressUI();
 
@@ -1229,7 +1232,7 @@ document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !uploading) {
         e.preventDefault();
         initiateUpload();
-    } else if (e.key === 'Enter' && tag !== 'INPUT' && tag !== 'TEXTAREA' && !uploading && !document.getElementById('confirmModal').classList.contains('hidden')) {
+    } else if (e.key === 'Enter' && !['INPUT', 'TEXTAREA', 'BUTTON', 'SP-BUTTON'].includes(tag) && !uploading && !document.getElementById('confirmModal').classList.contains('hidden')) {
         handleConfirmOk();
     } else if (e.key === 'Escape') {
         const rtDropdown = document.getElementById('recentTargetsDropdown');
@@ -1555,7 +1558,7 @@ async function confirmUpload() {
         }
         Logger.error('Upload failed:', toErrorMessage(e));
         if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
-        showSummary(false, 0, 0, 0, [toErrorMessage(e)]);
+        showUploadStartError(toErrorMessage(e));
         setUploading(false);
     }
     pendingUploadBody = null;
@@ -1572,6 +1575,8 @@ async function doBrowserUpload(config) {
 
     chunkTransferAbort = false;
     chunkSessionId = null;
+    // A finished upload's id would otherwise send Cancel to that upload instead of this transfer
+    currentUploadId = null;
     activeChunkXhrs.clear();
 
     const fileCount = browserFileEntries.length;
@@ -1744,6 +1749,15 @@ async function doBrowserUpload(config) {
         body: JSON.stringify({ sessionId }),
         signal: AbortSignal.timeout(30 * 60 * 1000),
     });
+    if (chunkTransferAbort) {
+        // Cancel was clicked while finalizing: if the AEM upload already started, stop it too
+        const startedId = finalRes.ok && finalRes.data && finalRes.data.uploadId;
+        if (startedId) {
+            try { await fetch('/api/upload/cancel/' + startedId, { method: 'POST' }); } catch (_) {}
+        }
+        hideTransferPanel();
+        throw new Error('TRANSFER_CANCELLED');
+    }
     if (!finalRes.ok) {
         hideTransferPanel();
         throw new Error(toErrorMessage(finalRes.data.error || 'Failed to finalize upload'));
@@ -1752,6 +1766,8 @@ async function doBrowserUpload(config) {
     const { uploadId } = finalRes.data;
     chunkSessionId = null;
     currentUploadId = uploadId;
+    uploadExpectedFiles = fileCount;
+    uploadExpectedBytes = totalSize;
     Logger.info('Upload session finalized:', uploadId);
     localStorage.setItem('activeUploadId', uploadId);
     broadcastTabEvent('upload_started', { target: config.baseUrl || config.damPath });
@@ -2037,6 +2053,7 @@ function updateMiniProgress(pct, uploaded, total, speedText) {
 function resetProgress() {
     resetFileMap(); filesCompleted = 0; filesFailed = 0; totalFilesStarted = 0;
     totalBytesExpected = 0; totalBytesTransferred = 0; uploadDoneReceived = false;
+    uploadExpectedFiles = 0; uploadExpectedBytes = 0;
     speedSamples = []; ewmaSpeed = -1; uploadStartMs = Date.now();
     fileListDirty = false;
     if (rafId) cancelAnimationFrame(rafId);
@@ -2071,11 +2088,13 @@ function resetProgress() {
 
 function updateProgressUI() {
     const filesSucceeded = filesCompleted - filesFailed;
-    const remaining = totalFilesStarted - filesCompleted;
-    const filePct = totalFilesStarted > 0 ? Math.round((filesCompleted / totalFilesStarted) * 100) : 0;
+    const fileTotal = Math.max(totalFilesStarted, uploadExpectedFiles);
+    const byteTotal = Math.max(totalBytesExpected, uploadExpectedBytes);
+    const remaining = fileTotal - filesCompleted;
+    const filePct = fileTotal > 0 ? Math.round((filesCompleted / fileTotal) * 100) : 0;
     let bytePct = 0;
-    if (totalBytesExpected > 0 && totalBytesTransferred >= 0) {
-        bytePct = Math.min(99, Math.round((totalBytesTransferred / totalBytesExpected) * 100));
+    if (byteTotal > 0 && totalBytesTransferred >= 0) {
+        bytePct = Math.min(99, Math.round((totalBytesTransferred / byteTotal) * 100));
     }
     // Batched SSE (filebatch) can arrive ~150ms after fileprogress, so file counts stay 0
     // while bytes already move — use max(file, byte) so the bar reflects real transfer early.
@@ -2100,7 +2119,7 @@ function updateProgressUI() {
     document.getElementById('statUploaded').textContent = filesSucceeded;
     document.getElementById('statRemaining').textContent = remaining >= 0 ? remaining : 0;
     document.getElementById('statFailed').textContent = filesFailed;
-    document.getElementById('statBytes').textContent = fmtBytes(totalBytesTransferred) + ' / ' + fmtBytes(totalBytesExpected);
+    document.getElementById('statBytes').textContent = fmtBytes(totalBytesTransferred) + ' / ' + fmtBytes(byteTotal);
 
     // Speed + ETA (EWMA smoothing with 3s warmup)
     let speedStr = '';
@@ -2124,8 +2143,8 @@ function updateProgressUI() {
             if (elapsed < 3) {
                 etaEl.textContent = 'Calculating...';
                 etaEl.classList.remove('hidden');
-            } else if (ewmaSpeed > 0 && totalBytesExpected > totalBytesTransferred) {
-                const remain = (totalBytesExpected - totalBytesTransferred) / ewmaSpeed;
+            } else if (ewmaSpeed > 0 && byteTotal > totalBytesTransferred) {
+                const remain = (byteTotal - totalBytesTransferred) / ewmaSpeed;
                 etaEl.textContent = remain > 3600 ? 'ETA > 1h' : 'ETA ' + fmtDuration(remain * 1000);
                 etaEl.classList.remove('hidden');
             }
@@ -2133,7 +2152,7 @@ function updateProgressUI() {
     }
 
     // Update floating mini-widget
-    updateMiniProgress(pct, filesSucceeded, totalFilesStarted, speedStr);
+    updateMiniProgress(pct, filesSucceeded, fileTotal, speedStr);
 }
 
 // Batched DOM rendering
@@ -2146,7 +2165,7 @@ function scheduleFileListRender() {
 function flushFileList() {
     fileListDirty = false;
     const container = document.getElementById('fileList');
-    const total = Math.max(fileMapSize, totalFilesStarted);
+    const total = Math.max(fileMapSize, totalFilesStarted, uploadExpectedFiles);
     if (total === 0) {
         container.innerHTML = '<div class="flex items-center justify-center gap-2 py-6 text-gray-400 text-xs"><span class="pulse-dot">&#9679;</span> Waiting for files...</div>';
         return;
@@ -2385,6 +2404,24 @@ function connectSSE(uploadId) {
 }
 
 // ═══ Summary ═══
+// Failures before the AEM upload starts (credentials, server space, chunk transfer). resetProgress()
+// hides #progressPanel, which contains #summaryBar, so it must be shown again here.
+function showUploadStartError(message) {
+    hideTransferPanel();
+    const panel = document.getElementById('progressPanel');
+    panel.classList.remove('hidden');
+    document.getElementById('progressLabel').textContent = 'Upload did not start';
+    document.getElementById('progressPct').textContent = '';
+    const bar = document.getElementById('summaryBar');
+    bar.classList.remove('hidden');
+    bar.innerHTML = `<div role="alert" class="flex items-start gap-3 text-red-700 bg-red-50 rounded-lg p-4 dark:bg-red-900/30 dark:text-red-300">
+        <svg class="h-6 w-6 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div><div class="font-semibold">Upload did not start</div><div class="text-sm">${esc(message)}</div>
+        <div class="text-xs mt-1">No files were sent to AEM.</div></div></div>`;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast(message, 'error');
+}
+
 function showSummary(success, totalFiles, errorCount, duration, errors, cancelled, totalBytes) {
     hideTransferPanel();
     const bar = document.getElementById('summaryBar');
