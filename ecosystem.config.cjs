@@ -12,7 +12,8 @@ module.exports = {
     autorestart: true,
     watch: false,
     max_memory_restart: '4500M',
-    env: { NODE_ENV: 'production' },
+    // Many VMs mount /tmp as a small RAM-backed tmpfs; stage uploads on the app's disk instead
+    env: { NODE_ENV: 'production', TMPDIR: process.env.UPLOAD_TMPDIR || require('path').join(__dirname, '.upload-tmp') },
     merge_logs: true,
     time: true,
   }],
