@@ -21,6 +21,9 @@ const NOT_FOUND_RETRY_DELAYS_MS = [15000, 30000];
 const CREDENTIAL_CHECK_TIMEOUT_MS = 15000;
 const FOLDER_CREATE_CONCURRENCY = 5;
 const DEFAULT_UPLOAD_PIPELINES = 4;
+// @adobe/aem-upload cannot abort a running transfer, so each pipeline uploads in batches and
+// checks for a cancel between them; this bounds how much is still sent after Cancel.
+const PIPELINE_BATCH_SIZE = 50;
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '::1'];
 
 function buildSelfSignedAgent(baseUrl) {
@@ -154,6 +157,16 @@ function validateUploadConfig(config) {
  * @returns {Promise<{ok: boolean, code?: string, status?: number, error?: string}>}
  */
 function checkAemCredentials(rawBaseUrl, username, password) {
+    const hardTimeout = new Promise((resolve) => {
+        const t = setTimeout(() => resolve({ ok: false, code: 'AEM_UNREACHABLE',
+            error: `AEM at ${normalizeAemBaseUrl(rawBaseUrl)} did not answer the login check in time.` }),
+        CREDENTIAL_CHECK_TIMEOUT_MS + 5000);
+        if (t.unref) t.unref();
+    });
+    return Promise.race([checkAemCredentialsOnce(rawBaseUrl, username, password), hardTimeout]);
+}
+
+function checkAemCredentialsOnce(rawBaseUrl, username, password) {
     const baseUrl = normalizeAemBaseUrl(rawBaseUrl).replace(/\/+$/, '');
     const checkUrl = new URL(`${baseUrl}/libs/granite/security/currentuser.json`);
     const isLocalHost = LOCAL_HOSTNAMES.includes(checkUrl.hostname.toLowerCase());
@@ -173,6 +186,8 @@ function checkAemCredentials(rawBaseUrl, username, password) {
         const req = client.request(checkUrl, requestOptions, (res) => {
             let body = '';
             res.setEncoding('utf8');
+            res.on('error', (err) => resolve({ ok: false, code: 'AEM_UNREACHABLE',
+                error: `Cannot reach AEM at ${baseUrl} (${err.code || err.message}).` }));
             res.on('data', (chunk) => { if (body.length < 65536) body += chunk; });
             res.on('end', () => {
                 const status = res.statusCode;
@@ -316,7 +331,7 @@ function runUpload(config, eventCallback) {
         if (pendingProgressData) { flushProgress(); }
         if (eventCallback) {
             try {
-                eventCallback(evt, { ...data, totalBytes, transferredBytes, errors });
+                eventCallback(evt, { ...data, totalBytes, transferredBytes });
             } catch (_) {}
         }
     }
@@ -344,7 +359,7 @@ function runUpload(config, eventCallback) {
                     lastProgressLog = now;
                 }
                 // Throttle fileprogress broadcasts to reduce SSE/DOM overhead
-                const progressPayload = { ...data, totalBytes, transferredBytes, errors };
+                const progressPayload = { ...data, totalBytes, transferredBytes };
                 if (now - lastProgressBroadcast >= PROGRESS_THROTTLE_MS) {
                     lastProgressBroadcast = now;
                     pendingProgressData = null;
@@ -364,6 +379,12 @@ function runUpload(config, eventCallback) {
                 svcLog.debug(`fileend: ${data.fileName} (${((fileSize) / 1024).toFixed(1)} KB)`);
             }
             if (evt === 'fileerror') {
+                if (!startedFiles.has(fileKey(data))) {
+                    startedFiles.add(fileKey(data));
+                    totalFiles++;
+                    totalBytes += (data.fileSize || 0);
+                    emit('filestart', data);
+                }
                 transferredBytes -= (fileBytes[data.fileName] || 0);
                 delete fileBytes[data.fileName];
                 if (!cancelled && retryPassesLeft > 0 && isNotFound(data)) {
@@ -398,18 +419,23 @@ function runUpload(config, eventCallback) {
         const sliceSize = Math.ceil(files.length / pipelineCount);
         const runs = [];
         for (let i = 0; i < files.length; i += sliceSize) {
-            const sliceOptions = new DirectBinaryUploadOptions()
-                .withUrl(url)
-                .withUploadFiles(files.slice(i, i + sliceSize))
-                .withMaxConcurrent(maxConcurrent)
-                .withHttpRetryCount(httpRetryCount)
-                .withHttpRetryDelay(httpRetryDelay)
-                .withHttpRequestTimeout(httpRequestTimeout)
-                .withHttpOptions(httpOptions);
-            const uploader = new DirectBinaryUpload();
-            attachEvents(uploader);
-            activeUploaders.push(uploader);
-            runs.push(uploader.uploadFiles(sliceOptions));
+            const slice = files.slice(i, i + sliceSize);
+            runs.push((async () => {
+                for (let b = 0; b < slice.length; b += PIPELINE_BATCH_SIZE) {
+                    if (cancelled) return;
+                    const batchOptions = new DirectBinaryUploadOptions()
+                        .withUrl(url)
+                        .withUploadFiles(slice.slice(b, b + PIPELINE_BATCH_SIZE))
+                        .withMaxConcurrent(maxConcurrent)
+                        .withHttpRetryCount(httpRetryCount)
+                        .withHttpRetryDelay(httpRetryDelay)
+                        .withHttpRequestTimeout(httpRequestTimeout)
+                        .withHttpOptions(httpOptions);
+                    const uploader = new DirectBinaryUpload();
+                    attachEvents(uploader);
+                    await uploader.uploadFiles(batchOptions);
+                }
+            })());
         }
         return Promise.all(runs);
     }
@@ -437,7 +463,7 @@ function runUpload(config, eventCallback) {
     async function retryNotFoundFiles(uploadFiles) {
         const fileInfoByTarget = new Map();
         uploadFiles.forEach((info) => {
-            try { fileInfoByTarget.set(decodeURI(new URL(info.fileUrl).pathname), info); } catch (_) {}
+            try { fileInfoByTarget.set(decodeURIComponent(new URL(info.fileUrl).pathname), info); } catch (_) {}
         });
 
         for (const delayMs of NOT_FOUND_RETRY_DELAYS_MS) {
@@ -468,15 +494,23 @@ function runUpload(config, eventCallback) {
         return { success, partial, totalFiles, totalBytes, transferredBytes, errors, cancelled };
     }
 
-    const activeUploaders = [];
-
     async function uploadAll() {
         const fsUpload = new FileSystemUpload();
         const uploadResult = new UploadResult(fsUpload.getOptions(), options);
         await fsUpload.createTargetFolder(options, uploadResult);
         const { directories, files, errors: walkErrors } = await fsUpload.getUploadInformation(options, localPaths);
-        walkErrors.forEach((e) => svcLog.warn('Skipped local path:', (e && e.message) || String(e)));
+        walkErrors.forEach((e) => {
+            const msg = (e && e.message) || String(e);
+            svcLog.warn('Could not read local path:', msg);
+            errors.push(`Could not read local path: ${msg}`);
+        });
         const uploadFiles = fsUpload.convertToUploadFilesWithUrl(options, files);
+        // The library skips temp/hidden files (".*", "~*", "*.tmp", Thumbs.db, ...), so tell the caller the real totals
+        if (eventCallback) {
+            try {
+                eventCallback('uploadplan', { files: uploadFiles.length, bytes: uploadFiles.reduce((sum, f) => sum + (f.fileSize || 0), 0) });
+            } catch (_) {}
+        }
 
         const foldersStart = Date.now();
         await createFolders(fsUpload, uploadResult, directories);
@@ -508,9 +542,7 @@ function runUpload(config, eventCallback) {
     function cancel() {
         svcLog.warn('Upload cancellation triggered');
         cancelled = true;
-        activeUploaders.forEach((uploader) => {
-            try { uploader.cancel && uploader.cancel(); } catch (_) {}
-        });
+        // Checked before folder creation, between pipeline batches and before 404 retries
     }
 
     return { promise, cancel };

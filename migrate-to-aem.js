@@ -33,7 +33,9 @@ const config = {
     localPaths: [localPath],
     username,
     password,
-    maxConcurrent: parseInt(process.env.AEM_MAX_CONCURRENT) || 20,
+    // Per pipeline; runUpload runs UPLOAD_PIPELINES (default 4) pipelines in parallel
+    maxConcurrent: Math.min(Math.max(parseInt(process.env.AEM_MAX_CONCURRENT) || 2, 1), 10),
+    uploadPipelines: Math.min(Math.max(parseInt(process.env.UPLOAD_PIPELINES) || 4, 1), 8),
     maxUploadFiles: parseInt(process.env.AEM_MAX_FILES) || 50000,
 };
 

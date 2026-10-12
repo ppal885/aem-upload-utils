@@ -6,8 +6,11 @@
  * Usage:
  *   node find-missing-assets.js --aem <author url> --dam <DAM folder the upload targeted>
  *        --local <the local folder that was uploaded> [--copy-to <empty folder>] [--out missing-files.txt]
+ *        [--source browser|server]
  *
- * Credentials come from AEM_USER / AEM_PASSWORD, or are asked for (the password is not echoed).
+ * --source: "browser" (default) for uploads made from the web page, "server" for a server path or the CLI
+ * (only browser uploads rename ".." and <>"|?* in paths).
+ * Credentials come from AEM_USER (or AEM_USERNAME) / AEM_PASSWORD, or are asked for (the password is not echoed).
  * Requires Node.js 18+ (no npm install needed).
  */
 const fs = require('fs');
@@ -21,6 +24,11 @@ const INVALID_FOLDER_CHARACTERS = /[.%;#+?^{}\s"&]/g;
 const INVALID_ASSET_CHARACTERS = /[#%{}?&]/g;
 const INVALID_CHARACTERS = /[/:[\]|*\\]/g;
 const PAGE_SIZE = 5000;
+// Files and folders @adobe/aem-upload never uploads (src/utils.js isTempPath)
+const TEMP_NAME_PATTERNS = [/^[.~]/i, /^TestFile/, /\.tmp$/i, /\.~tmp$/i, /^desktop\.ini/i, /^Thumbs\.db/i,
+    /^Adobe Bridge Cache\.bc$/i, /^Adobe Bridge Cache\.bct$/i];
+const isSkippedName = (name) => TEMP_NAME_PATTERNS.some((p) => p.test(name));
+let rearrangeEnabled = true;
 
 function parseArgs(argv) {
     const args = {};
@@ -37,6 +45,7 @@ function parseArgs(argv) {
 }
 
 function rearrangeSegment(segment) {
+    if (!rearrangeEnabled) return segment;
     return segment.replace(/\.\./g, '_').replace(REARRANGE_UNSAFE, '_');
 }
 
@@ -52,9 +61,13 @@ function remoteAssetName(fileName) {
 async function walk(dir, base, out) {
     const entries = await fsp.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
+        if (isSkippedName(entry.name)) continue;
         const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) await walk(full, base, out);
-        else if (entry.isFile()) out.push(path.relative(base, full).split(path.sep));
+        // The upload follows symlinks, so count what they point to
+        const kind = entry.isSymbolicLink() ? await fsp.stat(full).catch(() => null) : entry;
+        if (!kind) continue;
+        if (kind.isDirectory()) await walk(full, base, out);
+        else if (kind.isFile()) out.push(path.relative(base, full).split(path.sep));
     }
     return out;
 }
@@ -87,7 +100,10 @@ async function listAemAssets(aemUrl, damFolder, auth) {
         const hits = body.hits || [];
         hits.forEach((hit) => paths.add(hit['jcr:path']));
         process.stdout.write(`\r  AEM assets listed: ${paths.size}`);
-        if (hits.length < PAGE_SIZE) break;
+        // AEM may return fewer hits per page than asked for; stop on the reported total, not the page size
+        const total = typeof body.total === 'number' ? body.total : null;
+        if (hits.length === 0 || (total !== null ? offset + hits.length >= total : hits.length < PAGE_SIZE)) break;
+        if (total !== null && hits.length < PAGE_SIZE) offset -= PAGE_SIZE - hits.length;
     }
     process.stdout.write('\n');
     return paths;
@@ -99,9 +115,12 @@ async function main() {
     const damFolder = '/' + args.dam.replace(/^\/+|\/+$/g, '');
     const localRoot = path.resolve(args.local);
     const outFile = path.resolve(args.out || 'missing-files.txt');
+    const source = args.source || 'browser';
+    if (!['browser', 'server'].includes(source)) throw new Error('--source must be "browser" or "server"');
+    rearrangeEnabled = source === 'browser';
     if (!fs.statSync(localRoot).isDirectory()) throw new Error(`--local is not a folder: ${localRoot}`);
 
-    const user = process.env.AEM_USER || await ask('AEM username: ', false);
+    const user = process.env.AEM_USER || process.env.AEM_USERNAME || await ask('AEM username: ', false);
     const password = process.env.AEM_PASSWORD || await ask('AEM password: ', true);
     const auth = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
 
@@ -112,17 +131,21 @@ async function main() {
     console.log(`Listing assets under ${damFolder} on ${aemUrl} ...`);
     const aemPaths = await listAemAssets(aemUrl, damFolder, auth);
 
-    // The uploaded folder itself becomes a folder under the DAM target
-    const topFolder = remoteFolderName(path.basename(localRoot));
+    // The uploaded folder itself becomes a folder under the DAM target, except that a browser upload
+    // whose folder has the same name as the DAM folder is uploaded straight into it (server.js unwrap)
+    const damLastSegment = damFolder.split('/').pop();
+    const unwrapped = rearrangeEnabled && rearrangeSegment(path.basename(localRoot)) === damLastSegment;
+    const topFolder = unwrapped ? null : remoteFolderName(path.basename(localRoot));
+    const remoteRoot = topFolder ? `${damFolder}/${topFolder}` : damFolder;
     const missing = [];
     const expected = new Set();
     for (const segments of localFiles) {
         const folders = segments.slice(0, -1).map(remoteFolderName);
-        const remote = [damFolder, topFolder, ...folders, remoteAssetName(segments[segments.length - 1])].join('/');
+        const remote = [remoteRoot, ...folders, remoteAssetName(segments[segments.length - 1])].join('/');
         expected.add(remote);
         if (!aemPaths.has(remote)) missing.push(segments.join('/'));
     }
-    const notLocal = [...aemPaths].filter((p) => p.startsWith(`${damFolder}/${topFolder}/`) && !expected.has(p)).length;
+    const notLocal = [...aemPaths].filter((p) => p.startsWith(`${remoteRoot}/`) && !expected.has(p)).length;
 
     fs.writeFileSync(outFile, missing.join('\n') + (missing.length ? '\n' : ''));
     console.log('');
