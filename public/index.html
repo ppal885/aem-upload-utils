@@ -575,6 +575,7 @@
                 <sp-button-group id="histFilterPills">
                     <sp-button onclick="setHistoryFilter('all')" class="hist-pill" data-filter="all" variant="accent" size="xs" selected>All</sp-button>
                     <sp-button onclick="setHistoryFilter('success')" class="hist-pill" data-filter="success" variant="secondary" size="xs" treatment="outline">Success</sp-button>
+                    <sp-button onclick="setHistoryFilter('partial')" class="hist-pill" data-filter="partial" variant="secondary" size="xs" treatment="outline">Partial</sp-button>
                     <sp-button onclick="setHistoryFilter('failed')" class="hist-pill" data-filter="failed" variant="secondary" size="xs" treatment="outline">Failed</sp-button>
                 </sp-button-group>
             </div>
@@ -2418,7 +2419,10 @@ function showSummary(success, totalFiles, errorCount, duration, errors, cancelle
         saveRecentTarget();
     } else {
         const cancelOnly = cancelled && (!errors || errors.length === 0);
-        const failTitle = cancelOnly ? 'Upload Cancelled' : ('Upload Finished with Errors' + (cancelled ? ' (cancelled)' : ''));
+        const partial = !cancelled && errorCount > 0 && totalFiles > errorCount;
+        const failTitle = cancelOnly ? 'Upload Cancelled'
+            : partial ? `Partially Uploaded: ${totalFiles - errorCount} of ${totalFiles} files`
+            : ('Upload Finished with Errors' + (cancelled ? ' (cancelled)' : ''));
         const errList = errors && errors.length ? `<ul class="mt-1 text-xs list-disc list-inside max-h-32 overflow-y-auto">${errors.slice(0, 20).map((e) => `<li>${esc(toErrorMessage(e))}</li>`).join('')}</ul>` : '';
         const retryBtn = `<button onclick="retryLastUpload()" class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-white bg-adobe-blue hover:bg-adobe-darkBlue rounded-lg px-3 py-1.5 transition">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -2821,12 +2825,19 @@ function setHistoryFilter(filter) {
 }
 function filterHistory() { historyPage = 0; renderFilteredHistory(); }
 
+// Older history entries have no "partial" flag, so derive it from the counts
+function isPartialUpload(h) {
+    if (h.partial != null) return h.partial;
+    return !h.success && !h.cancelled && h.errorCount > 0 && h.totalFiles > h.errorCount;
+}
+
 function getFilteredHistory() {
     const data = window._historyData || [];
     const search = (document.getElementById('histSearch')?.value || '').toLowerCase().trim();
     return data.filter(h => {
         if (historyFilter === 'success' && !h.success) return false;
-        if (historyFilter === 'failed' && h.success) return false;
+        if (historyFilter === 'partial' && !isPartialUpload(h)) return false;
+        if (historyFilter === 'failed' && (h.success || isPartialUpload(h))) return false;
         if (search) {
             const haystack = [h.damPath, h.target, h.localPath, h.baseUrl].join(' ').toLowerCase();
             if (!haystack.includes(search)) return false;
@@ -2865,7 +2876,9 @@ function renderFilteredHistory() {
             <td data-col="duration" class="px-4 py-3 text-gray-500 text-xs">${fmtDuration(h.duration)}</td>
             <td data-col="status" class="px-4 py-3">${h.success
                 ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Success</span>'
-                : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Failed</span>'}</td>
+                : isPartialUpload(h)
+                    ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 whitespace-nowrap" title="${h.totalFiles - h.errorCount} of ${h.totalFiles} files uploaded">Partial ${h.totalFiles - h.errorCount}/${h.totalFiles}</span>`
+                    : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Failed</span>'}</td>
             <td data-col="actions" class="px-4 py-3"><div class="flex items-center gap-2">
                 <button onclick="rerunUpload(${origIdx})" class="text-xs text-adobe-blue hover:underline">Re-run</button>
                 <button onclick="deleteHistoryItem('${h.uploadId}')" class="text-gray-300 hover:text-red-500 transition" title="Delete" aria-label="Delete history entry"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>

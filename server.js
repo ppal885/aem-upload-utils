@@ -9,7 +9,7 @@ const cors = require('cors');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
-const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl } = require('./upload-service');
+const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -656,6 +656,9 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
     });
     if (configErr) return res.status(400).json({ error: configErr });
 
+    const credCheck = await checkAemCredentials(resolvedBaseUrl, username, password);
+    if (!credCheck.ok) return res.status(400).json({ error: credCheck.error, code: credCheck.code });
+
     // Validate local path
     const pathAnalysis = await analyzeLocalPath(localPath);
     if (!pathAnalysis.valid) return res.status(400).json({ error: pathAnalysis.error });
@@ -745,6 +748,7 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
         try {
             broadcast('done', {
                 success: result.success,
+                partial: result.partial,
                 totalFiles: result.totalFiles,
                 totalBytes: result.totalBytes,
                 transferredBytes: result.transferredBytes,
@@ -765,6 +769,7 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
             totalFiles: result.totalFiles,
             totalBytes: result.totalBytes,
             success: result.success,
+            partial: result.partial,
             errorCount: result.errors.length,
             errors: result.errors.slice(0, 20),
             cancelled: result.cancelled,
@@ -831,6 +836,12 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
     if (configErr) {
         cleanupTempDir(tempDir);
         return res.status(400).json({ error: configErr });
+    }
+
+    const credCheck = await checkAemCredentials(normalizedBaseUrl, username, password);
+    if (!credCheck.ok) {
+        cleanupTempDir(tempDir);
+        return res.status(400).json({ error: credCheck.error, code: credCheck.code });
     }
 
     log.info(`Browser upload received: ${req.files.length} files, tempDir=${tempDir}`);
@@ -959,6 +970,7 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
         try {
             broadcast('done', {
                 success: result.success,
+                partial: result.partial,
                 totalFiles: result.totalFiles,
                 totalBytes: result.totalBytes,
                 transferredBytes: result.transferredBytes,
@@ -979,6 +991,7 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
             totalFiles: result.totalFiles,
             totalBytes: result.totalBytes,
             success: result.success,
+            partial: result.partial,
             errorCount: result.errors.length,
             errors: result.errors.slice(0, 20),
             cancelled: result.cancelled,
@@ -1032,6 +1045,11 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
     });
     if (configErr) {
         return res.status(400).json({ error: configErr });
+    }
+
+    const credCheck = await checkAemCredentials(normalizedInitUrl, username, password);
+    if (!credCheck.ok) {
+        return res.status(400).json({ error: credCheck.error, code: credCheck.code });
     }
 
     const sessionId = crypto.randomUUID();
@@ -1320,6 +1338,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
         try {
             broadcast('done', {
                 success: result.success,
+                partial: result.partial,
                 totalFiles: result.totalFiles,
                 totalBytes: result.totalBytes,
                 transferredBytes: result.transferredBytes,
@@ -1340,6 +1359,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
             totalFiles: result.totalFiles,
             totalBytes: result.totalBytes,
             success: result.success,
+            partial: result.partial,
             errorCount: result.errors.length,
             errors: result.errors.slice(0, 20),
             cancelled: result.cancelled,
