@@ -193,7 +193,7 @@
         <div class="ml-auto flex items-center gap-3">
             <div id="connectionStatus" class="flex items-center gap-1.5 text-xs text-gray-500" title="Server connection status">
                 <span id="connDot" class="w-2 h-2 rounded-full bg-gray-400 transition-colors"></span>
-                <span id="connText" class="hidden sm:inline">Checking...</span>
+                <span id="connText" class="sr-only sm:not-sr-only" aria-live="polite">Checking...</span>
             </div>
             <div class="relative">
                 <button onclick="toggleShortcutsHelp()" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">
@@ -449,22 +449,6 @@
             Cancel
         </sp-button>
     </div>
-
-    <!-- Upload Queue -->
-    <section id="uploadQueueSection" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-            <h3 class="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                <svg class="h-4 w-4 text-adobe-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-                Upload Queue
-                <span id="queueCount" class="text-xs bg-adobe-blue text-white rounded-full px-2 py-0.5">0</span>
-            </h3>
-            <div class="flex gap-2">
-                <sp-button onclick="startQueue()" id="startQueueBtn" variant="accent" size="s" style="display:none;">Start Queue</sp-button>
-                <button onclick="clearQueue()" class="text-xs text-red-500 hover:text-red-700 hover:underline transition" aria-label="Clear upload queue">Clear</button>
-            </div>
-        </div>
-        <div id="queueList" class="divide-y divide-gray-100 max-h-48 overflow-y-auto"></div>
-    </section>
 
     <!-- Transfer Progress (Browser → Server) — shown during chunked upload to server -->
     <section id="transferPanel" class="hidden bg-white rounded-xl shadow-sm border border-blue-200 overflow-hidden mb-4">
@@ -1195,7 +1179,8 @@ async function checkForActiveUploads() {
 }
 
 function showActiveBanner(upload) {
-    if (bannerDismissed || uploading) return;
+    if (uploading) return;
+    if (bannerDismissed && upload.uploadId === window._dismissedBannerUploadId) return;
     const fileTotal = Math.max(upload.totalFiles || 0, upload.expectedFiles || 0);
     const pct = fileTotal > 0 ? Math.min(99, Math.round((upload.completedFiles / fileTotal) * 100)) : 0;
     const text = upload.target + ' — ' + upload.completedFiles + '/' + fileTotal + ' files (' + pct + '%) — ' + fmtDuration(upload.elapsedMs);
@@ -1210,6 +1195,7 @@ function hideActiveBanner() {
 
 function dismissBanner() {
     bannerDismissed = true;
+    window._dismissedBannerUploadId = window._activeBannerUploadId;
     hideActiveBanner();
 }
 
@@ -1376,7 +1362,14 @@ function initHistoryCollapse(hasEntries) {
 
 // ═══ Draggable History Columns ═══
 const DEFAULT_COL_ORDER = ['timestamp','target','damPath','localPath','files','size','duration','status','actions'];
-let histColOrder = JSON.parse(localStorage.getItem('histColOrder') || 'null') || [...DEFAULT_COL_ORDER];
+function loadHistColOrder() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('histColOrder') || 'null');
+        if (Array.isArray(saved) && saved.length === DEFAULT_COL_ORDER.length && DEFAULT_COL_ORDER.every((c) => saved.includes(c))) return saved;
+    } catch (_) { /* corrupted value: fall back to the default order */ }
+    return [...DEFAULT_COL_ORDER];
+}
+let histColOrder = loadHistColOrder();
 
 function initDraggableColumns() {
     const ths = document.querySelectorAll('#historyHead th[data-col]');
@@ -1397,10 +1390,10 @@ let dragSrcCol = null;
 function onColDragStart(e) { dragSrcCol = this; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', this.dataset.col); this.style.opacity = '0.5'; }
 function onColDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-over'); }
 function onColDragLeave() { this.classList.remove('drag-over'); }
-function onColDragEnd() { this.style.opacity = '1'; document.querySelectorAll('#historyHead th').forEach(th => th.classList.remove('drag-over')); }
+function onColDragEnd() { dragSrcCol = null; this.style.opacity = '1'; document.querySelectorAll('#historyHead th').forEach(th => th.classList.remove('drag-over')); }
 function onColDrop(e) {
     e.preventDefault(); this.classList.remove('drag-over');
-    if (dragSrcCol === this) return;
+    if (!dragSrcCol || dragSrcCol === this) return;
     const fromCol = dragSrcCol.dataset.col;
     const toCol = this.dataset.col;
     if (!fromCol || !toCol || toCol === 'actions') return;
@@ -2239,7 +2232,7 @@ function resetProgress() {
     if (elapsedInterval) clearInterval(elapsedInterval);
     elapsedInterval = setInterval(() => {
         const s = Math.floor((Date.now() - uploadStartMs) / 1000);
-        document.getElementById('elapsedTime').textContent = s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`;
+        document.getElementById('elapsedTime').textContent = fmtDuration(s * 1000);
     }, 1000);
 }
 
@@ -2803,6 +2796,7 @@ function fmtBytes(b) {
 }
 function fmtDuration(ms) {
     if (!ms) return '0s';
+    if (ms < 1000) return '<1s';
     const s = Math.floor(ms/1000);
     if (s < 60) return s + 's';
     if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's';
@@ -2816,7 +2810,7 @@ function esc(s) {
     const t = s == null ? '' : (typeof s === 'string' ? s : toErrorMessage(s));
     const d = document.createElement('div');
     d.textContent = t;
-    return d.innerHTML;
+    return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ═══ Enhancement: Confetti Celebration ═══
@@ -2888,7 +2882,10 @@ async function checkConnection() {
                 showToast('Server connection restored', 'success');
             }
             setConnectionUI(true);
-        } else { setConnectionUI(false); }
+        } else {
+            connHealthy = false;
+            setConnectionUI(false);
+        }
     } catch {
         if (connHealthy) connHealthy = false;
         setConnectionUI(false);
@@ -2900,10 +2897,12 @@ function setConnectionUI(ok) {
     const banner = document.getElementById('connLostBanner');
     if (ok) {
         dot.className = 'w-2 h-2 rounded-full bg-green-400 transition-colors';
+        dot.title = 'Connected';
         text.textContent = 'Connected';
         banner.classList.add('hidden');
     } else {
         dot.className = 'w-2 h-2 rounded-full bg-red-400 transition-colors';
+        dot.title = 'Disconnected';
         text.textContent = 'Disconnected';
         banner.classList.remove('hidden');
     }
@@ -3158,77 +3157,6 @@ document.addEventListener('drop', (e) => {
 });
 document.addEventListener('dragover', (e) => e.preventDefault());
 
-// ═══ Enhancement: Upload Queue ═══
-let uploadQueue = [];
-let queueRunning = false;
-
-function loadQueue() {
-    try { uploadQueue = JSON.parse(localStorage.getItem('uploadQueue') || '[]'); } catch { uploadQueue = []; }
-    renderQueue();
-}
-function saveQueue() { localStorage.setItem('uploadQueue', JSON.stringify(uploadQueue)); }
-
-function addToQueue() {
-    const config = gatherUploadConfig();
-    if (!config) return;
-    uploadQueue.push({ id: Date.now(), config, status: 'queued', label: config.damPath || 'Upload' });
-    saveQueue();
-    renderQueue();
-    showToast('Added to upload queue', 'info');
-}
-
-function gatherUploadConfig() {
-    const baseUrl = normalizeAemBaseUrl(val('aemUrl')), damPath = val('damPath'), username = val('username'), password = val('password');
-    if (!baseUrl || !damPath || !username || !password) { showToast('Fill in all required fields first', 'warn'); return null; }
-    return { baseUrl, damPath, username, password, mode: 'browser',
-        maxConcurrent: parseInt(document.getElementById('maxConcurrent').value),
-    };
-}
-
-function renderQueue() {
-    const section = document.getElementById('uploadQueueSection');
-    const list = document.getElementById('queueList');
-    document.getElementById('queueCount').textContent = uploadQueue.length;
-    if (uploadQueue.length === 0) { section.classList.add('hidden'); return; }
-    section.classList.remove('hidden');
-    document.getElementById('startQueueBtn').style.display = (queueRunning || uploadQueue.every(q => q.status !== 'queued')) ? 'none' : '';
-    list.innerHTML = uploadQueue.map((q, i) => {
-        const statusColors = { queued: 'text-gray-500', uploading: 'text-adobe-blue', done: 'text-green-600', failed: 'text-red-600' };
-        const statusIcons = { queued: '&#9679;', uploading: '<svg class="spinner inline h-3 w-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>', done: '&#10003;', failed: '&#10007;' };
-        return `<div class="px-4 py-2.5 flex items-center gap-3 text-sm"><span class="${statusColors[q.status]}">${statusIcons[q.status]}</span>
-            <div class="flex-1 min-w-0"><div class="font-medium text-gray-800 truncate text-xs">${esc(q.label)}</div>
-            <div class="text-[10px] text-gray-400 truncate">${esc(q.config.baseUrl)}</div></div>
-            ${q.status === 'queued' ? `<button onclick="removeFromQueue(${i})" class="text-gray-300 hover:text-red-500 transition" aria-label="Remove from queue"><svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>` : ''}
-        </div>`;
-    }).join('');
-}
-
-function removeFromQueue(idx) { uploadQueue.splice(idx, 1); saveQueue(); renderQueue(); }
-function clearQueue() { uploadQueue = []; saveQueue(); renderQueue(); }
-
-async function startQueue() {
-    if (queueRunning) return;
-    queueRunning = true;
-    renderQueue();
-    for (const item of uploadQueue) {
-        if (item.status !== 'queued') continue;
-        item.status = 'uploading';
-        renderQueue();
-        try {
-            document.getElementById('aemUrl').value = item.config.baseUrl;
-            document.getElementById('damPath').value = item.config.damPath;
-            document.getElementById('username').value = item.config.username;
-            document.getElementById('password').value = item.config.password;
-            item.status = 'done';
-        } catch { item.status = 'failed'; }
-        renderQueue();
-    }
-    queueRunning = false;
-    saveQueue();
-    renderQueue();
-    showToast('Queue completed', 'success');
-}
-
 // ═══ AEM URL normalization (matches server upload-service) ═══
 function normalizeAemBaseUrl(raw) {
     if (raw == null) return '';
@@ -3456,7 +3384,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initDarkMode();
     initConnectionStatus();
     updateRecentTargetsBtn();
-    loadQueue();
+    // The removed upload queue kept plaintext passwords here
+    try { localStorage.removeItem('uploadQueue'); } catch (_) {}
     initDropZone();
     renderPresets();
 

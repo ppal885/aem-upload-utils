@@ -8,6 +8,7 @@ module.exports = {
     script: 'server.js',
     cwd: __dirname,
     node_args: '--max-old-space-size=4096',
+    exec_mode: 'fork',
     instances: 1,
     autorestart: true,
     watch: false,
