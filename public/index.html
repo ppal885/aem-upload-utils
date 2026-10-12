@@ -88,7 +88,7 @@
         .dark .text-gray-700 { color: #cbd5e1 !important; }
         .dark .text-gray-600 { color: #94a3b8 !important; }
         .dark .text-gray-500 { color: #64748b !important; }
-        .dark .text-gray-400 { color: #475569 !important; }
+        .dark .text-gray-400 { color: #8b9ab0 !important; }
         .dark .border-gray-200, .dark .border-gray-100 { border-color: #1e293b !important; }
         .dark .border-gray-300 { border-color: #334155 !important; }
         .dark body, .dark .bg-gray-50 { background-color: #0f172a !important; }
@@ -103,6 +103,21 @@
         .dark code { background-color: #334155 !important; color: #94a3b8 !important; }
         .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b !important; }
         .dark #confirmModal > div { background-color: #1e293b !important; }
+        .dark sp-button[variant="secondary"] {
+            color: #e2e8f0;
+            --mod-button-content-color-default: #e2e8f0; --mod-button-content-color-hover: #ffffff;
+            --mod-button-content-color-down: #ffffff; --mod-button-content-color-focus: #ffffff;
+            --mod-button-border-color-default: #64748b; --mod-button-border-color-hover: #94a3b8;
+        }
+        .dark .from-blue-50 { --tw-gradient-from: #1e293b !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important; }
+        .dark .to-white { --tw-gradient-to: #1a1a2e !important; }
+        .dark .bg-gray-200 { background-color: #334155 !important; }
+        .dark .hover\:bg-gray-50:hover, .dark .hover\:bg-gray-100:hover { background-color: #1e293b !important; }
+        .dark .bg-green-50 { background-color: rgba(20, 83, 45, 0.35) !important; }
+        .dark .text-green-700 { color: #86efac !important; }
+        /* #17: everything that can change the selection or the form is locked while uploading */
+        .uploading-locked #presetList, .uploading-locked #recentTargetsBtn, .uploading-locked #browserFilesPreview,
+        .uploading-locked #fileTypeFilterContainer, .uploading-locked #historyBody [data-col="actions"] { pointer-events: none; opacity: 0.5; }
         .dark #confirmModal h3 { color: #e2e8f0 !important; }
         .dark #confirmModal #confirmBody { color: #cbd5e1 !important; }
         .dark #confirmModal .bg-gray-50 { background-color: #16213e !important; }
@@ -487,7 +502,7 @@
         </div>
         <div class="px-6 py-4">
             <div class="flex items-center gap-3">
-                <div class="flex-1 bg-gray-200 rounded-full h-3 relative overflow-hidden">
+                <div id="transferTrack" class="flex-1 bg-gray-200 rounded-full h-3 relative overflow-hidden" role="progressbar" aria-label="Sending files to server" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div id="transferBar" class="bg-adobe-blue progress-gradient h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
                 </div>
                 <span id="transferPct" class="text-sm font-semibold text-gray-600 w-12 text-right">0%</span>
@@ -511,7 +526,8 @@
                 </div>
             </div>
             <!-- Stats row -->
-            <div id="progressStats" class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3" aria-live="polite" aria-atomic="true">
+            <div id="progressAnnouncer" class="sr-only" aria-live="polite"></div>
+            <div id="progressStats" class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
                     <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Uploaded</div>
                     <div class="text-lg font-bold text-green-600" id="statUploaded">0</div>
@@ -537,7 +553,7 @@
                     <span id="progressLabel">Upload Progress</span>
                     <span id="progressPct">0%</span>
                 </div>
-                <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                <div id="progressTrack" class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden" role="progressbar" aria-label="AEM upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div id="progressBar" class="bg-adobe-blue h-2.5 rounded-full transition-all duration-300" style="width:0%"></div>
                 </div>
             </div>
@@ -605,8 +621,8 @@
             <!-- Empty state -->
             <div id="histEmptyState" class="hidden px-6 py-12 text-center">
                 <svg class="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
-                <p class="text-sm font-medium text-gray-400">Your upload history will appear here</p>
-                <button onclick="window.scrollTo({top:0,behavior:'smooth'})" class="mt-2 text-xs text-adobe-blue hover:underline">Start an upload</button>
+                <p id="histEmptyText" class="text-sm font-medium text-gray-400">Your upload history will appear here</p>
+                <button id="histEmptyAction" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="mt-2 text-xs text-adobe-blue hover:underline">Start an upload</button>
             </div>
         </div>
     </section>
@@ -806,12 +822,14 @@ async function pickFolder() {
     setDropZoneLoading(true);
     const allFiles = [];
     _readAborted = false;
+    let limitReached = false;
     try {
         await readDirectoryHandle(dirHandle, dirHandle.name, allFiles, (count) => {
             if (count % 200 === 0) updateDropZoneProgress(count);
-            if (count >= MAX_BROWSER_FILES) {
+            if (count > MAX_BROWSER_FILES) {
                 _readAborted = true;
-                throw new Error('File limit reached (' + MAX_BROWSER_FILES.toLocaleString() + ').');
+                limitReached = true;
+                throw new Error(fileLimitMessage());
             }
         });
     } catch (err) {
@@ -820,8 +838,9 @@ async function pickFolder() {
         showToast(em, 'error');
     }
     setDropZoneLoading(false);
+    if (limitReached) return;
     if (allFiles.length > 0) {
-        setBrowserFileEntries(allFiles);
+        selectNewFiles(allFiles);
     } else {
         showToast('No files found in the selected folder', 'error');
     }
@@ -854,6 +873,7 @@ function initDropZone() {
         e.preventDefault(); e.stopPropagation();
         dragCounter = 0;
         dropZone.classList.remove('drag-over', 'drop-pulse');
+        if (blockedWhileUploading()) return;
         if (!e.dataTransfer.items || e.dataTransfer.items.length === 0) return;
 
         // Check for webkitGetAsEntry support (not available in Firefox)
@@ -883,22 +903,23 @@ function initDropZone() {
                 await readEntryRecursive(entry, '', allFiles, (count) => {
                     readCount = count;
                     if (count % 200 === 0) updateDropZoneProgress(count);
-                    if (count >= MAX_BROWSER_FILES) {
+                    if (count > MAX_BROWSER_FILES) {
                         _readAborted = true;
                         limitReached = true;
-                        throw new Error('File limit reached (' + MAX_BROWSER_FILES.toLocaleString() + '). Please select a smaller folder.');
+                        throw new Error(fileLimitMessage());
                     }
                 });
             }
         } catch (err) {
             const em = toErrorMessage(err);
             Logger.error('Folder read error:', em);
-            showToast(em, limitReached ? 'warn' : 'error');
+            showToast(em, 'error');
         }
         setDropZoneLoading(false);
+        if (limitReached) return;
 
         if (allFiles.length > 0) {
-            setBrowserFileEntries(allFiles);
+            selectNewFiles(allFiles);
         } else {
             showToast('No files found in the dropped item(s)', 'error');
         }
@@ -982,8 +1003,19 @@ function readEntryRecursive(entry, parentPath, results, onProgress) {
 }
 
 // Called when user selects files via <input type="file"> (both file + folder picker)
+function fileLimitMessage() {
+    return 'More than ' + MAX_BROWSER_FILES.toLocaleString() + ' files. Nothing was selected; choose a smaller folder.';
+}
+
 function onBrowserFilesSelected(files) {
+    const input = document.getElementById('browserFileInput');
     if (!files || files.length === 0) return;
+    if (blockedWhileUploading()) { input.value = ''; return; }
+    if (files.length > MAX_BROWSER_FILES) {
+        showToast(fileLimitMessage(), 'error');
+        input.value = '';
+        return;
+    }
 
     const entries = [];
     let hasRelPaths = false;
@@ -996,7 +1028,9 @@ function onBrowserFilesSelected(files) {
     if (!hasRelPaths && entries.length > 0) {
         Logger.warn('No folder structure detected (webkitRelativePath empty). Files will be uploaded flat.');
     }
-    setBrowserFileEntries(entries);
+    selectNewFiles(entries);
+    // Lets the same files be picked again later (e.g. after a successful upload)
+    input.value = '';
 }
 
 // Common handler to update state and preview from file entries
@@ -1055,7 +1089,28 @@ function setBrowserFileEntries(entries) {
 
 let _allBrowserFileEntries = []; // Unfiltered copy for filter reset
 
+function resetFileTypeFilter() {
+    _allBrowserFileEntries = [];
+    const input = document.getElementById('fileTypeFilter');
+    if (input) input.value = '';
+    const infoEl = document.getElementById('fileTypeFilterInfo');
+    if (infoEl) { infoEl.classList.add('hidden'); infoEl.textContent = ''; }
+}
+
+// A brand-new selection must not inherit the previous selection's file-type filter
+function selectNewFiles(entries) {
+    resetFileTypeFilter();
+    setBrowserFileEntries(entries);
+}
+
+function blockedWhileUploading() {
+    if (!uploading) return false;
+    showToast('Not available while an upload is running', 'warn');
+    return true;
+}
+
 function applyFileTypeFilter() {
+    if (blockedWhileUploading()) return;
     const raw = val('fileTypeFilter').trim();
     if (!raw) return;
     if (_allBrowserFileEntries.length === 0) _allBrowserFileEntries = [...browserFileEntries];
@@ -1077,6 +1132,7 @@ function applyFileTypeFilter() {
 }
 
 function clearFileTypeFilter() {
+    if (blockedWhileUploading()) return;
     document.getElementById('fileTypeFilter').value = '';
     const infoEl = document.getElementById('fileTypeFilterInfo');
     infoEl.classList.add('hidden');
@@ -1096,7 +1152,9 @@ function getRootFolderName(entries) {
 }
 
 function clearBrowserFiles() {
+    if (blockedWhileUploading()) return;
     browserFileEntries = [];
+    resetFileTypeFilter();
     document.getElementById('browserFilesPreview').classList.add('hidden');
     const folderInfoEl = document.getElementById('browserFolderInfo');
     if (folderInfoEl) folderInfoEl.classList.add('hidden');
@@ -1106,7 +1164,7 @@ function clearBrowserFiles() {
 
 // ═══ Background Upload Recovery ═══
 async function checkForActiveUploads() {
-    const savedId = localStorage.getItem('activeUploadId');
+    const savedId = sessionStorage.getItem('activeUploadId');
     try {
         const r = await fetch('/api/upload/active');
         const active = await r.json();
@@ -1118,7 +1176,7 @@ async function checkForActiveUploads() {
                 reconnectActiveUpload();
             }
         } else {
-            localStorage.removeItem('activeUploadId');
+            sessionStorage.removeItem('activeUploadId');
             hideActiveBanner();
         }
     } catch (e) {
@@ -1146,7 +1204,7 @@ function dismissBanner() {
 }
 
 async function reconnectActiveUpload() {
-    const uploadId = window._activeBannerUploadId || localStorage.getItem('activeUploadId');
+    const uploadId = window._activeBannerUploadId || sessionStorage.getItem('activeUploadId');
     if (!uploadId) { showToast('No active upload to reconnect to', 'info'); return; }
 
     try {
@@ -1154,14 +1212,14 @@ async function reconnectActiveUpload() {
         const status = await r.json();
         if (!r.ok || status.done) {
             showToast('Upload already finished', 'info');
-            localStorage.removeItem('activeUploadId');
+            sessionStorage.removeItem('activeUploadId');
             hideActiveBanner();
             loadHistory();
             return;
         }
 
         currentUploadId = uploadId;
-        localStorage.setItem('activeUploadId', uploadId);
+        sessionStorage.setItem('activeUploadId', uploadId);
         setUploading(true);
         resetProgress();
         hideActiveBanner();
@@ -1227,9 +1285,11 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Keyboard shortcuts
+let _lastEscapeAt = 0;
 document.addEventListener('keydown', (e) => {
     const tag = document.activeElement && document.activeElement.tagName;
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !uploading) {
+    const confirmOpen = !document.getElementById('confirmModal').classList.contains('hidden');
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !uploading && !confirmOpen) {
         e.preventDefault();
         initiateUpload();
     } else if (e.key === 'Enter' && !['INPUT', 'TEXTAREA', 'BUTTON', 'SP-BUTTON'].includes(tag) && !uploading && !document.getElementById('confirmModal').classList.contains('hidden')) {
@@ -1239,7 +1299,10 @@ document.addEventListener('keydown', (e) => {
         if (rtDropdown && !rtDropdown.classList.contains('hidden')) { rtDropdown.classList.add('hidden'); }
         else if (!document.getElementById('shortcutsTooltip').classList.contains('hidden')) { document.getElementById('shortcutsTooltip').classList.add('hidden'); }
         else if (!document.getElementById('confirmModal').classList.contains('hidden')) { closeConfirm(); }
-        else if (uploading) { cancelUpload(); }
+        else if (uploading) {
+            if (Date.now() - _lastEscapeAt < 3000) { _lastEscapeAt = 0; cancelUpload(); }
+            else { _lastEscapeAt = Date.now(); showToast('Press Esc again to cancel the upload', 'warn'); }
+        }
     }
 });
 
@@ -1375,6 +1438,8 @@ const REQUIRED_FIELDS = [
 ];
 
 REQUIRED_FIELDS.forEach(([id]) => {
+    // aemUrl and damPath manage their own error state in liveValidateUrl / liveValidateDamPath
+    if (id === 'aemUrl' || id === 'damPath') return;
     const el = document.getElementById(id);
     if (el) {
         el.addEventListener('input', () => clearFieldError(id));
@@ -1423,10 +1488,22 @@ function validateForm() {
         setFieldError('aemUrl', 'URL must start with http:// or https://');
         if (!firstBadId) firstBadId = 'aemUrl';
         ok = false;
+    } else if (aemUrlVal) {
+        let validUrl = false;
+        try { validUrl = !!new URL(normalizeAemBaseUrl(aemUrlVal)).hostname; } catch (_) { /* invalid */ }
+        if (!validUrl) {
+            setFieldError('aemUrl', 'Invalid URL format');
+            if (!firstBadId) firstBadId = 'aemUrl';
+            ok = false;
+        }
     }
     const damPathVal = (document.getElementById('damPath')?.value || '').trim();
-    if (damPathVal && !damPathVal.startsWith('content/dam')) {
+    if (damPathVal && !damPathVal.replace(/^\/+/, '').startsWith('content/dam')) {
         setFieldError('damPath', 'DAM path should start with content/dam');
+        if (!firstBadId) firstBadId = 'damPath';
+        ok = false;
+    } else if (damPathVal.includes('..')) {
+        setFieldError('damPath', 'Path must not contain directory traversal (..)');
         if (!firstBadId) firstBadId = 'damPath';
         ok = false;
     }
@@ -1447,6 +1524,16 @@ function validateForm() {
 }
 
 // ═══ Confirm + Upload ═══
+// Reads a numeric setting, clamped to the field's limits; the corrected value is written back to the field
+function readIntField(id, fallback, min, max) {
+    const el = document.getElementById(id);
+    let n = parseInt(el ? el.value : '', 10);
+    if (Number.isNaN(n)) n = fallback;
+    n = Math.min(Math.max(n, min), max);
+    if (el) el.value = n;
+    return n;
+}
+
 async function initiateUpload() {
     if (uploading) return;
     if (!validateForm()) return;
@@ -1483,7 +1570,7 @@ async function initiateUpload() {
     const overwriteNote = !overwriteChecked
         ? '<p class="mt-2 text-xs text-amber-600 bg-amber-50 rounded p-2">&#9888; Overwrite is disabled. Existing assets in AEM DAM will still be replaced (skip-existing is not yet supported). Uncheck is a reminder only.</p>'
         : '';
-    let maxUploadFiles = parseInt(val('maxUploadFiles')) || 50000;
+    let maxUploadFiles = readIntField('maxUploadFiles', 100000, 100, 200000);
     if (browserFileEntries.length > maxUploadFiles) {
         maxUploadFiles = Math.max(browserFileEntries.length, maxUploadFiles);
         document.getElementById('maxUploadFiles').value = maxUploadFiles;
@@ -1495,12 +1582,16 @@ async function initiateUpload() {
         folderNote + largeTip + overwriteNote +
         '<p class="mt-2 text-xs text-gray-400">Files will be transferred: Browser &rarr; Server &rarr; AEM</p>';
     pendingUploadBody = { baseUrl, damPath, username, password,
-        maxConcurrent: parseInt(val('maxConcurrent')) || 2,
+        maxConcurrent: readIntField('maxConcurrent', 2, 1, 10),
         maxUploadFiles,
-        httpRetryCount: parseInt(val('httpRetryCount')) || 5,
-        httpRetryDelay: (parseInt(val('httpRetryDelay')) || 8) * 1000,
-        httpRequestTimeout: (parseInt(val('httpRequestTimeout')) || 60) * 1000,
+        httpRetryCount: readIntField('httpRetryCount', 5, 0, 10),
+        httpRetryDelay: readIntField('httpRetryDelay', 8, 1, 30) * 1000,
+        httpRequestTimeout: readIntField('httpRequestTimeout', 120, 10, 300) * 1000,
     };
+    // #20: a previous dialog (e.g. Clear All History) must not leave its handler or labels behind
+    window._customConfirmHandler = null;
+    document.getElementById('confirmHeadline').textContent = 'Confirm Upload';
+    document.getElementById('confirmOkBtn').textContent = 'Upload';
     const modal = document.getElementById('confirmModal');
     modal.classList.remove('hidden');
     trapFocusInModal(modal);
@@ -1616,6 +1707,13 @@ async function doBrowserUpload(config) {
         throw new Error(toErrorMessage(initRes.data.error || 'Failed to create upload session'));
     }
     const { sessionId } = initRes.data;
+    if (chunkTransferAbort) {
+        // Cancel was clicked while the session was being created
+        try { await fetch('/api/upload/browser/cancel/' + sessionId, { method: 'POST' }); } catch (_) {}
+        hideTransferPanel();
+        showToast('Transfer cancelled', 'info');
+        throw new Error('TRANSFER_CANCELLED');
+    }
     chunkSessionId = sessionId;
     Logger.info('Upload session created:', sessionId);
 
@@ -1769,7 +1867,7 @@ async function doBrowserUpload(config) {
     uploadExpectedFiles = fileCount;
     uploadExpectedBytes = totalSize;
     Logger.info('Upload session finalized:', uploadId);
-    localStorage.setItem('activeUploadId', uploadId);
+    sessionStorage.setItem('activeUploadId', uploadId);
     broadcastTabEvent('upload_started', { target: config.baseUrl || config.damPath });
 
     // Defer clearing browserFileEntries until upload completes (success or fail)
@@ -1856,6 +1954,12 @@ let _transferPaused = false;
 let _transferPausedPromise = null;
 let _transferPausedResolve = null;
 
+let _pauseStatusTimer = null;
+function stopPauseStatusTimer() {
+    if (_pauseStatusTimer) { clearInterval(_pauseStatusTimer); _pauseStatusTimer = null; }
+}
+
+// Pause stops new chunks from starting; chunks already being sent finish first
 function pauseTransfer() {
     _transferPaused = true;
     _transferPausedPromise = new Promise(r => { _transferPausedResolve = r; });
@@ -1863,10 +1967,22 @@ function pauseTransfer() {
     const resumeBtn = document.getElementById('transferResumeBtn');
     if (pauseBtn) pauseBtn.style.display = 'none';
     if (resumeBtn) resumeBtn.style.display = '';
-    updateTransferStatus('Paused');
+    const showPauseState = () => {
+        const inFlight = activeChunkXhrs.size;
+        if (inFlight > 0) {
+            updateTransferStatus('Pausing — finishing ' + inFlight + ' chunk' + (inFlight !== 1 ? 's' : '') + ' already being sent');
+        } else {
+            updateTransferStatus('Paused');
+            stopPauseStatusTimer();
+        }
+    };
+    stopPauseStatusTimer();
+    showPauseState();
+    _pauseStatusTimer = setInterval(() => { if (_transferPaused) showPauseState(); else stopPauseStatusTimer(); }, 500);
 }
 
 function resumeTransfer() {
+    stopPauseStatusTimer();
     _transferPaused = false;
     if (_transferPausedResolve) {
         _transferPausedResolve();
@@ -1912,7 +2028,23 @@ function hideTransferPanel() {
     if (resumeBtn) resumeBtn.style.display = 'none';
 }
 
+function setProgressAria(trackId, pct) {
+    const el = document.getElementById(trackId);
+    if (el) el.setAttribute('aria-valuenow', String(pct));
+}
+
+let _lastAnnouncedDecile = -1;
+// Screen readers hear progress every 10%, not on every stats refresh
+function announceProgress(pct) {
+    const decile = Math.floor(pct / 10);
+    if (decile === _lastAnnouncedDecile) return;
+    _lastAnnouncedDecile = decile;
+    const el = document.getElementById('progressAnnouncer');
+    if (el) el.textContent = 'Upload ' + pct + '% complete';
+}
+
 function updateTransferBar(pct) {
+    setProgressAria('transferTrack', pct);
     document.getElementById('transferBar').style.width = pct + '%';
     document.getElementById('transferPct').textContent = pct + '%';
 }
@@ -1949,8 +2081,18 @@ function updateTransferStepBadge(step, title) {
 
 // ═══ Cancel ═══
 async function cancelUpload() {
+    if (uploading && !chunkSessionId && !currentUploadId) {
+        // Still checking credentials / creating the session; doBrowserUpload stops as soon as it returns
+        chunkTransferAbort = true;
+        showToast('Cancelling…', 'info');
+        return;
+    }
     if (chunkSessionId && !currentUploadId) {
         chunkTransferAbort = true;
+        // #14: wake paused workers so they see the abort instead of waiting forever
+        stopPauseStatusTimer();
+        _transferPaused = false;
+        if (_transferPausedResolve) { _transferPausedResolve(); _transferPausedResolve = null; _transferPausedPromise = null; }
         for (const xhr of activeChunkXhrs) {
             try { xhr.abort(); } catch (_) {}
         }
@@ -2017,14 +2159,19 @@ function setUploading(state) {
     // Disable/enable all input controls during upload to prevent accidental changes
     const controlIds = ['aemUrl', 'damPath', 'username', 'password',
         'maxConcurrent', 'maxUploadFiles', 'httpRetryCount', 'httpRetryDelay',
-        'httpRequestTimeout', 'dryRun'];
+        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter'];
     controlIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = state;
     });
     // Disable drop zone and file pickers
     const dropZone = document.getElementById('dropZone');
-    if (dropZone) { dropZone.style.pointerEvents = state ? 'none' : ''; dropZone.style.opacity = state ? '0.5' : ''; }
+    if (dropZone) {
+        dropZone.style.pointerEvents = state ? 'none' : '';
+        dropZone.style.opacity = state ? '0.5' : '';
+        dropZone.tabIndex = state ? -1 : 0;
+    }
+    document.body.classList.toggle('uploading-locked', state);
 }
 
 // ═══ Mini Progress Widget ═══
@@ -2053,7 +2200,7 @@ function updateMiniProgress(pct, uploaded, total, speedText) {
 function resetProgress() {
     resetFileMap(); filesCompleted = 0; filesFailed = 0; totalFilesStarted = 0;
     totalBytesExpected = 0; totalBytesTransferred = 0; uploadDoneReceived = false;
-    uploadExpectedFiles = 0; uploadExpectedBytes = 0;
+    uploadExpectedFiles = 0; uploadExpectedBytes = 0; _lastAnnouncedDecile = -1;
     speedSamples = []; ewmaSpeed = -1; uploadStartMs = Date.now();
     fileListDirty = false;
     if (rafId) cancelAnimationFrame(rafId);
@@ -2112,6 +2259,8 @@ function updateProgressUI() {
     if (tabHidden) return;
 
     document.getElementById('progressBar').style.width = pct + '%';
+    setProgressAria('progressTrack', pct);
+    announceProgress(pct);
     document.getElementById('progressLabel').textContent = pct + '% — Upload Progress';
     document.getElementById('progressPct').textContent = pct + '%';
 
@@ -2308,13 +2457,15 @@ function connectSSE(uploadId) {
     es.addEventListener('done', (e) => {
         _doneReceived = true;
         uploadDoneReceived = true;
+        // A refresh queued just before 'done' would otherwise overwrite the final summary
+        if (_progressThrottleTimer) { clearTimeout(_progressThrottleTimer); _progressThrottleTimer = null; }
         const d = JSON.parse(e.data);
         Logger.info('Upload done:', d.success ? 'SUCCESS' : 'FAILED', '— files:', d.totalFiles, 'errors:', d.errorCount, 'duration:', d.duration + 'ms');
         es.close();
         activeUploadEventSource = null;
         if (elapsedInterval) clearInterval(elapsedInterval);
         if (d.duration) document.getElementById('elapsedTime').textContent = fmtDuration(d.duration);
-        localStorage.removeItem('activeUploadId');
+        sessionStorage.removeItem('activeUploadId');
         updatePageTitle(-1);
         window._lastUploadErrorRows = [];
         if (d.errors && Array.isArray(d.errors) && d.errors.length) {
@@ -2347,7 +2498,7 @@ function connectSSE(uploadId) {
         }
         showSummary(d.success, d.totalFiles, d.errorCount, d.duration, d.errors, d.cancelled, d.totalBytes);
         setUploading(false);
-        if (d.success) browserFileEntries = []; // Free memory only on success; keep for Retry on failure
+        if (d.success) clearBrowserFiles(); // Free memory only on success; keep for Retry on failure
         broadcastTabEvent('upload_done');
         loadHistory();
         hideActiveBanner();
@@ -2395,6 +2546,7 @@ function connectSSE(uploadId) {
         } else if (uploading) {
             Logger.warn('SSE reconnection exhausted — upload continues in background');
             showToast('Connection lost — upload continues in background. Refresh to reconnect.', 'info');
+            if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
             setUploading(false);
             updatePageTitle(-1);
             bannerDismissed = false;
@@ -2429,10 +2581,17 @@ function showSummary(success, totalFiles, errorCount, duration, errors, cancelle
     const dur = duration ? fmtDuration(duration) : '--';
     const sizeStr = totalBytes ? ` (${fmtBytes(totalBytes)})` : '';
     const progBar = document.getElementById('progressBar');
-    progBar.style.width = '100%';
-    const doneLabel = success ? '100% — Upload Complete' : '100% — Upload Failed';
+    const finalTotal = Math.max(totalFiles || 0, uploadExpectedFiles);
+    // A cancel reports files started with 0 errors, so count the files this page saw finish
+    const finalUploaded = Math.max(0, filesCompleted - filesFailed);
+    const finalPct = success ? 100 : (finalTotal > 0 ? Math.floor((finalUploaded / finalTotal) * 100) : 0);
+    progBar.style.width = finalPct + '%';
+    setProgressAria('progressTrack', finalPct);
+    const doneLabel = success ? '100% — Upload Complete'
+        : cancelled ? finalPct + '% — Upload Cancelled'
+        : finalPct + '% — Upload Failed';
     document.getElementById('progressLabel').textContent = doneLabel;
-    document.getElementById('progressPct').textContent = '100%';
+    document.getElementById('progressPct').textContent = finalPct + '%';
     if (success) progBar.classList.replace('bg-adobe-blue', 'bg-green-500');
 
     // Sync progress stats with final values from the done event
@@ -2542,6 +2701,7 @@ async function loadHistory() {
 }
 
 function rerunUpload(idx) {
+    if (blockedWhileUploading()) return;
     const h = window._historyData && window._historyData[idx];
     if (!h) return;
     document.getElementById('aemUrl').value = h.baseUrl || '';
@@ -2755,12 +2915,12 @@ function toggleRecentTargets() {
     const list = document.getElementById('recentTargetsList');
     if (targets.length === 0) { list.innerHTML = '<div class="px-3 py-4 text-center text-xs text-gray-400">No recent targets</div>'; }
     else {
-        list.innerHTML = targets.map((t, i) => `<div class="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 cursor-pointer group transition" onclick="applyRecentTarget(${i})">
+        list.innerHTML = targets.map((t, i) => `<div role="button" tabindex="0" class="flex items-center gap-2 px-3 py-2 hover:bg-blue-50 cursor-pointer group transition" onclick="applyRecentTarget(${i})" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();applyRecentTarget(${i})}">
             <div class="flex-1 min-w-0">
                 <div class="text-xs font-medium text-gray-800 truncate">${esc(t.baseUrl)}</div>
                 <div class="text-[10px] text-gray-400 truncate">/${esc(t.damPath)} &middot; ${esc(t.username || '')}</div>
             </div>
-            <button onclick="event.stopPropagation(); removeRecentTarget(${i})" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition" title="Remove" aria-label="Remove recent target">
+            <button onclick="event.stopPropagation(); removeRecentTarget(${i})" class="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 text-gray-300 hover:text-red-500 transition" title="Remove" aria-label="Remove recent target">
                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
         </div>`).join('');
@@ -2768,6 +2928,7 @@ function toggleRecentTargets() {
     dd.classList.remove('hidden');
 }
 function applyRecentTarget(idx) {
+    if (blockedWhileUploading()) return;
     const targets = getRecentTargets();
     const t = targets[idx]; if (!t) return;
     document.getElementById('aemUrl').value = t.baseUrl;
@@ -2824,7 +2985,7 @@ function renderFolderTree(entries) {
             const hasChildren = Object.keys(child.children).length > 0;
             const indent = depth * 16;
             html += `<li class="tree-node" style="padding-left:${indent}px">`;
-            html += `<div class="flex items-center gap-1.5 py-0.5 px-1 rounded tree-toggle cursor-pointer" onclick="this.parentElement.querySelector('ul')?.classList.toggle('hidden');this.querySelector('.tree-arrow')?.classList.toggle('rotate-90')">`;
+            html += `<div role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" class="flex items-center gap-1.5 py-0.5 px-1 rounded tree-toggle cursor-pointer" onclick="this.parentElement.querySelector('ul')?.classList.toggle('hidden');this.querySelector('.tree-arrow')?.classList.toggle('rotate-90')">`;
             if (hasChildren) html += `<svg class="tree-arrow h-3 w-3 text-gray-400 transition-transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`;
             else html += `<span class="w-3"></span>`;
             html += `<svg class="h-3.5 w-3.5 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>`;
@@ -2897,6 +3058,10 @@ function renderFilteredHistory() {
 
     if (filtered.length === 0) {
         tbody.innerHTML = '';
+        const hasAny = (window._historyData || []).length > 0;
+        document.getElementById('histEmptyText').textContent = hasAny
+            ? 'No uploads match your search or filter' : 'Your upload history will appear here';
+        document.getElementById('histEmptyAction').classList.toggle('hidden', hasAny);
         emptyState.classList.remove('hidden');
         pagination.classList.add('hidden');
         return;
@@ -3180,9 +3345,9 @@ function renderPresets() {
         return;
     }
     list.innerHTML = presets.map((p, i) => `
-        <span class="inline-flex items-center gap-1 bg-blue-50 text-adobe-blue text-xs font-medium px-2.5 py-1 rounded-full cursor-pointer hover:bg-blue-100 transition group" onclick="applyPreset(${i})">
+        <span role="button" tabindex="0" class="inline-flex items-center gap-1 bg-blue-50 text-adobe-blue text-xs font-medium px-2.5 py-1 rounded-full cursor-pointer hover:bg-blue-100 transition group" onclick="applyPreset(${i})" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();applyPreset(${i})}">
             ${esc(p.name)}
-            <button onclick="event.stopPropagation();deletePreset(${i})" class="opacity-0 group-hover:opacity-100 transition text-red-400 hover:text-red-600 ml-0.5" aria-label="Delete preset ${esc(p.name)}">&times;</button>
+            <button onclick="event.stopPropagation();deletePreset(${i})" class="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 transition text-red-400 hover:text-red-600 ml-0.5" aria-label="Delete preset ${esc(p.name)}">&times;</button>
         </span>`).join('');
 }
 
@@ -3211,6 +3376,7 @@ function saveCurrentPreset() {
 }
 
 function applyPreset(idx) {
+    if (blockedWhileUploading()) return;
     const presets = loadPresets();
     const p = presets[idx];
     if (!p) return;
