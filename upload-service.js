@@ -1,14 +1,35 @@
 const {
+    DirectBinaryUpload,
+    DirectBinaryUploadOptions,
     FileSystemUploadOptions,
     FileSystemUpload
 } = require('@adobe/aem-upload');
 const { RegularExpressions } = require('@adobe/aem-upload/src/constants');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
+const http = require('http');
 const https = require('https');
 const path = require('path');
 
 const ALLOW_SELF_SIGNED = /^(1|true|yes)$/i.test(process.env.AEM_ALLOW_SELF_SIGNED || '');
+
+// AEM as a Cloud Service can return 404 on initiateUpload for a folder created moments ago
+// (the new folder is not yet visible to every author pod). @adobe/aem-upload never retries 4xx,
+// so files that fail with 404 are re-uploaded after these delays.
+const NOT_FOUND_RETRY_DELAYS_MS = [15000, 30000];
+const CREDENTIAL_CHECK_TIMEOUT_MS = 15000;
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '::1'];
+
+function buildSelfSignedAgent(baseUrl) {
+    if (!ALLOW_SELF_SIGNED) return null;
+    try {
+        const parsed = new URL(baseUrl);
+        if (parsed.protocol === 'https:' && LOCAL_HOSTNAMES.includes(parsed.hostname.toLowerCase())) {
+            return new https.Agent({ rejectUnauthorized: false });
+        }
+    } catch (_) { /* ignore */ }
+    return null;
+}
 
 // ─── Structured Logging (aligned with server.js format) ───
 const LOG_LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
@@ -120,6 +141,71 @@ function validateUploadConfig(config) {
 }
 
 /**
+ * Verify that AEM is reachable and accepts the credentials, before any file is sent.
+ * Only a definite rejection (401/403, anonymous session) or a connection failure is reported
+ * as a failure; any other response is treated as reachable so unusual AEM setups are not blocked.
+ *
+ * @param {string} rawBaseUrl
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<{ok: boolean, code?: string, status?: number, error?: string}>}
+ */
+function checkAemCredentials(rawBaseUrl, username, password) {
+    const baseUrl = normalizeAemBaseUrl(rawBaseUrl).replace(/\/+$/, '');
+    const checkUrl = new URL(`${baseUrl}/libs/granite/security/currentuser.json`);
+    const isLocalHost = LOCAL_HOSTNAMES.includes(checkUrl.hostname.toLowerCase());
+    const client = checkUrl.protocol === 'https:' ? https : http;
+    const requestOptions = {
+        method: 'GET',
+        timeout: CREDENTIAL_CHECK_TIMEOUT_MS,
+        headers: {
+            Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`,
+            Accept: 'application/json',
+        },
+    };
+    const agent = buildSelfSignedAgent(baseUrl);
+    if (agent) requestOptions.agent = agent;
+
+    return new Promise((resolve) => {
+        const req = client.request(checkUrl, requestOptions, (res) => {
+            let body = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk) => { if (body.length < 65536) body += chunk; });
+            res.on('end', () => {
+                const status = res.statusCode;
+                if (status === 401 || status === 403) {
+                    resolve({ ok: false, code: 'AUTH_FAILED', status,
+                        error: `AEM rejected the username or password (HTTP ${status}). Check the credentials and try again.` });
+                    return;
+                }
+                if (status === 200) {
+                    try {
+                        const user = JSON.parse(body);
+                        if (user && user.authorizableId === 'anonymous') {
+                            resolve({ ok: false, code: 'AUTH_FAILED', status,
+                                error: 'AEM did not accept the username or password (signed in as anonymous). Check the credentials and try again.' });
+                            return;
+                        }
+                    } catch (_) { /* non-JSON 200: treat as reachable */ }
+                }
+                if (status !== 200) svcLog.warn(`Credential check: unexpected HTTP ${status} from ${checkUrl.href}; continuing`);
+                resolve({ ok: true, status });
+            });
+        });
+        req.on('timeout', () => req.destroy(Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })));
+        req.on('error', (err) => {
+            let error = `Cannot reach AEM at ${baseUrl} (${err.code || err.message}).`;
+            if (isLocalHost) {
+                error += ' Note: "localhost" means the machine running this upload utility, not your computer.'
+                    + ' Use the AEM host name or IP address instead.';
+            }
+            resolve({ ok: false, code: 'AEM_UNREACHABLE', error });
+        });
+        req.end();
+    });
+}
+
+/**
  * Run an AEM upload with the given configuration.
  * Returns an object with { promise, cancel } so the caller can cancel.
  *
@@ -150,15 +236,10 @@ function runUpload(config, eventCallback) {
         },
     };
     // Allow self-signed certs for localhost HTTPS (e.g. https://localhost:4502) when AEM_ALLOW_SELF_SIGNED=1
-    if (ALLOW_SELF_SIGNED) {
-        try {
-            const parsed = new URL(baseUrl);
-            const isLocal = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname.toLowerCase());
-            if (parsed.protocol === 'https:' && isLocal) {
-                httpOptions.agent = new https.Agent({ rejectUnauthorized: false });
-                svcLog.info('Using self-signed cert bypass for localhost HTTPS');
-            }
-        } catch (_) { /* ignore */ }
+    const selfSignedAgent = buildSelfSignedAgent(baseUrl);
+    if (selfSignedAgent) {
+        httpOptions.agent = selfSignedAgent;
+        svcLog.info('Using self-signed cert bypass for localhost HTTPS');
     }
 
     const options = new FileSystemUploadOptions()
@@ -183,13 +264,16 @@ function runUpload(config, eventCallback) {
             );
         });
 
-    const fileUpload = new FileSystemUpload();
     const errors = [];
     let totalFiles = 0;
     let totalBytes = 0;
     let transferredBytes = 0;
     let cancelled = false;
     const fileBytes = {};
+    // Files whose attempt hit a 404 and that will be re-uploaded: targetFile -> event data
+    const heldNotFound = new Map();
+    const startedFiles = new Set();
+    let retryPassesLeft = NOT_FOUND_RETRY_DELAYS_MS.length;
 
     const uploadStartTime = Date.now();
     let lastProgressLog = 0;
@@ -207,10 +291,39 @@ function runUpload(config, eventCallback) {
         }
     }
 
+    function fileKey(data) {
+        return data.targetFile || data.fileName;
+    }
+
+    function isNotFound(data) {
+        const err = data.errors && data.errors[0];
+        if (!err) return false;
+        return err.code === 404 || err.status === 404 || /status code 404\b/.test(err.message || String(err));
+    }
+
+    function recordFileError(data) {
+        const msg = (data.errors && data.errors[0] && data.errors[0].message) || 'Unknown error';
+        errors.push(`${data.fileName}: ${msg}`);
+        svcLog.error(`fileerror: ${data.fileName} — ${msg}`);
+    }
+
+    function emit(evt, data) {
+        // Flush any pending throttled progress before sending fileend/fileerror
+        if (pendingProgressData) { flushProgress(); }
+        if (eventCallback) {
+            try {
+                eventCallback(evt, { ...data, totalBytes, transferredBytes, errors });
+            } catch (_) {}
+        }
+    }
+
     const events = ['filestart', 'fileprogress', 'fileend', 'fileerror', 'filecancelled'];
-    events.forEach((evt) => {
-        fileUpload.on(evt, (data) => {
+    const attachEvents = (uploader) => events.forEach((evt) => {
+        uploader.on(evt, (data) => {
             if (evt === 'filestart') {
+                // A re-uploaded file was already counted and reported on its first attempt
+                if (startedFiles.has(fileKey(data))) return;
+                startedFiles.add(fileKey(data));
                 totalFiles++;
                 totalBytes += (data.fileSize || 0);
                 svcLog.debug(`filestart: ${data.fileName} (${((data.fileSize || 0) / 1024).toFixed(1)} KB)`);
@@ -247,46 +360,106 @@ function runUpload(config, eventCallback) {
                 svcLog.debug(`fileend: ${data.fileName} (${((fileSize) / 1024).toFixed(1)} KB)`);
             }
             if (evt === 'fileerror') {
-                const msg = (data.errors && data.errors[0] && data.errors[0].message) || 'Unknown error';
-                errors.push(`${data.fileName}: ${msg}`);
+                transferredBytes -= (fileBytes[data.fileName] || 0);
                 delete fileBytes[data.fileName];
-                svcLog.error(`fileerror: ${data.fileName} — ${msg}`);
+                if (!cancelled && retryPassesLeft > 0 && isNotFound(data)) {
+                    heldNotFound.set(fileKey(data), data);
+                    svcLog.warn(`fileerror (404, will retry): ${data.fileName}`);
+                    return;
+                }
+                recordFileError(data);
             }
             if (evt === 'filecancelled') {
                 cancelled = true;
                 delete fileBytes[data.fileName];
                 svcLog.warn(`filecancelled: ${data.fileName}`);
             }
-            // Flush any pending throttled progress before sending fileend/fileerror
-            if (pendingProgressData) { flushProgress(); }
-            if (eventCallback) {
-                try {
-                    eventCallback(evt, { ...data, totalBytes, transferredBytes, errors });
-                } catch (_) {}
-            }
+            emit(evt, data);
         });
     });
 
+    function releaseHeldErrors() {
+        heldNotFound.forEach((data) => {
+            recordFileError(data);
+            emit('fileerror', data);
+        });
+        heldNotFound.clear();
+    }
+
+    async function retryNotFoundFiles(detailedResult) {
+        const fileInfoByTarget = new Map();
+        (detailedResult || []).forEach((info) => {
+            try { fileInfoByTarget.set(decodeURI(new URL(info.fileUrl).pathname), info); } catch (_) {}
+        });
+
+        for (const delayMs of NOT_FOUND_RETRY_DELAYS_MS) {
+            if (heldNotFound.size === 0 || cancelled) break;
+            const retryFiles = [];
+            heldNotFound.forEach((_data, key) => {
+                const info = fileInfoByTarget.get(key);
+                if (info && info.filePath) {
+                    retryFiles.push({ fileUrl: info.fileUrl, fileSize: info.fileSize, filePath: info.filePath });
+                    heldNotFound.delete(key);
+                }
+            });
+            if (retryFiles.length === 0) break;
+            retryPassesLeft--;
+
+            svcLog.warn(`${retryFiles.length} file(s) failed with 404 (new folder may not be visible yet); retrying in ${delayMs / 1000}s`);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            if (cancelled) break;
+
+            const retryOptions = new DirectBinaryUploadOptions()
+                .withUrl(url)
+                .withUploadFiles(retryFiles)
+                .withMaxConcurrent(maxConcurrent)
+                .withHttpRetryCount(httpRetryCount)
+                .withHttpRetryDelay(httpRetryDelay)
+                .withHttpRequestTimeout(httpRequestTimeout)
+                .withHttpOptions(httpOptions);
+            const retryUpload = new DirectBinaryUpload();
+            attachEvents(retryUpload);
+            activeUploader = retryUpload;
+            await retryUpload.uploadFiles(retryOptions);
+        }
+        // Anything still held (cancelled, or no local file info to retry with) is a real failure
+        releaseHeldErrors();
+    }
+
+    function buildResult() {
+        const success = errors.length === 0 && !cancelled;
+        const partial = !success && !cancelled && errors.length > 0 && totalFiles > errors.length;
+        return { success, partial, totalFiles, totalBytes, transferredBytes, errors, cancelled };
+    }
+
+    const fileUpload = new FileSystemUpload();
+    let activeUploader = fileUpload;
+    attachEvents(fileUpload);
+
     const promise = fileUpload.upload(options, localPaths)
-        .then(() => {
+        .then(async (firstPassResult) => {
+            if (heldNotFound.size > 0) {
+                await retryNotFoundFiles(firstPassResult && firstPassResult.detailedResult);
+            }
             const elapsed = ((Date.now() - uploadStartTime) / 1000).toFixed(1);
             const speedMBs = elapsed > 0 ? ((transferredBytes / 1048576) / elapsed).toFixed(2) : '0';
             svcLog.info(`Upload finished: ${totalFiles} files, ${(transferredBytes / 1048576).toFixed(1)} MB in ${elapsed}s (${speedMBs} MB/s), errors: ${errors.length}, cancelled: ${cancelled}`);
-            return { success: errors.length === 0 && !cancelled, totalFiles, totalBytes, transferredBytes, errors, cancelled };
+            return buildResult();
         })
         .catch((err) => {
             svcLog.error('Upload failed with exception:', err.message);
+            releaseHeldErrors();
             errors.push(err.message || String(err));
-            return { success: false, totalFiles, totalBytes, transferredBytes, errors, cancelled };
+            return buildResult();
         });
 
     function cancel() {
         svcLog.warn('Upload cancellation triggered');
         cancelled = true;
-        try { fileUpload.cancel && fileUpload.cancel(); } catch (_) {}
+        try { activeUploader.cancel && activeUploader.cancel(); } catch (_) {}
     }
 
     return { promise, cancel };
 }
 
-module.exports = { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl };
+module.exports = { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials };
