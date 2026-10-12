@@ -568,6 +568,7 @@ function clampUploadParams(raw) {
         httpRetryCount: Math.min(Math.max(intOrDefault(raw.httpRetryCount, 5), 0), 10),
         httpRetryDelay: Math.min(Math.max(intOrDefault(raw.httpRetryDelay, 8000), 0), 60000),
         httpRequestTimeout: Math.min(Math.max(intOrDefault(raw.httpRequestTimeout, 120000), 5000), 600000),
+        uploadPipelines: Math.min(Math.max(intOrDefault(raw.uploadPipelines, 4), 1), 8),
     };
 }
 

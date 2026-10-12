@@ -5,6 +5,7 @@ const {
     FileSystemUpload
 } = require('@adobe/aem-upload');
 const { RegularExpressions } = require('@adobe/aem-upload/src/constants');
+const UploadResult = require('@adobe/aem-upload/src/upload-result');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const http = require('http');
@@ -18,6 +19,8 @@ const ALLOW_SELF_SIGNED = /^(1|true|yes)$/i.test(process.env.AEM_ALLOW_SELF_SIGN
 // so files that fail with 404 are re-uploaded after these delays.
 const NOT_FOUND_RETRY_DELAYS_MS = [15000, 30000];
 const CREDENTIAL_CHECK_TIMEOUT_MS = 15000;
+const FOLDER_CREATE_CONCURRENCY = 5;
+const DEFAULT_UPLOAD_PIPELINES = 4;
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '::1'];
 
 function buildSelfSignedAgent(baseUrl) {
@@ -222,13 +225,14 @@ function runUpload(config, eventCallback) {
 
     svcLog.info(`Upload starting → ${url}`);
     svcLog.info(`  Local paths: ${localPaths.join(', ')}`);
-    svcLog.info(`  Config: concurrent=${config.maxConcurrent || 2}, maxFiles=${config.maxUploadFiles || 50000}, retries=${config.httpRetryCount ?? 3}, timeout=${config.httpRequestTimeout ?? 60000}ms`);
+    svcLog.info(`  Config: concurrent=${config.maxConcurrent || 2}, pipelines=${config.uploadPipelines || DEFAULT_UPLOAD_PIPELINES}, maxFiles=${config.maxUploadFiles || 50000}, retries=${config.httpRetryCount ?? 3}, timeout=${config.httpRequestTimeout ?? 60000}ms`);
 
     const maxConcurrent = config.maxConcurrent || 2;
     const maxUploadFiles = config.maxUploadFiles || 50000;
     const httpRetryCount = config.httpRetryCount != null ? config.httpRetryCount : 5;
     const httpRetryDelay = config.httpRetryDelay != null ? config.httpRetryDelay : 8000;
     const httpRequestTimeout = config.httpRequestTimeout != null ? config.httpRequestTimeout : 120000;
+    const uploadPipelines = config.uploadPipelines || DEFAULT_UPLOAD_PIPELINES;
 
     const httpOptions = {
         headers: {
@@ -386,9 +390,53 @@ function runUpload(config, eventCallback) {
         heldNotFound.clear();
     }
 
-    async function retryNotFoundFiles(detailedResult) {
+    // @adobe/httptransfer completes uploaded files strictly one at a time (one completeUpload
+    // request per file) whatever maxConcurrent is, which makes it the bottleneck for many small
+    // files. Running several independent pipelines over slices of the file list parallelises it.
+    function uploadInPipelines(files) {
+        const pipelineCount = Math.max(1, Math.min(uploadPipelines, files.length));
+        const sliceSize = Math.ceil(files.length / pipelineCount);
+        const runs = [];
+        for (let i = 0; i < files.length; i += sliceSize) {
+            const sliceOptions = new DirectBinaryUploadOptions()
+                .withUrl(url)
+                .withUploadFiles(files.slice(i, i + sliceSize))
+                .withMaxConcurrent(maxConcurrent)
+                .withHttpRetryCount(httpRetryCount)
+                .withHttpRetryDelay(httpRetryDelay)
+                .withHttpRequestTimeout(httpRequestTimeout)
+                .withHttpOptions(httpOptions);
+            const uploader = new DirectBinaryUpload();
+            attachEvents(uploader);
+            activeUploaders.push(uploader);
+            runs.push(uploader.uploadFiles(sliceOptions));
+        }
+        return Promise.all(runs);
+    }
+
+    // Parents must exist before children, so folders are created level by level,
+    // with each level's folders created a few at a time.
+    async function createFolders(fsUpload, uploadResult, directories) {
+        const byDepth = new Map();
+        directories.forEach((dir) => {
+            const depth = dir.getRemotePath().split('/').length;
+            if (!byDepth.has(depth)) byDepth.set(depth, []);
+            byDepth.get(depth).push(dir);
+        });
+        const depths = [...byDepth.keys()].sort((a, b) => a - b);
+        for (const depth of depths) {
+            const level = byDepth.get(depth);
+            for (let i = 0; i < level.length; i += FOLDER_CREATE_CONCURRENCY) {
+                if (cancelled) return;
+                await Promise.all(level.slice(i, i + FOLDER_CREATE_CONCURRENCY)
+                    .map((dir) => fsUpload.createAemFolderFromFileSystemInfo(options, uploadResult, dir)));
+            }
+        }
+    }
+
+    async function retryNotFoundFiles(uploadFiles) {
         const fileInfoByTarget = new Map();
-        (detailedResult || []).forEach((info) => {
+        uploadFiles.forEach((info) => {
             try { fileInfoByTarget.set(decodeURI(new URL(info.fileUrl).pathname), info); } catch (_) {}
         });
 
@@ -398,7 +446,7 @@ function runUpload(config, eventCallback) {
             heldNotFound.forEach((_data, key) => {
                 const info = fileInfoByTarget.get(key);
                 if (info && info.filePath) {
-                    retryFiles.push({ fileUrl: info.fileUrl, fileSize: info.fileSize, filePath: info.filePath });
+                    retryFiles.push(info);
                     heldNotFound.delete(key);
                 }
             });
@@ -408,19 +456,7 @@ function runUpload(config, eventCallback) {
             svcLog.warn(`${retryFiles.length} file(s) failed with 404 (new folder may not be visible yet); retrying in ${delayMs / 1000}s`);
             await new Promise((resolve) => setTimeout(resolve, delayMs));
             if (cancelled) break;
-
-            const retryOptions = new DirectBinaryUploadOptions()
-                .withUrl(url)
-                .withUploadFiles(retryFiles)
-                .withMaxConcurrent(maxConcurrent)
-                .withHttpRetryCount(httpRetryCount)
-                .withHttpRetryDelay(httpRetryDelay)
-                .withHttpRequestTimeout(httpRequestTimeout)
-                .withHttpOptions(httpOptions);
-            const retryUpload = new DirectBinaryUpload();
-            attachEvents(retryUpload);
-            activeUploader = retryUpload;
-            await retryUpload.uploadFiles(retryOptions);
+            await uploadInPipelines(retryFiles);
         }
         // Anything still held (cancelled, or no local file info to retry with) is a real failure
         releaseHeldErrors();
@@ -432,15 +468,31 @@ function runUpload(config, eventCallback) {
         return { success, partial, totalFiles, totalBytes, transferredBytes, errors, cancelled };
     }
 
-    const fileUpload = new FileSystemUpload();
-    let activeUploader = fileUpload;
-    attachEvents(fileUpload);
+    const activeUploaders = [];
 
-    const promise = fileUpload.upload(options, localPaths)
-        .then(async (firstPassResult) => {
-            if (heldNotFound.size > 0) {
-                await retryNotFoundFiles(firstPassResult && firstPassResult.detailedResult);
-            }
+    async function uploadAll() {
+        const fsUpload = new FileSystemUpload();
+        const uploadResult = new UploadResult(fsUpload.getOptions(), options);
+        await fsUpload.createTargetFolder(options, uploadResult);
+        const { directories, files, errors: walkErrors } = await fsUpload.getUploadInformation(options, localPaths);
+        walkErrors.forEach((e) => svcLog.warn('Skipped local path:', (e && e.message) || String(e)));
+        const uploadFiles = fsUpload.convertToUploadFilesWithUrl(options, files);
+
+        const foldersStart = Date.now();
+        await createFolders(fsUpload, uploadResult, directories);
+        svcLog.info(`Folders ready: ${directories.length} in ${((Date.now() - foldersStart) / 1000).toFixed(1)}s`);
+        if (cancelled || uploadFiles.length === 0) return;
+
+        const filesStart = Date.now();
+        svcLog.info(`Uploading ${uploadFiles.length} files in ${Math.min(uploadPipelines, uploadFiles.length)} parallel pipelines`);
+        await uploadInPipelines(uploadFiles);
+        svcLog.info(`File pass done in ${((Date.now() - filesStart) / 1000).toFixed(1)}s`);
+
+        if (heldNotFound.size > 0) await retryNotFoundFiles(uploadFiles);
+    }
+
+    const promise = uploadAll()
+        .then(() => {
             const elapsed = ((Date.now() - uploadStartTime) / 1000).toFixed(1);
             const speedMBs = elapsed > 0 ? ((transferredBytes / 1048576) / elapsed).toFixed(2) : '0';
             svcLog.info(`Upload finished: ${totalFiles} files, ${(transferredBytes / 1048576).toFixed(1)} MB in ${elapsed}s (${speedMBs} MB/s), errors: ${errors.length}, cancelled: ${cancelled}`);
@@ -456,7 +508,9 @@ function runUpload(config, eventCallback) {
     function cancel() {
         svcLog.warn('Upload cancellation triggered');
         cancelled = true;
-        try { activeUploader.cancel && activeUploader.cancel(); } catch (_) {}
+        activeUploaders.forEach((uploader) => {
+            try { uploader.cancel && uploader.cancel(); } catch (_) {}
+        });
     }
 
     return { promise, cancel };
