@@ -5,3 +5,4 @@ node_modules
 upload-history.json
 .env
 *.log
+.upload-tmp

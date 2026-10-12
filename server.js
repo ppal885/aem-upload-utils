@@ -25,6 +25,10 @@ const SESSION_REAPER_INTERVAL_MS = parseInt(process.env.SESSION_REAPER_INTERVAL_
 const MEMORY_MONITOR_INTERVAL_MS = parseInt(process.env.MEMORY_MONITOR_INTERVAL_MS) || 5 * 60 * 1000;
 const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS) || 10000;
 const FILE_ERRORS_CAP = parseInt(process.env.FILE_ERRORS_CAP) || 1000;
+// Staged files take at least one filesystem block each, so many small files need far more
+// space than their byte total suggests.
+const TEMP_SPACE_PER_FILE_BYTES = 4096;
+const TEMP_SPACE_MARGIN = 1.2;
 
 // ─── Multer config for browser file uploads ───
 // Files are saved to a flat staging dir first, then rearranged into
@@ -184,6 +188,40 @@ async function cleanupTempDir(dirPath) {
     } catch (e) {
         log.warn('Failed to clean temp dir:', resolved, e.message);
     }
+}
+
+// The session reaper only knows sessions held in memory, so staging dirs left by a crash or
+// restart would otherwise stay forever. Nothing can be using them while the server starts.
+async function sweepStaleTempDirs() {
+    const tmpBase = os.tmpdir();
+    await fsPromises.mkdir(tmpBase, { recursive: true });
+    const entries = await fsPromises.readdir(tmpBase, { withFileTypes: true });
+    const stale = entries.filter((e) => e.isDirectory() && e.name.startsWith(TEMP_DIR_PREFIX));
+    for (const entry of stale) await cleanupTempDir(nodePath.join(tmpBase, entry.name));
+    if (stale.length > 0) log.info(`Removed ${stale.length} leftover temp dir(s) from ${tmpBase}`);
+}
+
+async function getTempFreeBytes() {
+    try {
+        const stats = await fsPromises.statfs(os.tmpdir());
+        return stats.bavail * stats.bsize;
+    } catch (e) {
+        log.warn('Cannot read free space of temp dir:', os.tmpdir(), e.message);
+        return null;
+    }
+}
+
+/**
+ * @returns {Promise<string|null>} error message when the temp dir cannot hold the upload
+ */
+async function checkTempSpace(totalBytes, fileCount) {
+    const free = await getTempFreeBytes();
+    if (free == null) return null;
+    const needed = Math.ceil((totalBytes + fileCount * TEMP_SPACE_PER_FILE_BYTES) * TEMP_SPACE_MARGIN);
+    if (free >= needed) return null;
+    const mb = (bytes) => `${Math.ceil(bytes / 1048576)} MB`;
+    return `The upload server has only ${mb(free)} free for staging files (${os.tmpdir()}), `
+        + `but this upload needs about ${mb(needed)}. Free up space on the server or upload fewer files at a time.`;
 }
 
 // ─── Structured Logging ───
@@ -1030,7 +1068,8 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
 app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
     const { baseUrl, damPath, username, password,
             maxConcurrent, maxUploadFiles,
-            httpRetryCount, httpRetryDelay, httpRequestTimeout } = req.body;
+            httpRetryCount, httpRetryDelay, httpRequestTimeout,
+            totalBytes, fileCount } = req.body;
 
     if (!baseUrl || !damPath) {
         return res.status(400).json({ error: 'Missing baseUrl or damPath' });
@@ -1051,6 +1090,14 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
     const credCheck = await checkAemCredentials(normalizedInitUrl, username, password);
     if (!credCheck.ok) {
         return res.status(400).json({ error: credCheck.error, code: credCheck.code });
+    }
+
+    if (Number.isFinite(totalBytes) && Number.isFinite(fileCount)) {
+        const spaceErr = await checkTempSpace(totalBytes, fileCount);
+        if (spaceErr) {
+            log.warn(`Rejected upload of ${fileCount} files: ${spaceErr}`);
+            return res.status(507).json({ error: spaceErr, code: 'INSUFFICIENT_SERVER_SPACE' });
+        }
     }
 
     const sessionId = crypto.randomUUID();
@@ -1644,6 +1691,14 @@ app.use((err, req, res, _next) => {
         return res.status(400).json({ error: 'Unexpected file field in upload' });
     }
 
+    if (err.code === 'ENOSPC') {
+        log.error(`Temp dir full (${os.tmpdir()}): ${req.method} ${req.path}`);
+        return res.status(507).json({
+            error: `The upload server ran out of disk space for staging files (${os.tmpdir()}). Free up space on the server and try again.`,
+            code: 'INSUFFICIENT_SERVER_SPACE',
+        });
+    }
+
     log.error('Unhandled express error:', err.message, err.stack);
     res.status(500).json({ error: 'Internal server error' });
 });
@@ -1694,6 +1749,8 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // ─── Start ───
 (async () => {
     uploadHistory = await loadHistoryFromDisk();
+    try { await sweepStaleTempDirs(); } catch (e) { log.warn('Temp dir sweep failed:', e.message); }
+    const tempFree = await getTempFreeBytes();
     server = app.listen(PORT, () => {
         log.info(`GUIdes Upload Utility running at http://localhost:${PORT}`);
         log.info(`Platform: ${process.platform}, Node: ${process.version}, PID: ${process.pid}`);
@@ -1701,6 +1758,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
         log.info(`Log level: ${process.env.LOG_LEVEL || 'info'}${LOG_FILE ? ', file: ' + LOG_FILE : ''}`);
         log.info(`Max browser upload size: ${(MAX_UPLOAD_SIZE / 1048576).toFixed(0)} MB`);
         log.info(`History entries loaded: ${uploadHistory.length}`);
+        log.info(`Temp dir: ${os.tmpdir()}${tempFree != null ? ` (${Math.floor(tempFree / 1048576)} MB free)` : ''}`);
         if (API_KEY) log.info('API key authentication is ENABLED');
         else log.warn('API key authentication is DISABLED (set API_KEY env var to enable)');
         if (BROWSE_ROOTS.length > 0) log.info('Browse roots restricted to: ' + BROWSE_ROOTS.join(', '));
