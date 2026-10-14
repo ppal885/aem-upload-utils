@@ -702,6 +702,9 @@ let totalBytesTransferred = 0;
 let speedSamples = [];
 let ewmaSpeed = -1;
 let ewmaFileRate = -1;
+// Time left uses the average rate since the first file finished
+let etaFirstDoneAt = 0;
+let etaFirstDoneCount = 0;
 let uploadStartMs = 0;
 
 // File list batching
@@ -2264,7 +2267,7 @@ function resetProgress() {
     resetFileMap(); filesCompleted = 0; filesFailed = 0; totalFilesStarted = 0;
     totalBytesExpected = 0; totalBytesTransferred = 0; uploadDoneReceived = false;
     uploadExpectedFiles = 0; uploadExpectedBytes = 0; _lastAnnouncedDecile = -1;
-    speedSamples = []; ewmaSpeed = -1; ewmaFileRate = -1; uploadStartMs = Date.now();
+    speedSamples = []; ewmaSpeed = -1; ewmaFileRate = -1; etaFirstDoneAt = 0; etaFirstDoneCount = 0; uploadStartMs = Date.now();
     fileListDirty = false;
     if (rafId) cancelAnimationFrame(rafId);
     if (_progressThrottleTimer) { clearTimeout(_progressThrottleTimer); _progressThrottleTimer = null; }
@@ -2338,7 +2341,6 @@ function updateProgressUI() {
     // Speed + ETA (EWMA smoothing with 3s warmup)
     let speedStr = '';
     const now = Date.now();
-    const elapsed = (now - uploadStartMs) / 1000;
     speedSamples.push({ t: now, b: totalBytesTransferred, f: filesCompleted });
     if (speedSamples.length > 20) speedSamples.shift();
     if (speedSamples.length >= 2) {
@@ -2354,23 +2356,23 @@ function updateProgressUI() {
                 const rawFileRate = df / dt;
                 ewmaFileRate = ewmaFileRate < 0 ? rawFileRate : alpha * rawFileRate + (1 - alpha) * ewmaFileRate;
             }
-            // Many small files: files per second says more than bytes per second
-            speedStr = ewmaFileRate > 0 ? ewmaFileRate.toFixed(1) + ' files/s' : fmtBytes(ewmaSpeed) + '/s';
+            // The sample window above is only ~1-2 s and files finish in bursts, so its rate swings between
+            // near zero and high; at the start (folder creation) almost nothing has finished yet. Speed and
+            // time left therefore use the average since the first file finished, once there is enough of it.
+            if (filesCompleted > 0 && !etaFirstDoneAt) { etaFirstDoneAt = now; etaFirstDoneCount = filesCompleted; }
+            const sinceFirst = etaFirstDoneAt ? (now - etaFirstDoneAt) / 1000 : 0;
+            const doneSince = filesCompleted - etaFirstDoneCount;
+            const avgFileRate = sinceFirst >= 15 && doneSince >= 20 ? doneSince / sinceFirst : 0;
+            speedStr = avgFileRate > 0 ? avgFileRate.toFixed(1) + ' files/s' : fmtBytes(ewmaSpeed) + '/s';
             const speedEl = document.getElementById('uploadSpeed');
             speedEl.textContent = speedStr;
             speedEl.classList.remove('hidden');
             const etaEl = document.getElementById('uploadEta');
             const filesLeft = fileTotal - filesCompleted;
-            if (elapsed < 3) {
-                etaEl.textContent = 'Calculating...';
-                etaEl.classList.remove('hidden');
-            } else if (ewmaFileRate > 0 && filesLeft > 0) {
-                etaEl.textContent = 'ETA ' + fmtDuration((filesLeft / ewmaFileRate) * 1000);
-                etaEl.classList.remove('hidden');
-            } else if (ewmaSpeed > 0 && byteTotal > totalBytesTransferred) {
-                etaEl.textContent = 'ETA ' + fmtDuration(((byteTotal - totalBytesTransferred) / ewmaSpeed) * 1000);
-                etaEl.classList.remove('hidden');
-            }
+            etaEl.textContent = avgFileRate > 0 && filesLeft > 0
+                ? 'ETA ' + fmtDuration((filesLeft / avgFileRate) * 1000)
+                : 'Calculating...';
+            etaEl.classList.remove('hidden');
         }
     }
 
@@ -2485,6 +2487,8 @@ function connectSSE(uploadId, isReconnect = false) {
     resetFileMap();
     speedSamples = [];
     ewmaFileRate = -1;
+    etaFirstDoneAt = 0;
+    etaFirstDoneCount = 0;
     uploadStartMs = uploadStartMs || Date.now();
 
     // Show the AEM upload progress panel now that the server-side upload is starting
