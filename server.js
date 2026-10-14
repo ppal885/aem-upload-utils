@@ -361,12 +361,14 @@ const API_KEY = process.env.API_KEY || '';
 app.use('/api/', express.json({ limit: '1mb' }));
 app.use('/api/', auth.requireAuth(log));
 
+// Counts failed sign-ins only, so many users behind one proxy IP are not locked out by each other
 const loginLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
+    skipSuccessfulRequests: true,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Too many sign-in attempts. Wait a minute and try again.' },
+    message: { error: 'Too many failed sign-in attempts. Wait a minute and try again.' },
 });
 
 // HTTP request logger
@@ -649,7 +651,8 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const check = await checkAemCredentials(baseUrl, username, password);
     if (!check.ok) {
         log.warn(`Sign-in failed for ${username} on ${new URL(baseUrl).host}: ${check.code}`);
-        return res.status(401).json({ error: check.error, code: check.code });
+        const error = check.code === 'AUTH_FAILED' ? 'Wrong username or password for this AEM server.' : check.error;
+        return res.status(401).json({ error, code: check.code });
     }
     const s = auth.createSession(req, res, {
         baseUrl, username, password,
