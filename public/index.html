@@ -99,8 +99,58 @@
         .dark #loginScreen .login-card { background: #1e1e2e !important; border-color: #2d2d44 !important; }
         .dark #loginScreen .login-input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
         .dark #loginScreen .login-label { color: #b8c0cc; }
+        .dark #loginError { background: rgba(220, 38, 38, .15); border-color: rgba(248, 113, 113, .45); color: #fecaca; }
+        .dark #loginNotice { background: rgba(217, 119, 6, .15); border-color: rgba(251, 191, 36, .45); color: #fde68a; }
+        @media (max-width: 640px) {
+            header .brand-title { font-size: 1.05rem; white-space: nowrap; }
+            header .ml-auto { gap: 6px; }
+        }
         .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #1473E6, #7a3cff);
             color: #fff; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+
+        /* ─── App shell ─── */
+        body { background: #f4f5f7; }
+        .card { border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 4px 12px rgba(15, 23, 42, .04); }
+        .side-nav { width: 232px; flex-shrink: 0; flex-direction: column; gap: 2px; padding: 28px 12px; position: sticky; top: 0;
+            height: calc(100vh - 64px); border-right: 1px solid #e5e7eb; }
+        .nav-heading { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #9ca3af; padding: 0 12px 8px; }
+        .nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 8px; font-size: 14px;
+            font-weight: 600; color: #4b5563; text-align: left; transition: background .12s, color .12s; }
+        .nav-item:hover { background: #eceef2; color: #111827; }
+        .nav-item.active { background: #e8f1fd; color: #1473E6; }
+        .nav-item.nav-tab { width: auto; background: #fff; border: 1px solid #e5e7eb; }
+        .nav-item.nav-tab.active { background: #1473E6; color: #fff; border-color: #1473E6; }
+        .nav-badge { margin-left: auto; font-size: 11px; font-weight: 700; color: #4b5563; background: #e5e7eb; border-radius: 999px; padding: 1px 8px; }
+        .nav-item.active .nav-badge { background: #cfe2fb; color: #1473E6; }
+        .nav-footer { margin-top: auto; padding: 14px 12px 0; border-top: 1px solid #e5e7eb; }
+        .page-head { margin-bottom: 20px; }
+        /* While an upload runs, its progress is the first thing in the column, above the (locked) setup */
+        #uploadColumn > #transferPanel, #uploadColumn > #progressPanel { order: -1; }
+        .page-head h2 { font-size: 26px; font-weight: 800; color: #111827; letter-spacing: -.02em; line-height: 1.2; }
+        .page-head p { margin-top: 4px; font-size: 14px; color: #6b7280; }
+        .summary-card { background: #fff; border: 1px solid #e5e7eb; padding: 20px; }
+        .summary-title { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 12px; }
+        .summary-list > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid #f1f2f4; }
+        .summary-list dt { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #9ca3af; }
+        .summary-list dd { font-size: 13px; color: #111827; }
+        .summary-actions { margin-top: 16px; }
+        .summary-actions sp-button { width: 100%; }
+        .summary-hint { margin-top: 10px; font-size: 11px; color: #9ca3af; text-align: center; }
+        .summary-hint kbd { font-family: ui-monospace, monospace; font-size: 10px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0 4px; }
+        .stat-tile { background: #fff; border: 1px solid #e5e7eb; padding: 16px 18px; }
+        .stat-label { font-size: 12px; font-weight: 600; color: #6b7280; }
+        .stat-value { margin-top: 4px; font-size: 26px; font-weight: 800; color: #111827; letter-spacing: -.02em; }
+        .dark body { background: #0f172a; }
+        .dark .side-nav, .dark .nav-footer { border-color: #1e293b; }
+        .dark .nav-item { color: #94a3b8; }
+        .dark .nav-item:hover { background: #1e293b; color: #e2e8f0; }
+        .dark .nav-item.active { background: rgba(20, 115, 230, .18); color: #7cb4ff; }
+        .dark .nav-item.nav-tab { background: #1a1a2e; border-color: #1e293b; }
+        .dark .nav-badge { background: #1e293b; color: #cbd5e1; }
+        .dark .page-head h2, .dark .summary-title, .dark .summary-list dd, .dark .stat-value { color: #f1f5f9; }
+        .dark .summary-card, .dark .stat-tile { background: #1a1a2e; border-color: #1e293b; }
+        .dark .summary-list > div { border-color: #1e293b; }
+        .dark .summary-hint kbd { background: #1e293b; border-color: #334155; }
 
         /* ─── Dark Mode ─── */
         .dark .bg-white { background-color: #1a1a2e !important; }
@@ -178,7 +228,7 @@
 
 <!-- Connection lost banner -->
 <div id="connLostBanner" class="hidden bg-red-600 text-white">
-    <div class="max-w-5xl mx-auto px-6 py-2 flex items-center justify-center gap-2 text-sm">
+    <div class="max-w-[1400px] mx-auto px-4 sm:px-8 py-2 flex items-center justify-center gap-2 text-sm">
         <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
         <span>Server connection lost &mdash; retrying...</span>
     </div>
@@ -255,7 +305,7 @@
 </div>
 
 <header class="bg-white border-b border-gray-200 shadow-sm">
-    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
+    <div class="max-w-[1400px] mx-auto px-4 sm:px-8 py-4 flex items-center gap-3">
         <div class="flex items-center gap-3 select-none">
             <svg class="w-8 h-7 shrink-0" viewBox="0 0 30 26" aria-hidden="true"><path fill="#FA0F00" d="M19 0h11v26zM11.1 0H0v26zM15 9.6l7.1 16.4h-4.6l-2.1-5.2h-5.2z"/></svg>
             <h1 class="brand-title">Guides Upload Utility</h1>
@@ -278,11 +328,11 @@
                     <button onclick="signOut()" id="signOutBtn" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">Sign out</button>
                 </div>
             </div>
-            <div id="connectionStatus" class="flex items-center gap-1.5 text-xs text-gray-500" title="Server connection status">
+            <div id="connectionStatus" class="hidden sm:flex items-center gap-1.5 text-xs text-gray-500" title="Server connection status">
                 <span id="connDot" class="w-2 h-2 rounded-full bg-gray-400 transition-colors"></span>
                 <span id="connText" class="sr-only sm:not-sr-only" aria-live="polite">Checking...</span>
             </div>
-            <div class="relative">
+            <div class="relative hidden sm:block">
                 <button onclick="toggleShortcutsHelp()" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">
                     <span class="text-sm font-bold">?</span>
                 </button>
@@ -304,7 +354,7 @@
 
 <!-- Active uploads banner (shown when background uploads are running) -->
 <div id="activeUploadsBanner" class="hidden bg-blue-600 text-white">
-    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+    <div class="max-w-[1400px] mx-auto px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3 min-w-0">
             <svg class="spinner h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
             <span id="activeBannerText" class="text-sm font-medium truncate">Upload running in background...</span>
@@ -328,324 +378,394 @@
     <p class="text-sm text-gray-500">Connecting to server...</p>
 </div>
 
-<main class="flex-1 max-w-5xl mx-auto w-full px-6 py-8 space-y-6">
-
-    <!-- 1. AEM Target (overflow-visible so Recent Targets dropdown is not clipped) -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
-        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
-            <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">1</span> AEM Target</h2>
-            <p class="text-sm text-gray-500 mt-0.5 ml-8">Cloud (https://author-pXXX...), On-Prem (http://host:4502), or local (http://localhost:4502; for https use AEM_ALLOW_SELF_SIGNED=1)</p>
+<div id="appShell" class="flex-1 w-full max-w-[1400px] mx-auto flex">
+    <nav id="sideNav" class="side-nav hidden lg:flex" aria-label="Main">
+        <div class="nav-heading">Workspace</div>
+            <button type="button" class="nav-item" data-view="upload" onclick="showView('upload')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                <span>New upload</span>
+            </button>
+            <button type="button" class="nav-item" data-view="history" onclick="showView('history')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>History</span>
+                <span class="nav-badge hidden" data-history-count></span>
+            </button>
+        <div class="nav-footer">
+            <div class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Signed in to</div>
+            <div id="navServer" class="text-xs text-gray-700 font-medium break-all">—</div>
+            <div id="navRole" class="mt-2 text-[11px] text-gray-500"></div>
         </div>
-        <div class="p-6">
-            <!-- Saved Presets -->
-            <div class="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-gray-100">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Presets</span>
-                <div id="presetList" class="flex flex-wrap gap-1.5"></div>
-                <button onclick="saveCurrentPreset()" class="text-xs bg-adobe-blue text-white px-2.5 py-1 rounded hover:bg-adobe-darkBlue transition ml-auto" aria-label="Save current settings as preset">
-                    <svg class="inline h-3 w-3 mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                    Save Preset
-                </button>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <span class="block text-sm font-medium text-gray-700 mb-1">AEM server</span>
-                    <div class="h-[38px] px-3 flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-700" title="Uploads go to the server you signed in to. Sign out to use another server.">
-                        <svg class="h-4 w-4 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                        <span id="sessionServerName" class="truncate">—</span>
-                    </div>
-                </div>
-                <div class="hidden">
-                    <label for="aemUrl" class="block text-sm font-medium text-gray-700 mb-1">AEM Author URL <span class="text-red-400">*</span></label>
-                    <div class="relative">
-                        <input id="aemUrl" type="text" placeholder="e.g. http://localhost:4502, http://host:4502, or https://author-p..adobeaemcloud.com"
-                            class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition"
-                            oninput="liveValidateUrl()" onblur="liveValidateUrl(true)" />
-                        <button onclick="toggleRecentTargets()" id="recentTargetsBtn" class="hidden absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:text-adobe-blue hover:bg-blue-50 transition" title="Recent targets" aria-label="Recent targets">
-                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        </button>
-                        <div id="recentTargetsDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
-                            <div class="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">Recent Targets</div>
-                            <div id="recentTargetsList"></div>
-                        </div>
-                    </div>
-                    <p id="aemUrlErr" class="text-xs text-red-500 mt-1 hidden"></p>
-                </div>
-                <div>
-                    <label for="damPath" class="block text-sm font-medium text-gray-700 mb-1">DAM Folder Path <span class="text-red-400">*</span></label>
-                    <input id="damPath" type="text" placeholder="content/dam/my-folder"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition"
-                        oninput="liveValidateDamPath()" onblur="liveValidateDamPath(true)" />
-                    <p id="damPathErr" class="text-xs text-red-500 mt-1 hidden"></p>
-                    <p id="damPathHint" class="text-xs text-gray-400 mt-1 hidden"></p>
-                </div>
-            </div>
-        </div>
-    </section>
+    </nav>
 
-    <!-- 2. Configuration -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
-            <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">2</span> Configuration</h2>
-        </div>
-        <div class="p-6 space-y-4">
-            <!-- Browser Upload -->
-            <div id="browserUploadSection">
-                <label for="browserFileInput" class="block text-sm font-medium text-gray-700 mb-1">Select Folder or Files</label>
-                <div id="dropZone" class="relative border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-adobe-blue hover:bg-blue-50/30 transition-all cursor-pointer"
-                     tabindex="0" role="button" aria-label="Drop zone: drag and drop files or press Enter to select a folder"
-                     onclick="pickFolder()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickFolder();}">
-                    <input type="file" id="browserFileInput" multiple class="hidden" onchange="onBrowserFilesSelected(this.files)" />
-                    <div class="flex flex-col items-center gap-3">
-                        <div class="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center">
-                            <svg class="w-7 h-7 text-adobe-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium text-gray-700">Drag and drop a folder here, or click to select a folder</p>
-                            <p class="text-xs text-gray-400 mt-1">Entire folder structure (including subfolders) is preserved during upload</p>
-                            <p class="text-xs text-amber-600 mt-1" title="The file picker has a search box that filters results">Tip: If the folder appears empty, clear the search box in the file picker dialog</p>
-                        </div>
-                        <div class="flex gap-2 mt-1">
-                            <sp-button size="s" variant="accent" onclick="event.stopPropagation(); pickFolder()">
-                                <svg slot="icon" class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-                                Select Folder
-                            </sp-button>
-                            <sp-button size="s" variant="secondary" treatment="outline" onclick="event.stopPropagation(); document.getElementById('browserFileInput').click()">
-                                Select Files
-                            </sp-button>
-                        </div>
-                    </div>
-                </div>
-                <!-- Selected files preview -->
-                <div id="browserFilesPreview" class="hidden mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                        <div class="flex items-center gap-1.5">
-                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                            <span class="text-gray-500">Files:</span>
-                            <span id="browserFileCount" class="font-semibold text-gray-800">0</span>
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
-                            <span class="text-gray-500">Total Size:</span>
-                            <span id="browserFileSize" class="font-semibold text-gray-800">0 B</span>
-                        </div>
-                        <button onclick="clearBrowserFiles()" class="text-xs text-red-500 hover:text-red-700 hover:underline ml-auto" aria-label="Clear selected files">Clear</button>
-                    </div>
-                    <!-- Folder info (shown when a folder is selected) -->
-                    <div id="browserFolderInfo" class="hidden flex items-center gap-1.5 mt-2 text-sm"></div>
-                    <div id="browserFileExtensions" class="mt-2 flex flex-wrap gap-1.5"></div>
-                    <!-- File type filter -->
-                    <div id="fileTypeFilterContainer" class="hidden mt-2 pt-2 border-t border-gray-100">
-                        <div class="flex items-center gap-2">
-                            <label for="fileTypeFilter" class="text-xs text-gray-500 shrink-0">Filter by type:</label>
-                            <input id="fileTypeFilter" type="text" placeholder="e.g. .xml,.dita,.ditamap (comma-separated)"
-                                class="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-adobe-blue focus:border-transparent outline-none" />
-                            <button onclick="applyFileTypeFilter()" class="text-xs bg-adobe-blue text-white px-2.5 py-1 rounded hover:bg-adobe-darkBlue transition">Apply</button>
-                            <button onclick="clearFileTypeFilter()" class="text-xs text-gray-400 hover:text-gray-600 transition">Clear</button>
-                        </div>
-                        <p id="fileTypeFilterInfo" class="text-xs text-gray-400 mt-1 hidden"></p>
-                    </div>
-                    <!-- Folder tree preview -->
-                    <div id="folderTreeContainer" class="hidden mt-3 border-t border-gray-200 pt-3">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider">Folder Structure</span>
-                            <div class="flex gap-1">
-                                <button onclick="expandAllTree()" class="text-[10px] text-adobe-blue hover:underline" aria-label="Expand all folder tree nodes">Expand All</button>
-                                <span class="text-gray-300">|</span>
-                                <button onclick="collapseAllTree()" class="text-[10px] text-adobe-blue hover:underline" aria-label="Collapse all folder tree nodes">Collapse All</button>
-                            </div>
-                        </div>
-                        <ul id="folderTree" class="text-xs max-h-48 overflow-y-auto space-y-0.5"></ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username <span class="text-red-400">*</span></label>
-                    <input id="username" type="text" placeholder="admin"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition" />
-                    <p id="usernameErr" class="text-xs text-red-500 mt-1 hidden"></p>
-                </div>
-                <div>
-                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password <span class="text-red-400">*</span></label>
-                    <div class="relative">
-                        <input id="password" type="password" placeholder="********"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none pr-14 transition" />
-                        <button type="button" onclick="togglePassword()" id="pwToggle"
-                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs select-none px-1">Show</button>
-                    </div>
-                    <p id="passwordErr" class="text-xs text-red-500 mt-1 hidden"></p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- 3. Advanced Settings (collapsed) -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <button onclick="toggleAdvanced()" class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition">
-            <div class="flex items-center gap-2">
-                <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">3</span> Advanced Settings</h2>
-                <svg id="advChevron" class="h-4 w-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-            </div>
-            <span class="text-xs text-gray-400">Performance tuning</span>
-        </button>
-        <div id="advPanel" class="hidden px-6 pb-6 transition-all duration-200">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-                <div>
-                    <label for="maxConcurrent" class="block text-sm font-medium text-gray-700 mb-1">Max Concurrent Uploads</label>
-                    <div class="flex items-center gap-3">
-                        <input id="maxConcurrent" type="range" min="1" max="10" value="2" aria-valuemin="1" aria-valuemax="10" aria-valuenow="2" aria-label="Max Concurrent Uploads" oninput="document.getElementById('maxConcVal').textContent=this.value;this.setAttribute('aria-valuenow',this.value)" class="flex-1 accent-adobe-blue" />
-                        <span id="maxConcVal" class="text-sm font-mono text-gray-700 w-8 text-right">2</span>
-                    </div>
-                </div>
-                <div>
-                    <label for="httpRetryCount" class="block text-sm font-medium text-gray-700 mb-1">HTTP Retry Count</label>
-                    <input id="httpRetryCount" type="number" min="0" max="10" value="5"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
-                </div>
-                <div>
-                    <label for="httpRetryDelay" class="block text-sm font-medium text-gray-700 mb-1">Retry Delay (seconds)</label>
-                    <input id="httpRetryDelay" type="number" min="1" max="30" value="8"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
-                </div>
-                <div>
-                    <label for="httpRequestTimeout" class="block text-sm font-medium text-gray-700 mb-1">Request Timeout (seconds)</label>
-                    <input id="httpRequestTimeout" type="number" min="10" max="300" value="120"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
-                </div>
-                <div>
-                    <label for="maxUploadFiles" class="block text-sm font-medium text-gray-700 mb-1">Max Upload Files</label>
-                    <input id="maxUploadFiles" type="number" min="100" max="200000" value="100000"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
-                </div>
-            </div>
-            <div class="flex flex-col gap-3 mt-4 pt-4 border-t border-gray-100">
-                <div class="flex items-center gap-2">
-                    <input id="overwriteExisting" type="checkbox" checked class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
-                    <label for="overwriteExisting" class="text-sm text-gray-700 cursor-pointer select-none">Overwrite existing assets <span class="text-gray-400" title="When checked, files already in AEM DAM will be replaced. Uncheck to see a reminder before upload. Note: skip-existing requires AEM API integration and is not yet supported.">(replaces files in DAM if they already exist)</span></label>
-                </div>
-                <div class="flex items-center gap-2">
-                    <input id="dryRun" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
-                    <label for="dryRun" class="text-sm text-gray-700 cursor-pointer select-none">Dry run <span class="text-gray-400">(preview files without uploading)</span></label>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Upload / Cancel buttons -->
-    <div class="flex justify-center gap-3">
-        <sp-button id="uploadBtn" onclick="initiateUpload()" variant="accent" size="l">
-            <svg id="uploadIcon" slot="icon" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
-            <svg id="uploadSpinner" class="hidden spinner h-5 w-5" slot="icon" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            <span id="uploadBtnText">Start Upload</span>
-        </sp-button>
-        <sp-button id="cancelBtn" onclick="cancelUpload()" variant="negative" size="l" style="display:none;">
-            Cancel
-        </sp-button>
+<main class="flex-1 min-w-0 px-4 sm:px-8 py-6 lg:py-8">
+    <div class="lg:hidden flex gap-2 mb-5 nav-tabs" role="tablist">
+            <button type="button" class="nav-item nav-tab" data-view="upload" onclick="showView('upload')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                <span>New upload</span>
+            </button>
+            <button type="button" class="nav-item nav-tab" data-view="history" onclick="showView('history')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>History</span>
+                <span class="nav-badge hidden" data-history-count></span>
+            </button>
     </div>
 
-    <!-- Transfer Progress (Browser → Server) — shown during chunked upload to server -->
-    <section id="transferPanel" class="hidden bg-white rounded-xl shadow-sm border border-blue-200 overflow-hidden mb-4">
-        <div class="px-6 py-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white">
-            <div class="flex items-center justify-between flex-wrap gap-2">
+    <section id="viewUpload" data-view-panel="upload">
+        <div class="page-head">
+            <h2>New upload</h2>
+            <p>Send a folder from your computer to AEM Assets. Large uploads keep running on the server if you close this tab.</p>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+            <div id="uploadColumn" class="flex flex-col gap-6 min-w-0">
+        <!-- 1. AEM Target (overflow-visible so Recent Targets dropdown is not clipped) -->
+        <section class="card bg-white rounded-xl border border-gray-200 overflow-visible">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">1</span> Destination</h2>
+            </div>
+            <div class="p-6">
+                <!-- Saved Presets -->
+                <div class="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Presets</span>
+                    <div id="presetList" class="flex flex-wrap gap-1.5"></div>
+                    <button onclick="saveCurrentPreset()" class="text-xs bg-adobe-blue text-white px-2.5 py-1 rounded hover:bg-adobe-darkBlue transition ml-auto" aria-label="Save current settings as preset">
+                        <svg class="inline h-3 w-3 mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Save Preset
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <span class="block text-sm font-medium text-gray-700 mb-1">AEM server</span>
+                        <div class="h-[38px] px-3 flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-700" title="Uploads go to the server you signed in to. Sign out to use another server.">
+                            <svg class="h-4 w-4 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                            <span id="sessionServerName" class="truncate">—</span>
+                        </div>
+                    </div>
+                    <div class="hidden">
+                        <label for="aemUrl" class="block text-sm font-medium text-gray-700 mb-1">AEM Author URL <span class="text-red-400">*</span></label>
+                        <div class="relative">
+                            <input id="aemUrl" type="text" placeholder="e.g. http://localhost:4502, http://host:4502, or https://author-p..adobeaemcloud.com"
+                                class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition"
+                                oninput="liveValidateUrl()" onblur="liveValidateUrl(true)" />
+                            <button onclick="toggleRecentTargets()" id="recentTargetsBtn" class="hidden absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:text-adobe-blue hover:bg-blue-50 transition" title="Recent targets" aria-label="Recent targets">
+                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </button>
+                            <div id="recentTargetsDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
+                                <div class="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100">Recent Targets</div>
+                                <div id="recentTargetsList"></div>
+                            </div>
+                        </div>
+                        <p id="aemUrlErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                    </div>
+                    <div>
+                        <label for="damPath" class="block text-sm font-medium text-gray-700 mb-1">DAM Folder Path <span class="text-red-400">*</span></label>
+                        <input id="damPath" type="text" placeholder="content/dam/my-folder"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition"
+                            oninput="liveValidateDamPath()" onblur="liveValidateDamPath(true)" />
+                        <p id="damPathErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                        <p id="damPathHint" class="text-xs text-gray-400 mt-1 hidden"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Configuration -->
+        <section class="card bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">2</span> Files</h2>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- Browser Upload -->
+                <div id="browserUploadSection">
+                    <label for="browserFileInput" class="block text-sm font-medium text-gray-700 mb-1">Select Folder or Files</label>
+                    <div id="dropZone" class="relative border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-adobe-blue hover:bg-blue-50/30 transition-all cursor-pointer"
+                         tabindex="0" role="button" aria-label="Drop zone: drag and drop files or press Enter to select a folder"
+                         onclick="pickFolder()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickFolder();}">
+                        <input type="file" id="browserFileInput" multiple class="hidden" onchange="onBrowserFilesSelected(this.files)" />
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center">
+                                <svg class="w-7 h-7 text-adobe-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-700">Drag and drop a folder here, or click to select a folder</p>
+                                <p class="text-xs text-gray-400 mt-1">Entire folder structure (including subfolders) is preserved during upload</p>
+                                <p class="text-xs text-amber-600 mt-1" title="The file picker has a search box that filters results">Tip: If the folder appears empty, clear the search box in the file picker dialog</p>
+                            </div>
+                            <div class="flex gap-2 mt-1">
+                                <sp-button size="s" variant="accent" onclick="event.stopPropagation(); pickFolder()">
+                                    <svg slot="icon" class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                                    Select Folder
+                                </sp-button>
+                                <sp-button size="s" variant="secondary" treatment="outline" onclick="event.stopPropagation(); document.getElementById('browserFileInput').click()">
+                                    Select Files
+                                </sp-button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Selected files preview -->
+                    <div id="browserFilesPreview" class="hidden mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                            <div class="flex items-center gap-1.5">
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                <span class="text-gray-500">Files:</span>
+                                <span id="browserFileCount" class="font-semibold text-gray-800">0</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+                                <span class="text-gray-500">Total Size:</span>
+                                <span id="browserFileSize" class="font-semibold text-gray-800">0 B</span>
+                            </div>
+                            <button onclick="clearBrowserFiles()" class="text-xs text-red-500 hover:text-red-700 hover:underline ml-auto" aria-label="Clear selected files">Clear</button>
+                        </div>
+                        <!-- Folder info (shown when a folder is selected) -->
+                        <div id="browserFolderInfo" class="hidden flex items-center gap-1.5 mt-2 text-sm"></div>
+                        <div id="skipTopFolderRow" class="hidden mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
+                            <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                                <input id="skipTopFolder" type="checkbox" class="mt-0.5 h-4 w-4 accent-adobe-blue" onchange="updateSkipTopFolderHint()" />
+                                <span><span class="font-medium">Upload the folder's contents, not the folder itself</span>
+                                    <span id="skipTopFolderHint" class="block text-xs text-gray-500 mt-0.5 break-all"></span></span>
+                            </label>
+                        </div>
+                        <div id="browserFileExtensions" class="mt-2 flex flex-wrap gap-1.5"></div>
+                        <!-- File type filter -->
+                        <div id="fileTypeFilterContainer" class="hidden mt-2 pt-2 border-t border-gray-100">
+                            <div class="flex items-center gap-2">
+                                <label for="fileTypeFilter" class="text-xs text-gray-500 shrink-0">Filter by type:</label>
+                                <input id="fileTypeFilter" type="text" placeholder="e.g. .xml,.dita,.ditamap (comma-separated)"
+                                    class="flex-1 px-2 py-1 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                                <button onclick="applyFileTypeFilter()" class="text-xs bg-adobe-blue text-white px-2.5 py-1 rounded hover:bg-adobe-darkBlue transition">Apply</button>
+                                <button onclick="clearFileTypeFilter()" class="text-xs text-gray-400 hover:text-gray-600 transition">Clear</button>
+                            </div>
+                            <p id="fileTypeFilterInfo" class="text-xs text-gray-400 mt-1 hidden"></p>
+                        </div>
+                        <!-- Folder tree preview -->
+                        <div id="folderTreeContainer" class="hidden mt-3 border-t border-gray-200 pt-3">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider">Folder Structure</span>
+                                <div class="flex gap-1">
+                                    <button onclick="expandAllTree()" class="text-[10px] text-adobe-blue hover:underline" aria-label="Expand all folder tree nodes">Expand All</button>
+                                    <span class="text-gray-300">|</span>
+                                    <button onclick="collapseAllTree()" class="text-[10px] text-adobe-blue hover:underline" aria-label="Collapse all folder tree nodes">Collapse All</button>
+                                </div>
+                            </div>
+                            <ul id="folderTree" class="text-xs max-h-48 overflow-y-auto space-y-0.5"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username <span class="text-red-400">*</span></label>
+                        <input id="username" type="text" placeholder="admin"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition" />
+                        <p id="usernameErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                    </div>
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password <span class="text-red-400">*</span></label>
+                        <div class="relative">
+                            <input id="password" type="password" placeholder="********"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none pr-14 transition" />
+                            <button type="button" onclick="togglePassword()" id="pwToggle"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs select-none px-1">Show</button>
+                        </div>
+                        <p id="passwordErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Advanced Settings (collapsed) -->
+        <section class="card bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <button onclick="toggleAdvanced()" class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition">
                 <div class="flex items-center gap-2">
-                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold" id="transferStepBadge">1</span>
-                    <h2 class="text-base font-semibold text-gray-800" id="transferTitle">Sending Files to Server</h2>
+                    <h2 class="text-base font-semibold text-gray-800 flex items-center gap-2"><span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold shrink-0">3</span> Advanced options</h2>
+                    <svg id="advChevron" class="h-4 w-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </div>
-                <div class="flex items-center gap-3 text-sm">
-                    <span id="transferSpeed" class="text-gray-500">-- MB/s</span>
-                    <span id="transferEta" class="text-gray-500">ETA --</span>
-                    <sp-button id="transferPauseBtn" onclick="pauseTransfer()" variant="secondary" size="s" style="display:none;" aria-label="Pause sending files to server">Pause</sp-button>
-                    <sp-button id="transferResumeBtn" onclick="resumeTransfer()" variant="accent" size="s" style="display:none;" aria-label="Resume sending files to server">Resume</sp-button>
+                <span class="text-xs text-gray-400">Performance tuning</span>
+            </button>
+            <div id="advPanel" class="hidden px-6 pb-6 transition-all duration-200">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                    <div>
+                        <label for="maxConcurrent" class="block text-sm font-medium text-gray-700 mb-1">Max Concurrent Uploads</label>
+                        <div class="flex items-center gap-3">
+                            <input id="maxConcurrent" type="range" min="1" max="10" value="2" aria-valuemin="1" aria-valuemax="10" aria-valuenow="2" aria-label="Max Concurrent Uploads" oninput="document.getElementById('maxConcVal').textContent=this.value;this.setAttribute('aria-valuenow',this.value)" class="flex-1 accent-adobe-blue" />
+                            <span id="maxConcVal" class="text-sm font-mono text-gray-700 w-8 text-right">2</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="httpRetryCount" class="block text-sm font-medium text-gray-700 mb-1">HTTP Retry Count</label>
+                        <input id="httpRetryCount" type="number" min="0" max="10" value="5"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                    </div>
+                    <div>
+                        <label for="httpRetryDelay" class="block text-sm font-medium text-gray-700 mb-1">Retry Delay (seconds)</label>
+                        <input id="httpRetryDelay" type="number" min="1" max="30" value="8"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                    </div>
+                    <div>
+                        <label for="httpRequestTimeout" class="block text-sm font-medium text-gray-700 mb-1">Request Timeout (seconds)</label>
+                        <input id="httpRequestTimeout" type="number" min="10" max="300" value="120"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                    </div>
+                    <div>
+                        <label for="maxUploadFiles" class="block text-sm font-medium text-gray-700 mb-1">Max Upload Files</label>
+                        <input id="maxUploadFiles" type="number" min="100" max="200000" value="100000"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none" />
+                    </div>
+                </div>
+                <div class="flex flex-col gap-3 mt-4 pt-4 border-t border-gray-100">
+                    <div class="flex items-center gap-2">
+                        <input id="overwriteExisting" type="checkbox" checked class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
+                        <label for="overwriteExisting" class="text-sm text-gray-700 cursor-pointer select-none">Overwrite existing assets <span class="text-gray-400" title="When checked, files already in AEM DAM will be replaced. Uncheck to see a reminder before upload. Note: skip-existing requires AEM API integration and is not yet supported.">(replaces files in DAM if they already exist)</span></label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input id="dryRun" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
+                        <label for="dryRun" class="text-sm text-gray-700 cursor-pointer select-none">Dry run <span class="text-gray-400">(preview files without uploading)</span></label>
+                    </div>
                 </div>
             </div>
-            <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider">Files Sent</div>
-                    <div class="text-lg font-bold text-green-600" id="transferFilesSent">0 / 0</div>
-                </div>
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider">Data Sent</div>
-                    <div class="text-lg font-bold text-gray-800" id="transferBytesSent">0 B / 0 B</div>
-                </div>
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider">Chunk</div>
-                    <div class="text-lg font-bold text-blue-600" id="transferChunkInfo">0 / 0</div>
-                </div>
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider">Status</div>
-                    <div class="text-lg font-bold text-adobe-blue" id="transferStatus">Preparing...</div>
-                </div>
-            </div>
-        </div>
-        <div class="px-6 py-4">
-            <div class="flex items-center gap-3">
-                <div id="transferTrack" class="flex-1 bg-gray-200 rounded-full h-3 relative overflow-hidden" role="progressbar" aria-label="Sending files to server" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div id="transferBar" class="bg-adobe-blue progress-gradient h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
-                </div>
-                <span id="transferPct" class="text-sm font-semibold text-gray-600 w-12 text-right">0%</span>
-            </div>
-            <p class="mt-2 text-xs text-gray-400" id="transferDetail">Preparing to send files to server...</p>
-        </div>
-    </section>
+        </section>
 
-    <!-- Progress Panel -->
-    <section id="progressPanel" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
-            <div class="flex items-center justify-between flex-wrap gap-2">
-                <h2 class="text-base font-semibold text-gray-800">Upload Progress</h2>
+        <!-- Transfer Progress (Browser → Server) — shown during chunked upload to server -->
+        <section id="transferPanel" class="card hidden bg-white rounded-xl border border-blue-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-adobe-blue text-white text-xs font-bold" id="transferStepBadge">1</span>
+                        <h2 class="text-base font-semibold text-gray-800" id="transferTitle">Sending Files to Server</h2>
+                    </div>
+                    <div class="flex items-center gap-3 text-sm">
+                        <span id="transferSpeed" class="text-gray-500">-- MB/s</span>
+                        <span id="transferEta" class="text-gray-500">ETA --</span>
+                        <sp-button id="transferPauseBtn" onclick="pauseTransfer()" variant="secondary" size="s" style="display:none;" aria-label="Pause sending files to server">Pause</sp-button>
+                        <sp-button id="transferResumeBtn" onclick="resumeTransfer()" variant="accent" size="s" style="display:none;" aria-label="Resume sending files to server">Resume</sp-button>
+                    </div>
+                </div>
+                <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider">Files Sent</div>
+                        <div class="text-lg font-bold text-green-600" id="transferFilesSent">0 / 0</div>
+                    </div>
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider">Data Sent</div>
+                        <div class="text-lg font-bold text-gray-800" id="transferBytesSent">0 B / 0 B</div>
+                    </div>
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider">Chunk</div>
+                        <div class="text-lg font-bold text-blue-600" id="transferChunkInfo">0 / 0</div>
+                    </div>
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider">Status</div>
+                        <div class="text-lg font-bold text-adobe-blue" id="transferStatus">Preparing...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4">
                 <div class="flex items-center gap-3">
-                    <span id="elapsedTime" class="text-sm text-gray-500">0s</span>
-                    <span id="uploadSpeed" class="hidden text-sm text-gray-500">-- MB/s</span>
-                    <span id="uploadEta" class="hidden text-sm font-medium text-adobe-blue">ETA --</span>
-                    <sp-button id="cancelBtnInProgress" onclick="cancelUpload()" variant="negative" size="s" style="display:none;">
-                        Cancel Upload
-                    </sp-button>
+                    <div id="transferTrack" class="flex-1 bg-gray-200 rounded-full h-3 relative overflow-hidden" role="progressbar" aria-label="Sending files to server" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div id="transferBar" class="bg-adobe-blue progress-gradient h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <span id="transferPct" class="text-sm font-semibold text-gray-600 w-12 text-right">0%</span>
+                </div>
+                <p class="mt-2 text-xs text-gray-400" id="transferDetail">Preparing to send files to server...</p>
+            </div>
+        </section>
+
+        <!-- Progress Panel -->
+        <section id="progressPanel" class="card hidden bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <h2 class="text-base font-semibold text-gray-800">Upload Progress</h2>
+                    <div class="flex items-center gap-3">
+                        <span id="elapsedTime" class="text-sm text-gray-500">0s</span>
+                        <span id="uploadSpeed" class="hidden text-sm text-gray-500">-- MB/s</span>
+                        <span id="uploadEta" class="hidden text-sm font-medium text-adobe-blue">ETA --</span>
+                        <sp-button id="cancelBtnInProgress" onclick="cancelUpload()" variant="negative" size="s" style="display:none;">
+                            Cancel Upload
+                        </sp-button>
+                    </div>
+                </div>
+                <!-- Stats row -->
+                <div id="progressAnnouncer" class="sr-only" aria-live="polite"></div>
+                <div id="progressStats" class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Uploaded</div>
+                        <div class="text-lg font-bold text-green-600" id="statUploaded">0</div>
+                    </div>
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Remaining</div>
+                        <div class="text-lg font-bold text-blue-600" id="statRemaining">0</div>
+                    </div>
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Failed</div>
+                        <div class="text-lg font-bold text-red-600" id="statFailed">0</div>
+                    </div>
+                    <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Transferred</div>
+                        <div class="text-lg font-bold text-gray-800" id="statBytes">0 B</div>
+                    </div>
                 </div>
             </div>
-            <!-- Stats row -->
-            <div id="progressAnnouncer" class="sr-only" aria-live="polite"></div>
-            <div id="progressStats" class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Uploaded</div>
-                    <div class="text-lg font-bold text-green-600" id="statUploaded">0</div>
+            <div class="px-6 py-4">
+                <!-- Progress bar -->
+                <div class="mb-4">
+                    <div class="flex justify-between text-xs text-gray-500 mb-1">
+                        <span id="progressLabel">Upload Progress</span>
+                        <span id="progressPct">0%</span>
+                    </div>
+                    <div id="progressTrack" class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden" role="progressbar" aria-label="AEM upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div id="progressBar" class="bg-adobe-blue h-2.5 rounded-full transition-all duration-300" style="width:0%"></div>
+                    </div>
                 </div>
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Remaining</div>
-                    <div class="text-lg font-bold text-blue-600" id="statRemaining">0</div>
-                </div>
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Failed</div>
-                    <div class="text-lg font-bold text-red-600" id="statFailed">0</div>
-                </div>
-                <div class="bg-white rounded-lg px-3 py-2 border border-gray-200">
-                    <div class="text-xs text-gray-400 uppercase tracking-wider whitespace-nowrap">Transferred</div>
-                    <div class="text-lg font-bold text-gray-800" id="statBytes">0 B</div>
-                </div>
+                <div id="fileList" class="max-h-80 overflow-y-auto text-sm"></div>
             </div>
+            <div id="summaryBar" class="hidden px-6 py-4 border-t border-gray-100"></div>
+        </section>
+
+            </div>
+            <aside id="summaryPanel" class="xl:sticky xl:top-6">
+                <div class="card summary-card">
+                    <h3 class="summary-title">Summary</h3>
+                    <dl class="summary-list">
+                        <div><dt>Destination</dt><dd id="sumDest" class="font-mono break-all">—</dd></div>
+                        <div><dt>Files</dt><dd id="sumFiles">No files selected</dd></div>
+                        <div><dt>Size</dt><dd id="sumSize">—</dd></div>
+                        <div><dt>Options</dt><dd id="sumOptions">—</dd></div>
+                    </dl>
+                    <!-- Upload / Cancel buttons -->
+                    <div class="flex flex-col gap-2 summary-actions">
+                        <sp-button id="uploadBtn" onclick="initiateUpload()" variant="accent" size="l">
+                            <svg id="uploadIcon" slot="icon" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                            <svg id="uploadSpinner" class="hidden spinner h-5 w-5" slot="icon" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                            <span id="uploadBtnText">Start Upload</span>
+                        </sp-button>
+                        <sp-button id="cancelBtn" onclick="cancelUpload()" variant="negative" size="l" style="display:none;">
+                            Cancel
+                        </sp-button>
+                    </div>
+
+                    <p class="summary-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to start &middot; <kbd>Esc</kbd> twice to cancel</p>
+                </div>
+            </aside>
         </div>
-        <div class="px-6 py-4">
-            <!-- Progress bar -->
-            <div class="mb-4">
-                <div class="flex justify-between text-xs text-gray-500 mb-1">
-                    <span id="progressLabel">Upload Progress</span>
-                    <span id="progressPct">0%</span>
-                </div>
-                <div id="progressTrack" class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden" role="progressbar" aria-label="AEM upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div id="progressBar" class="bg-adobe-blue h-2.5 rounded-full transition-all duration-300" style="width:0%"></div>
-                </div>
-            </div>
-            <div id="fileList" class="max-h-80 overflow-y-auto text-sm"></div>
-        </div>
-        <div id="summaryBar" class="hidden px-6 py-4 border-t border-gray-100"></div>
     </section>
 
+    <section id="viewHistory" data-view-panel="history" class="hidden">
+        <div class="page-head">
+            <h2>Upload history</h2>
+            <p id="historySubtitle">Your uploads from this server.</p>
+        </div>
+        <div id="histStats" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="card stat-tile"><div class="stat-label">Uploads</div><div id="statTotalUploads" class="stat-value">0</div></div>
+            <div class="card stat-tile"><div class="stat-label">Files uploaded</div><div id="statTotalFiles" class="stat-value">0</div></div>
+            <div class="card stat-tile"><div class="stat-label">Success rate</div><div id="statSuccessRate" class="stat-value">—</div></div>
+            <div class="card stat-tile"><div class="stat-label">Last 7 days</div><div id="statLast7" class="stat-value">0</div></div>
+        </div>
     <!-- Upload History -->
-    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <section class="card bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div onclick="toggleHistory()" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleHistory();}" role="button" tabindex="0" aria-expanded="false" aria-label="Toggle upload history" id="histToggle" class="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition cursor-pointer select-none">
             <div class="flex items-center gap-2">
                 <svg id="histChevron" class="h-4 w-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-                <h2 class="text-base font-semibold text-gray-800">Upload History</h2>
+                <h2 class="text-base font-semibold text-gray-800">All uploads</h2>
             </div>
             <div class="flex items-center gap-3" onclick="event.stopPropagation()">
                 <button onclick="clearAllHistory()" id="clearHistoryBtn" class="hidden text-xs text-red-500 hover:text-red-700 hover:underline transition flex items-center gap-1"
@@ -675,9 +795,9 @@
                 <thead class="text-xs text-gray-500 uppercase bg-gray-50" id="historyHead">
                     <tr>
                         <th scope="col" class="px-4 py-3" data-col="timestamp">Timestamp</th>
-                        <th scope="col" class="px-4 py-3" data-col="target">Target</th>
+                        <th scope="col" class="px-4 py-3" data-col="target">AEM server</th>
                         <th scope="col" class="px-4 py-3" data-col="damPath">DAM Path</th>
-                        <th scope="col" class="px-4 py-3" data-col="localPath">Local Path</th>
+                        <th scope="col" class="px-4 py-3" data-col="localPath">Source</th>
                         <th scope="col" class="px-4 py-3" data-col="files">Files</th>
                         <th scope="col" class="px-4 py-3" data-col="size">Size</th>
                         <th scope="col" class="px-4 py-3" data-col="duration">Duration</th>
@@ -706,10 +826,12 @@
         </div>
     </section>
 
+    </section>
 </main>
+</div>
 
 <footer class="border-t border-gray-200 bg-white mt-auto">
-    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between text-xs text-gray-400" style="font-family:'Source Sans 3',Inter,system-ui,sans-serif;">
+    <div class="max-w-[1400px] mx-auto px-4 sm:px-8 py-4 flex items-center justify-between text-xs text-gray-400" style="font-family:'Source Sans 3',Inter,system-ui,sans-serif;">
         <span class="font-medium tracking-wide">Guides Upload Utility v2.0</span>
         <span>Powered by <code class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-mono text-[11px]">@adobe/aem-upload</code></span>
     </div>
@@ -1194,12 +1316,34 @@ function setBrowserFileEntries(entries) {
     showToast(entries.length + ' file(s) selected (' + fmtBytes(totalSize) + ')' + (folderSet.size > 0 ? ' in ' + folderSet.size + ' folders' : ''), 'success');
     renderFolderTree(entries);
 
+    updateSkipTopFolderHint();
+    updateSummaryPanel();
+
     // Show file type filter when files are selected
     const ftContainer = document.getElementById('fileTypeFilterContainer');
     if (ftContainer && entries.length > 0) ftContainer.classList.remove('hidden');
 }
 
 let _allBrowserFileEntries = []; // Unfiltered copy for filter reset
+
+// "c/f1/f2" selected as f1 with this option: f1 is not created in AEM, f2 lands directly in the DAM folder
+function skipTopFolderActive() {
+    const box = document.getElementById('skipTopFolder');
+    return !!(box && box.checked && getRootFolderName(browserFileEntries || []));
+}
+
+function updateSkipTopFolderHint() {
+    const row = document.getElementById('skipTopFolderRow');
+    const hint = document.getElementById('skipTopFolderHint');
+    if (!row || !hint) return;
+    const root = getRootFolderName(browserFileEntries || []);
+    row.classList.toggle('hidden', !root);
+    if (!root) return;
+    const dam = '/' + ((document.getElementById('damPath').value || 'content/dam/…').trim().replace(/^\/+|\/+$/g, ''));
+    hint.textContent = document.getElementById('skipTopFolder').checked
+        ? '"' + root + '" is not created in AEM. Its files and subfolders go straight into ' + dam + '/'
+        : 'Creates ' + dam + '/' + root + '/ in AEM';
+}
 
 function resetFileTypeFilter() {
     _allBrowserFileEntries = [];
@@ -1266,6 +1410,8 @@ function getRootFolderName(entries) {
 function clearBrowserFiles() {
     if (blockedWhileUploading()) return;
     browserFileEntries = [];
+    document.getElementById('skipTopFolderRow').classList.add('hidden');
+    setTimeout(updateSummaryPanel, 0);
     resetFileTypeFilter();
     document.getElementById('browserFilesPreview').classList.add('hidden');
     const folderInfoEl = document.getElementById('browserFolderInfo');
@@ -1413,6 +1559,74 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+// ═══ Views (sidebar navigation) ═══
+function showView(view) {
+    const target = view === 'history' ? 'history' : 'upload';
+    document.querySelectorAll('[data-view-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.viewPanel !== target));
+    document.querySelectorAll('.nav-item[data-view]').forEach((b) => {
+        const on = b.dataset.view === target;
+        b.classList.toggle('active', on);
+        if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    if (target === 'history') {
+        const panel = document.getElementById('histPanel');
+        if (panel && panel.classList.contains('hidden')) toggleHistory();
+    }
+    try { history.replaceState(null, '', target === 'history' ? '#history' : '#upload'); } catch (_) { /* ignore */ }
+}
+
+// Long DAM paths wrap at slashes instead of in the middle of a folder name
+function pathWithBreaks(p) {
+    return esc(p).split('/').join('/<wbr>');
+}
+
+function hostOf(url) {
+    try { return new URL(url).host; } catch (_) { return url || '—'; }
+}
+
+function shortSource(localPath) {
+    const m = /^Browser upload \((\d+) files?/.exec(localPath || '');
+    if (m) return 'Your computer · ' + Number(m[1]).toLocaleString() + ' files';
+    return localPath || '—';
+}
+
+function updateSummaryPanel() {
+    const dest = document.getElementById('sumDest');
+    if (!dest) return;
+    const dam = (document.getElementById('damPath').value || '').trim().replace(/^\/+|\/+$/g, '');
+    const root = getRootFolderName(browserFileEntries || []);
+    const into = dam ? '/' + dam + (root && !skipTopFolderActive() ? '/' + root : '') : '';
+    dest.textContent = (currentUser ? currentUser.host : '') + (into || ' — choose a DAM folder');
+    const entries = browserFileEntries || [];
+    document.getElementById('sumFiles').textContent = entries.length
+        ? entries.length.toLocaleString() + ' file' + (entries.length !== 1 ? 's' : '') + (root ? ' in "' + root + '"' : '')
+        : 'No files selected';
+    document.getElementById('sumSize').textContent = entries.length ? fmtBytes(entries.reduce((n, e) => n + e.file.size, 0)) : '—';
+    const opts = [];
+    if (skipTopFolderActive()) opts.push('Contents only (folder not created)');
+    if (document.getElementById('dryRun').checked) opts.push('Dry run');
+    if (!document.getElementById('overwriteExisting').checked) opts.push('Overwrite reminder');
+    document.getElementById('sumOptions').textContent = opts.length ? opts.join(' · ') : 'Default';
+}
+
+function updateHistoryStats(data) {
+    const rows = data || [];
+    const finished = rows.filter((h) => !h.cancelled);
+    const ok = finished.filter((h) => h.success).length;
+    const files = rows.reduce((n, h) => n + (h.success ? (h.totalFiles || 0) : (h.uploadedFiles != null ? h.uploadedFiles : Math.max(0, (h.totalFiles || 0) - (h.errorCount || 0)))), 0);
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    document.getElementById('statTotalUploads').textContent = rows.length.toLocaleString();
+    document.getElementById('statTotalFiles').textContent = files.toLocaleString();
+    document.getElementById('statSuccessRate').textContent = finished.length ? Math.round((ok * 100) / finished.length) + '%' : '—';
+    document.getElementById('statLast7').textContent = rows.filter((h) => new Date(h.timestamp).getTime() >= weekAgo).length.toLocaleString();
+    document.querySelectorAll('[data-history-count]').forEach((b) => {
+        b.textContent = rows.length.toLocaleString();
+        b.classList.toggle('hidden', rows.length === 0);
+    });
+    const sub = document.getElementById('historySubtitle');
+    if (sub) sub.textContent = currentUser && currentUser.isAdmin ? 'Everyone\'s uploads (you are an admin).' : 'Your uploads.';
+}
+
 // ═══ Session (sign-in with AEM credentials) ═══
 let currentUser = null;
 const SESSION_PASSWORD_PLACEHOLDER = '••••••••';
@@ -1510,7 +1724,25 @@ function syncSessionFields() {
     document.getElementById('password').value = SESSION_PASSWORD_PLACEHOLDER;
 }
 
+// The last account this page was used with; a different account gets a clean form
+let lastSignedInKey = null;
+
+function resetWorkspace() {
+    if (uploading) return;
+    if (browserFileEntries && browserFileEntries.length) clearBrowserFiles();
+    document.getElementById('damPath').value = '';
+    clearFieldErrors();
+    ['damPathErr', 'damPathHint'].forEach((id) => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+    document.getElementById('damPath').classList.remove('field-error', 'field-valid', 'field-warning');
+    document.getElementById('progressPanel').classList.add('hidden');
+    document.getElementById('summaryBar').classList.add('hidden');
+    document.querySelectorAll('#toastContainer > *').forEach((t) => t.remove());
+    updateSummaryPanel();
+}
+
 function applySignedIn(user) {
+    if (lastSignedInKey && lastSignedInKey !== user.key) resetWorkspace();
+    lastSignedInKey = user.key;
     currentUser = user;
     hideLogin();
     const initials = (user.name || user.id).split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
@@ -1522,6 +1754,9 @@ function applySignedIn(user) {
     document.getElementById('userAdminBadge').classList.toggle('hidden', !user.isAdmin);
     document.getElementById('userMenu').classList.remove('hidden');
     document.getElementById('sessionServerName').textContent = user.host;
+    document.getElementById('navServer').textContent = user.aemUrl;
+    document.getElementById('navRole').textContent = user.isAdmin ? 'Admin — sees everyone\'s uploads' : 'Signed in as ' + (user.name || user.id);
+    updateSummaryPanel();
     syncSessionFields();
     loadHistory();
     checkForActiveUploads();
@@ -1548,6 +1783,8 @@ async function signOut() {
     window._historyData = [];
     renderFilteredHistory();
     hideActiveBanner();
+    resetWorkspace();
+    lastSignedInKey = null;
     showLogin();
 }
 
@@ -1559,6 +1796,8 @@ document.addEventListener('click', (e) => {
 // Keyboard shortcuts
 let _lastEscapeAt = 0;
 document.addEventListener('keydown', (e) => {
+    // The sign-in form handles its own Enter; nothing else may run behind it
+    if (!currentUser || !document.getElementById('loginScreen').classList.contains('hidden')) return;
     const tag = document.activeElement && document.activeElement.tagName;
     const confirmOpen = !document.getElementById('confirmModal').classList.contains('hidden');
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !uploading && !confirmOpen) {
@@ -1842,7 +2081,10 @@ async function initiateUpload() {
         return;
     }
 
-    const folderNote = rootFolder ? '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> (full directory structure will be preserved)</p>' : '';
+    const folderNote = !rootFolder ? ''
+        : skipTopFolderActive()
+            ? '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> is <strong>not</strong> created in AEM; its contents go straight into the DAM folder.</p>'
+            : '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> (full directory structure will be preserved)</p>';
     const largeTip = browserFileEntries.length > 5000
         ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + ') &mdash; AEM concurrency auto-capped to 2 for stability.</p>'
         : '';
@@ -1960,7 +2202,11 @@ async function doBrowserUpload(config) {
     const fileCount = browserFileEntries.length;
     const totalSize = browserFileEntries.reduce((s, e) => s + e.file.size, 0);
 
-    const allRelativePaths = browserFileEntries.map(entry => entry.relativePath || entry.file.name);
+    let allRelativePaths = browserFileEntries.map(entry => entry.relativePath || entry.file.name);
+    if (skipTopFolderActive()) {
+        const prefix = getRootFolderName(browserFileEntries) + '/';
+        allRelativePaths = allRelativePaths.map((p) => (p.startsWith(prefix) ? p.slice(prefix.length) : p));
+    }
 
     Logger.info('Starting chunked upload:', fileCount, 'files (' + fmtBytes(totalSize) + ')');
     Logger.debug('First 5 relative paths:', allRelativePaths.slice(0, 5));
@@ -2443,7 +2689,7 @@ async function cancelUpload() {
 // ═══ Upload State ═══
 function setUploading(state) {
     uploading = state;
-    if (state) hideActiveBanner();
+    if (state) { hideActiveBanner(); showView('upload'); }
     document.getElementById('uploadBtn').disabled = state;
     document.getElementById('uploadIcon').classList.toggle('hidden', state);
     document.getElementById('uploadSpinner').classList.toggle('hidden', !state);
@@ -2455,7 +2701,7 @@ function setUploading(state) {
     // Disable/enable all input controls during upload to prevent accidental changes
     const controlIds = ['aemUrl', 'damPath', 'username', 'password',
         'maxConcurrent', 'maxUploadFiles', 'httpRetryCount', 'httpRetryDelay',
-        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter'];
+        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter', 'skipTopFolder'];
     controlIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = state;
@@ -3422,6 +3668,7 @@ function getFilteredHistory() {
 }
 
 function renderFilteredHistory() {
+    updateHistoryStats(window._historyData || []);
     const filtered = getFilteredHistory();
     const tbody = document.getElementById('historyBody');
     const emptyState = document.getElementById('histEmptyState');
@@ -3447,12 +3694,12 @@ function renderFilteredHistory() {
         const origIdx = (window._historyData || []).indexOf(h);
         return `<tr class="hover:bg-gray-50">
             <td data-col="timestamp" class="px-4 py-3 text-gray-600 whitespace-nowrap text-xs" title="${fmtTimestamp(h.timestamp)}">${timeAgo(h.timestamp)}</td>
-            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs">${esc(h.target)}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
-            <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-500 max-w-[120px] truncate" title="/${esc(h.damPath)}">/${esc(h.damPath)}</td>
-            <td data-col="localPath" class="px-4 py-3 font-mono text-xs text-gray-500 max-w-[150px] truncate" title="${esc(h.localPath||'')}">${esc(h.localPath||'--')}</td>
-            <td data-col="files" class="px-4 py-3 text-gray-600 text-xs">${h.totalFiles}</td>
-            <td data-col="size" class="px-4 py-3 text-gray-600 text-xs">${fmtBytes(h.totalBytes||0)}</td>
-            <td data-col="duration" class="px-4 py-3 text-gray-500 text-xs">${fmtDuration(h.duration)}</td>
+            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs whitespace-nowrap">${esc(hostOf(h.baseUrl))}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
+            <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-700 min-w-[180px] max-w-[320px]" title="/${esc(h.damPath)}">${pathWithBreaks('/' + h.damPath)}</td>
+            <td data-col="localPath" class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap" title="${esc(h.localPath||'')}">${esc(shortSource(h.localPath))}</td>
+            <td data-col="files" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${Number(h.totalFiles || 0).toLocaleString()}</td>
+            <td data-col="size" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${fmtBytes(h.totalBytes||0)}</td>
+            <td data-col="duration" class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap tabular-nums">${fmtDuration(h.duration)}</td>
             <td data-col="status" class="px-4 py-3">${h.success
                 ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Success</span>'
                 : isPartialUpload(h)
@@ -3460,7 +3707,7 @@ function renderFilteredHistory() {
                     : h.cancelled
                         ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"${h.uploadedFiles != null ? ` title="${h.uploadedFiles} file(s) uploaded before cancelling"` : ''}>Cancelled</span>`
                         : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Failed</span>'}</td>
-            <td data-col="actions" class="px-4 py-3"><div class="flex items-center gap-2">
+            <td data-col="actions" class="px-4 py-3 whitespace-nowrap"><div class="flex items-center gap-2">
                 <button onclick="rerunUpload(${origIdx})" class="text-xs text-adobe-blue hover:underline">Re-run</button>
                 <button onclick="deleteHistoryItem('${h.uploadId}')" class="text-gray-300 hover:text-red-500 transition" title="Delete" aria-label="Delete history entry"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
             </div></td></tr>`;
@@ -3740,6 +3987,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.removeItem('uploadQueue'); } catch (_) {}
     initDropZone();
     renderPresets();
+    document.getElementById('damPath').addEventListener('input', () => { updateSkipTopFolderHint(); updateSummaryPanel(); });
+    ['skipTopFolder', 'dryRun', 'overwriteExisting'].forEach((id) => document.getElementById(id).addEventListener('change', updateSummaryPanel));
+    showView(location.hash === '#history' ? 'history' : 'upload');
 
     window.addEventListener('online', handleOnlineStatus);
     window.addEventListener('offline', handleOnlineStatus);

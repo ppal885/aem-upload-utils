@@ -6,8 +6,9 @@
  * Usage:
  *   node find-missing-assets.js --aem <author url> --dam <DAM folder the upload targeted>
  *        --local <the local folder that was uploaded> [--copy-to <empty folder>] [--out missing-files.txt]
- *        [--source browser|server]
+ *        [--source browser|server] [--skip-top-folder true]
  *
+ * --skip-top-folder true: the upload used "Upload the folder's contents, not the folder itself".
  * --source: "browser" (default) for uploads made from the web page, "server" for a server path or the CLI
  * (only browser uploads rename ".." and <>"|?* in paths).
  * Credentials come from AEM_USER (or AEM_USERNAME) / AEM_PASSWORD, or are asked for (the password is not echoed).
@@ -134,7 +135,8 @@ async function main() {
     // The uploaded folder itself becomes a folder under the DAM target, except that a browser upload
     // whose folder has the same name as the DAM folder is uploaded straight into it (server.js unwrap)
     const damLastSegment = damFolder.split('/').pop();
-    const unwrapped = rearrangeEnabled && rearrangeSegment(path.basename(localRoot)) === damLastSegment;
+    const skipTop = String(args['skip-top-folder'] || '').toLowerCase() === 'true';
+    const unwrapped = skipTop || (rearrangeEnabled && rearrangeSegment(path.basename(localRoot)) === damLastSegment);
     const topFolder = unwrapped ? null : remoteFolderName(path.basename(localRoot));
     const remoteRoot = topFolder ? `${damFolder}/${topFolder}` : damFolder;
     const missing = [];
