@@ -432,6 +432,13 @@
                     </div>
                     <!-- Folder info (shown when a folder is selected) -->
                     <div id="browserFolderInfo" class="hidden flex items-center gap-1.5 mt-2 text-sm"></div>
+                    <div id="skipTopFolderRow" class="hidden mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
+                        <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                            <input id="skipTopFolder" type="checkbox" class="mt-0.5 h-4 w-4 accent-adobe-blue" onchange="updateSkipTopFolderHint()" />
+                            <span><span class="font-medium">Upload the folder's contents, not the folder itself</span>
+                                <span id="skipTopFolderHint" class="block text-xs text-gray-500 mt-0.5 break-all"></span></span>
+                        </label>
+                    </div>
                     <div id="browserFileExtensions" class="mt-2 flex flex-wrap gap-1.5"></div>
                     <!-- File type filter -->
                     <div id="fileTypeFilterContainer" class="hidden mt-2 pt-2 border-t border-gray-100">
@@ -1194,12 +1201,33 @@ function setBrowserFileEntries(entries) {
     showToast(entries.length + ' file(s) selected (' + fmtBytes(totalSize) + ')' + (folderSet.size > 0 ? ' in ' + folderSet.size + ' folders' : ''), 'success');
     renderFolderTree(entries);
 
+    updateSkipTopFolderHint();
+
     // Show file type filter when files are selected
     const ftContainer = document.getElementById('fileTypeFilterContainer');
     if (ftContainer && entries.length > 0) ftContainer.classList.remove('hidden');
 }
 
 let _allBrowserFileEntries = []; // Unfiltered copy for filter reset
+
+// "c/f1/f2" selected as f1 with this option: f1 is not created in AEM, f2 lands directly in the DAM folder
+function skipTopFolderActive() {
+    const box = document.getElementById('skipTopFolder');
+    return !!(box && box.checked && getRootFolderName(browserFileEntries || []));
+}
+
+function updateSkipTopFolderHint() {
+    const row = document.getElementById('skipTopFolderRow');
+    const hint = document.getElementById('skipTopFolderHint');
+    if (!row || !hint) return;
+    const root = getRootFolderName(browserFileEntries || []);
+    row.classList.toggle('hidden', !root);
+    if (!root) return;
+    const dam = '/' + ((document.getElementById('damPath').value || 'content/dam/…').trim().replace(/^\/+|\/+$/g, ''));
+    hint.textContent = document.getElementById('skipTopFolder').checked
+        ? '"' + root + '" is not created in AEM. Its files and subfolders go straight into ' + dam + '/'
+        : 'Creates ' + dam + '/' + root + '/ in AEM';
+}
 
 function resetFileTypeFilter() {
     _allBrowserFileEntries = [];
@@ -1266,6 +1294,7 @@ function getRootFolderName(entries) {
 function clearBrowserFiles() {
     if (blockedWhileUploading()) return;
     browserFileEntries = [];
+    document.getElementById('skipTopFolderRow').classList.add('hidden');
     resetFileTypeFilter();
     document.getElementById('browserFilesPreview').classList.add('hidden');
     const folderInfoEl = document.getElementById('browserFolderInfo');
@@ -1842,7 +1871,10 @@ async function initiateUpload() {
         return;
     }
 
-    const folderNote = rootFolder ? '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> (full directory structure will be preserved)</p>' : '';
+    const folderNote = !rootFolder ? ''
+        : skipTopFolderActive()
+            ? '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> is <strong>not</strong> created in AEM; its contents go straight into the DAM folder.</p>'
+            : '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> (full directory structure will be preserved)</p>';
     const largeTip = browserFileEntries.length > 5000
         ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + ') &mdash; AEM concurrency auto-capped to 2 for stability.</p>'
         : '';
@@ -1960,7 +1992,11 @@ async function doBrowserUpload(config) {
     const fileCount = browserFileEntries.length;
     const totalSize = browserFileEntries.reduce((s, e) => s + e.file.size, 0);
 
-    const allRelativePaths = browserFileEntries.map(entry => entry.relativePath || entry.file.name);
+    let allRelativePaths = browserFileEntries.map(entry => entry.relativePath || entry.file.name);
+    if (skipTopFolderActive()) {
+        const prefix = getRootFolderName(browserFileEntries) + '/';
+        allRelativePaths = allRelativePaths.map((p) => (p.startsWith(prefix) ? p.slice(prefix.length) : p));
+    }
 
     Logger.info('Starting chunked upload:', fileCount, 'files (' + fmtBytes(totalSize) + ')');
     Logger.debug('First 5 relative paths:', allRelativePaths.slice(0, 5));
@@ -2455,7 +2491,7 @@ function setUploading(state) {
     // Disable/enable all input controls during upload to prevent accidental changes
     const controlIds = ['aemUrl', 'damPath', 'username', 'password',
         'maxConcurrent', 'maxUploadFiles', 'httpRetryCount', 'httpRetryDelay',
-        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter'];
+        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter', 'skipTopFolder'];
     controlIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = state;
@@ -3740,6 +3776,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.removeItem('uploadQueue'); } catch (_) {}
     initDropZone();
     renderPresets();
+    document.getElementById('damPath').addEventListener('input', updateSkipTopFolderHint);
 
     window.addEventListener('online', handleOnlineStatus);
     window.addEventListener('offline', handleOnlineStatus);
