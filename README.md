@@ -35,6 +35,19 @@ npm start
 # http://localhost:3000
 ```
 
+## Sign-in and users
+
+Everyone signs in with an AEM account (server URL, username, password). The upload server checks the
+credentials against that AEM server, then uploads go to that server as that user. The password is kept only in
+the upload server's memory for the session (8 h idle, 24 h maximum) and is never written to disk; a server
+restart signs everyone out. AEM Cloud SSO (IMS) accounts cannot sign in this way; use an AEM local account.
+
+- Users see only their own uploads and history; several users can upload at the same time.
+- Admins see everyone's uploads and history and can use server-folder features (browse, server-path upload).
+  Set `ADMIN_USERS` to a comma-separated list of AEM user ids, optionally per host (`jdoe` or `jdoe@author-p1-e2.adobeaemcloud.com`).
+- History rows created before sign-in existed have no owner and are visible to admins only.
+- Scripts can still use `API_KEY` (`X-API-Key` header) and pass AEM credentials in the request body.
+
 ## Configuration
 
 Settings are read from environment variables. The server and the CLI do **not** read a `.env` file by
@@ -49,6 +62,8 @@ themselves: set the variables in the shell, in `ecosystem.config.cjs` (`env`) fo
 | `LOG_LEVEL` | `info` | Logging verbosity: `error`, `warn`, `info`, `debug` |
 | `BROWSE_ROOTS` | _(empty)_ | Restrict file browsing to these directories (comma-separated) |
 | `AEM_ALLOW_SELF_SIGNED` | `0` | Set to `1` to allow self-signed certs for `https://localhost:4502` (dev only) |
+| `ADMIN_USERS` | _(empty)_ | AEM user ids with admin rights (see Sign-in and users) |
+| `SESSION_IDLE_HOURS` / `SESSION_MAX_HOURS` | `8` / `24` | Sign-in session lifetime |
 | `UPLOAD_PIPELINES` | `4` | Parallel upload pipelines (1-8). Each runs `maxConcurrent` transfers. |
 | `UPLOAD_TMPDIR` | `<app>/.upload-tmp` | Staging folder for browser uploads when started with `pm2 start ecosystem.config.cjs` |
 

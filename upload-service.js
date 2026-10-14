@@ -196,6 +196,7 @@ function checkAemCredentialsOnce(rawBaseUrl, username, password) {
                         error: `AEM rejected the username or password (HTTP ${status}). Check the credentials and try again.` });
                     return;
                 }
+                let aemUser = null;
                 if (status === 200) {
                     try {
                         const user = JSON.parse(body);
@@ -204,10 +205,13 @@ function checkAemCredentialsOnce(rawBaseUrl, username, password) {
                                 error: 'AEM did not accept the username or password (signed in as anonymous). Check the credentials and try again.' });
                             return;
                         }
+                        if (user && user.authorizableId) {
+                            aemUser = { id: user.authorizableId, name: user.name || user.authorizableId };
+                        }
                     } catch (_) { /* non-JSON 200: treat as reachable */ }
                 }
                 if (status !== 200) svcLog.warn(`Credential check: unexpected HTTP ${status} from ${checkUrl.href}; continuing`);
-                resolve({ ok: true, status });
+                resolve({ ok: true, status, user: aemUser });
             });
         });
         req.on('timeout', () => req.destroy(Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })));
