@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GUIdes Upload Utility</title>
+    <title>Guides Upload Utility</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231473E6'/><path d='M16 5L8 27h5.2l1.5-4.2h2.6L16 19.5l-1.8-5L16 10l4 11.5h-3.2L18.3 27H24L16 5z' fill='white'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -79,6 +79,28 @@
         /* ─── Spectrum Toast Container (for sp-toast elements) ─── */
         #toastContainer { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; max-width: 500px; width: calc(100% - 40px); }
         #toastContainer > * { pointer-events: auto; }
+
+        .brand-title { font-family: 'Source Sans 3', 'Adobe Clean', Inter, system-ui, sans-serif; font-size: 1.35rem; font-weight: 800;
+            line-height: 1.15; letter-spacing: -0.01em; color: #1b1b2f; margin: 0; }
+        .dark .brand-title { color: #f1f5f9; }
+        /* ─── Sign-in screen (Spectrum-style) ─── */
+        #loginScreen { font-family: 'Source Sans 3', 'Adobe Clean', Inter, system-ui, sans-serif; }
+        #loginScreen .login-input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #b3b3b3; border-radius: 4px;
+            font-size: 14px; color: #2c2c2c; background: #fff; outline: none; transition: border-color .15s, box-shadow .15s; }
+        #loginScreen .login-input:hover { border-color: #8e8e8e; }
+        #loginScreen .login-input:focus { border-color: #1473E6; box-shadow: 0 0 0 2px rgba(20, 115, 230, .25); }
+        #loginScreen .login-label { display: block; font-size: 12px; font-weight: 600; color: #4b4b4b; margin-bottom: 6px; letter-spacing: .01em; }
+        #loginScreen .login-btn { width: 100%; height: 40px; border-radius: 20px; background: #1473E6; color: #fff; font-weight: 700;
+            font-size: 15px; transition: background .15s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+        #loginScreen .login-btn:hover { background: #0d66d0; }
+        #loginScreen .login-btn:disabled { background: #8eb8ec; cursor: wait; }
+        #loginScreen .brand-panel { background: radial-gradient(1200px 600px at -10% -20%, #3b2bdb 0%, transparent 55%),
+            radial-gradient(900px 600px at 120% 120%, #eb1000 0%, transparent 50%), linear-gradient(135deg, #1a1a2e 0%, #121226 100%); }
+        .dark #loginScreen .login-card { background: #1e1e2e !important; border-color: #2d2d44 !important; }
+        .dark #loginScreen .login-input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
+        .dark #loginScreen .login-label { color: #b8c0cc; }
+        .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #1473E6, #7a3cff);
+            color: #fff; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 
         /* ─── Dark Mode ─── */
         .dark .bg-white { background-color: #1a1a2e !important; }
@@ -181,20 +203,81 @@
 </div>
 
 <!-- Header -->
-<header class="bg-white border-b border-gray-200 shadow-sm">
-    <div class="h-[3px]" style="background:linear-gradient(90deg,#1473E6 0%,#1473E6 100%);"></div>
-    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
-        <!-- Adobe Experience Manager product icon -->
-        <div class="w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0" style="background:#1473E6;">
-            <svg class="w-[22px] h-[22px]" viewBox="0 0 24 24" fill="none">
-                <path d="M12 4L5 20h4.5l1.3-3.2h6.4L18.5 20H23L16 4h-4zm0 5.4L14.6 15h-5.2L12 9.4z" fill="white"/>
-            </svg>
+<!-- Sign-in screen: shown until /api/auth/me confirms a session -->
+<div id="loginScreen" class="fixed inset-0 z-[60] flex bg-gray-50" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <aside class="brand-panel hidden lg:flex flex-col justify-between w-[44%] p-12 text-white">
+        <div class="flex items-center gap-3">
+            <svg class="w-10 h-9 shrink-0" viewBox="0 0 30 26" aria-hidden="true"><path fill="#FA0F00" d="M19 0h11v26zM11.1 0H0v26zM15 9.6l7.1 16.4h-4.6l-2.1-5.2h-5.2z"/></svg>
+            <div class="brand-title text-white" style="color:#fff">Guides Upload Utility</div>
         </div>
-        <div style="pointer-events:none;user-select:none;">
-            <h1 style="all:unset;display:block;font-family:'Source Sans 3','Adobe Clean',Inter,system-ui,sans-serif;font-size:1.15rem;font-weight:700;color:#1D1D1D;letter-spacing:-0.01em;line-height:1.2;">GUIdes Upload Utility</h1>
-            <p style="all:unset;display:block;font-family:'Source Sans 3','Adobe Clean',Inter,system-ui,sans-serif;font-size:0.8rem;font-weight:400;color:#8a8a8a;margin-top:2px;letter-spacing:0.02em;">Adobe Experience Manager</p>
+        <div>
+            <h2 class="text-4xl font-bold leading-tight mb-5">Bulk-upload DITA content<br>to AEM, reliably.</h2>
+            <ul class="space-y-3 text-white/80 text-[15px]">
+                <li class="flex gap-3"><span class="text-[#7cc0ff]">&#10003;</span>Tens of thousands of files with live progress</li>
+                <li class="flex gap-3"><span class="text-[#7cc0ff]">&#10003;</span>Automatic retries, partial-upload reports, cancel at any time</li>
+                <li class="flex gap-3"><span class="text-[#7cc0ff]">&#10003;</span>Your own upload history, private to your account</li>
+            </ul>
+        </div>
+        <div class="text-xs text-white/40">Internal tool &middot; Signs in with your AEM account on the server you choose</div>
+    </aside>
+    <main class="flex-1 flex items-center justify-center p-6 overflow-y-auto">
+        <form id="loginForm" class="login-card w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitLogin();" novalidate>
+            <div class="lg:hidden flex items-center gap-2 mb-6">
+                <svg class="w-8 h-7 shrink-0" viewBox="0 0 30 26" aria-hidden="true"><path fill="#FA0F00" d="M19 0h11v26zM11.1 0H0v26zM15 9.6l7.1 16.4h-4.6l-2.1-5.2h-5.2z"/></svg>
+                <span class="brand-title">Guides Upload Utility</span>
+            </div>
+            <h1 id="loginTitle" class="text-2xl font-bold text-gray-900 mb-1">Sign in</h1>
+            <p class="text-sm text-gray-500 mb-6">Use your AEM account on the server you want to upload to.</p>
+            <div id="loginNotice" class="hidden mb-4 rounded-md border border-amber-300 bg-amber-50 text-amber-800 text-sm px-3 py-2"></div>
+            <div id="loginError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
+            <div class="mb-4">
+                <label class="login-label" for="loginServer">AEM server</label>
+                <input id="loginServer" class="login-input" type="url" list="loginServerList" autocomplete="url"
+                    placeholder="https://author-p12345-e67890.adobeaemcloud.com" />
+                <datalist id="loginServerList"></datalist>
+            </div>
+            <div class="mb-4">
+                <label class="login-label" for="loginUser">Username</label>
+                <input id="loginUser" class="login-input" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" />
+            </div>
+            <div class="mb-6">
+                <label class="login-label" for="loginPassword">Password</label>
+                <div class="relative">
+                    <input id="loginPassword" class="login-input pr-16" type="password" autocomplete="current-password" />
+                    <button type="button" onclick="toggleLoginPassword()" id="loginPwToggle" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-500 hover:text-gray-800 px-2 py-1">Show</button>
+                </div>
+            </div>
+            <button id="loginSubmit" type="submit" class="login-btn">Sign in</button>
+            <p class="mt-5 text-xs text-gray-400 leading-relaxed">AEM local accounts only. Your password is checked by the AEM server, kept in the upload
+                server's memory for this session only, and never saved.</p>
+        </form>
+    </main>
+</div>
+
+<header class="bg-white border-b border-gray-200 shadow-sm">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
+        <div class="flex items-center gap-3 select-none">
+            <svg class="w-8 h-7 shrink-0" viewBox="0 0 30 26" aria-hidden="true"><path fill="#FA0F00" d="M19 0h11v26zM11.1 0H0v26zM15 9.6l7.1 16.4h-4.6l-2.1-5.2h-5.2z"/></svg>
+            <h1 class="brand-title">Guides Upload Utility</h1>
         </div>
         <div class="ml-auto flex items-center gap-3">
+            <div id="userMenu" class="hidden relative">
+                <button id="userMenuBtn" onclick="toggleUserMenu()" class="flex items-center gap-2 rounded-full pl-1 pr-3 py-1 hover:bg-gray-100 transition" aria-haspopup="true" aria-expanded="false">
+                    <span id="userAvatar" class="user-avatar">?</span>
+                    <span class="hidden sm:flex flex-col items-start leading-tight text-left">
+                        <span id="userName" class="text-sm font-semibold text-gray-800"></span>
+                        <span id="userServer" class="text-[11px] text-gray-500"></span>
+                    </span>
+                    <span id="userAdminBadge" class="hidden text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 rounded px-1.5 py-0.5">Admin</span>
+                </button>
+                <div id="userDropdown" class="hidden absolute right-0 top-12 bg-white rounded-xl shadow-2xl border border-gray-200 w-64 z-50 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-100">
+                        <div id="userDropdownName" class="text-sm font-semibold text-gray-800"></div>
+                        <div id="userDropdownServer" class="text-xs text-gray-500 break-all"></div>
+                    </div>
+                    <button onclick="signOut()" id="signOutBtn" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">Sign out</button>
+                </div>
+            </div>
             <div id="connectionStatus" class="flex items-center gap-1.5 text-xs text-gray-500" title="Server connection status">
                 <span id="connDot" class="w-2 h-2 rounded-full bg-gray-400 transition-colors"></span>
                 <span id="connText" class="sr-only sm:not-sr-only" aria-live="polite">Checking...</span>
@@ -265,6 +348,13 @@
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
+                    <span class="block text-sm font-medium text-gray-700 mb-1">AEM server</span>
+                    <div class="h-[38px] px-3 flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-700" title="Uploads go to the server you signed in to. Sign out to use another server.">
+                        <svg class="h-4 w-4 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                        <span id="sessionServerName" class="truncate">—</span>
+                    </div>
+                </div>
+                <div class="hidden">
                     <label for="aemUrl" class="block text-sm font-medium text-gray-700 mb-1">AEM Author URL <span class="text-red-400">*</span></label>
                     <div class="relative">
                         <input id="aemUrl" type="text" placeholder="e.g. http://localhost:4502, http://host:4502, or https://author-p..adobeaemcloud.com"
@@ -369,7 +459,7 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username <span class="text-red-400">*</span></label>
                     <input id="username" type="text" placeholder="admin"
@@ -620,7 +710,7 @@
 
 <footer class="border-t border-gray-200 bg-white mt-auto">
     <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between text-xs text-gray-400" style="font-family:'Source Sans 3',Inter,system-ui,sans-serif;">
-        <span class="font-medium tracking-wide">GUIdes Upload Utility v2.0</span>
+        <span class="font-medium tracking-wide">Guides Upload Utility v2.0</span>
         <span>Powered by <code class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-mono text-[11px]">@adobe/aem-upload</code></span>
     </div>
 </footer>
@@ -762,11 +852,11 @@ function throttledProgressUI() {
 }
 
 // ═══ Init ═══
-const PAGE_TITLE = 'GUIdes Upload Utility';
+const PAGE_TITLE = 'Guides Upload Utility';
 let bannerDismissed = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
-    Logger.info('GUIdes Upload Utility initializing...');
+    Logger.info('Guides Upload Utility initializing...');
     try {
         const h = await fetch('/api/health');
         const hd = await h.json();
@@ -777,9 +867,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Dismiss loading overlay
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) { overlay.style.opacity = '0'; setTimeout(() => overlay.remove(), 300); }
-    loadHistory();
     requestNotificationPermission();
-    checkForActiveUploads();
+    await initSession();
     Logger.info('Initialization complete');
 });
 
@@ -1324,6 +1413,149 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+// ═══ Session (sign-in with AEM credentials) ═══
+let currentUser = null;
+const SESSION_PASSWORD_PLACEHOLDER = '••••••••';
+
+// Any API call that finds the session gone brings back the sign-in screen
+const _nativeFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+    const res = await _nativeFetch(input, init);
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (res.status === 401 && /\/api\//.test(url) && !/\/api\/auth\//.test(url)) {
+        res.clone().json().then((j) => {
+            if (j && j.code === 'AUTH_REQUIRED') showLogin('Your session has ended. Please sign in again.');
+        }).catch(() => {});
+    }
+    return res;
+};
+
+function getRecentServers() {
+    try { return JSON.parse(localStorage.getItem('recentServers') || '[]'); } catch (_) { return []; }
+}
+
+function showLogin(notice) {
+    const screen = document.getElementById('loginScreen');
+    const n = document.getElementById('loginNotice');
+    if (notice && currentUser) { n.textContent = notice; n.classList.remove('hidden'); } else { n.classList.add('hidden'); }
+    currentUser = null;
+    document.getElementById('userMenu').classList.add('hidden');
+    const recent = getRecentServers();
+    document.getElementById('loginServerList').innerHTML = recent.map((r) => `<option value="${esc(r.url)}"></option>`).join('');
+    const server = document.getElementById('loginServer');
+    const user = document.getElementById('loginUser');
+    if (!server.value && recent[0]) { server.value = recent[0].url; user.value = recent[0].username || ''; }
+    document.getElementById('loginPassword').value = '';
+    screen.classList.remove('hidden');
+    setTimeout(() => (server.value ? (user.value ? document.getElementById('loginPassword') : user) : server).focus(), 50);
+}
+
+function hideLogin() {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('loginError').classList.add('hidden');
+}
+
+function toggleLoginPassword() {
+    const pw = document.getElementById('loginPassword');
+    pw.type = pw.type === 'password' ? 'text' : 'password';
+    document.getElementById('loginPwToggle').textContent = pw.type === 'password' ? 'Show' : 'Hide';
+}
+
+async function submitLogin() {
+    const server = normalizeAemBaseUrl(document.getElementById('loginServer').value.trim());
+    const username = document.getElementById('loginUser').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const err = document.getElementById('loginError');
+    if (!server || !username || !password) {
+        err.textContent = 'Enter the AEM server, your username and your password.';
+        err.classList.remove('hidden');
+        return;
+    }
+    const btn = document.getElementById('loginSubmit');
+    btn.disabled = true;
+    btn.innerHTML = '<svg class="spinner h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Checking with AEM…';
+    try {
+        const r = await fetch('/api/auth/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ baseUrl: server, username, password }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            err.textContent = toErrorMessage(j.error || 'Sign-in failed (HTTP ' + r.status + ')');
+            err.classList.remove('hidden');
+            document.getElementById('loginPassword').select();
+            return;
+        }
+        try {
+            const recent = getRecentServers().filter((x) => x.url !== j.user.aemUrl);
+            recent.unshift({ url: j.user.aemUrl, username });
+            localStorage.setItem('recentServers', JSON.stringify(recent.slice(0, 8)));
+        } catch (_) { /* storage unavailable */ }
+        document.getElementById('loginPassword').value = '';
+        applySignedIn(j.user);
+    } catch (e) {
+        err.textContent = 'Cannot reach the upload server: ' + toErrorMessage(e);
+        err.classList.remove('hidden');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign in';
+    }
+}
+
+// The upload form keeps its (now hidden) server and credential fields, filled from the session
+function syncSessionFields() {
+    if (!currentUser) return;
+    document.getElementById('aemUrl').value = currentUser.aemUrl;
+    document.getElementById('username').value = currentUser.id;
+    document.getElementById('password').value = SESSION_PASSWORD_PLACEHOLDER;
+}
+
+function applySignedIn(user) {
+    currentUser = user;
+    hideLogin();
+    const initials = (user.name || user.id).split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+    document.getElementById('userAvatar').textContent = initials;
+    document.getElementById('userName').textContent = user.name || user.id;
+    document.getElementById('userServer').textContent = user.host;
+    document.getElementById('userDropdownName').textContent = (user.name || user.id) + (user.name && user.name !== user.id ? ' (' + user.id + ')' : '');
+    document.getElementById('userDropdownServer').textContent = user.aemUrl;
+    document.getElementById('userAdminBadge').classList.toggle('hidden', !user.isAdmin);
+    document.getElementById('userMenu').classList.remove('hidden');
+    document.getElementById('sessionServerName').textContent = user.host;
+    syncSessionFields();
+    loadHistory();
+    checkForActiveUploads();
+}
+
+async function initSession() {
+    try {
+        const r = await fetch('/api/auth/me');
+        if (r.ok) { applySignedIn((await r.json()).user); return; }
+    } catch (_) { /* fall through to sign-in */ }
+    showLogin();
+}
+
+function toggleUserMenu() {
+    const dd = document.getElementById('userDropdown');
+    dd.classList.toggle('hidden');
+    document.getElementById('userMenuBtn').setAttribute('aria-expanded', String(!dd.classList.contains('hidden')));
+}
+
+async function signOut() {
+    if (uploading) { showToast('Finish or cancel the running upload before signing out', 'warn'); return; }
+    document.getElementById('userDropdown').classList.add('hidden');
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) { /* ignore */ }
+    window._historyData = [];
+    renderFilteredHistory();
+    hideActiveBanner();
+    showLogin();
+}
+
+document.addEventListener('click', (e) => {
+    const dd = document.getElementById('userDropdown');
+    if (dd && !dd.classList.contains('hidden') && !e.target.closest('#userMenu')) dd.classList.add('hidden');
+});
+
 // Keyboard shortcuts
 let _lastEscapeAt = 0;
 document.addEventListener('keydown', (e) => {
@@ -1583,6 +1815,7 @@ function readIntField(id, fallback, min, max) {
 
 async function initiateUpload() {
     if (uploading) return;
+    syncSessionFields();
     if (!validateForm()) return;
     if (!browserFileEntries || browserFileEntries.length === 0) {
         showToast('No files selected. Drag and drop a folder or use the file picker first.', 'error');
@@ -3214,7 +3447,7 @@ function renderFilteredHistory() {
         const origIdx = (window._historyData || []).indexOf(h);
         return `<tr class="hover:bg-gray-50">
             <td data-col="timestamp" class="px-4 py-3 text-gray-600 whitespace-nowrap text-xs" title="${fmtTimestamp(h.timestamp)}">${timeAgo(h.timestamp)}</td>
-            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs">${esc(h.target)}</td>
+            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs">${esc(h.target)}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
             <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-500 max-w-[120px] truncate" title="/${esc(h.damPath)}">/${esc(h.damPath)}</td>
             <td data-col="localPath" class="px-4 py-3 font-mono text-xs text-gray-500 max-w-[150px] truncate" title="${esc(h.localPath||'')}">${esc(h.localPath||'--')}</td>
             <td data-col="files" class="px-4 py-3 text-gray-600 text-xs">${h.totalFiles}</td>

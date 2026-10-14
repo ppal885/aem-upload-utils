@@ -9,6 +9,7 @@ const cors = require('cors');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
+const auth = require('./auth');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
@@ -299,7 +300,7 @@ function emitUserCancelledUpload(uploadId, session, uploadKey) {
     session.doneTime = Date.now();
     session.userCancelled = true;
     if (uploadKey && activeUploads.get(uploadKey) === uploadId) activeUploads.delete(uploadKey);
-    uploadHistory.unshift({
+    addHistoryRow(meta, {
         uploadId,
         target: meta.target,
         baseUrl: meta.baseUrl,
@@ -355,18 +356,18 @@ const uploadLimiter = rateLimit({
     message: { error: 'Too many upload requests, please slow down' },
 });
 
-// Optional API key authentication
+// Every API call needs a signed-in user (or an API key for scripts); see auth.js
 const API_KEY = process.env.API_KEY || '';
+app.use('/api/', express.json({ limit: '1mb' }));
+app.use('/api/', auth.requireAuth(log));
 
-function authMiddleware(req, res, next) {
-    if (!API_KEY) return next();
-    const provided = req.headers['x-api-key'] || req.query.apiKey;
-    if (provided === API_KEY) return next();
-    log.warn(`Auth rejected: ${req.method} ${req.originalUrl.replace(/[?&]apiKey=[^&]*/g, '')} from ${req.ip}`);
-    return res.status(401).json({ error: 'Unauthorized: invalid or missing API key' });
-}
-
-app.use('/api/', authMiddleware);
+const loginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many sign-in attempts. Wait a minute and try again.' },
+});
 
 // HTTP request logger
 app.use('/api/', (req, res, next) => {
@@ -453,6 +454,10 @@ setInterval(() => {
     });
     if (reaped > 0) log.info(`Session reaper: cleaned ${reaped} sessions (upload=${uploadSessions.size}, browser=${browserUploadSessions.size})`);
 }, SESSION_REAPER_INTERVAL_MS);
+
+function addHistoryRow(meta, row) {
+    uploadHistory.unshift({ ...row, owner: (meta && meta.owner) || null, ownerName: (meta && meta.ownerName) || null });
+}
 
 // Async history persistence with a write lock
 let historyWriteInProgress = false;
@@ -628,6 +633,44 @@ function clampUploadParams(raw) {
     };
 }
 
+// ─── API: sign in / out ───
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+    const { baseUrl: rawBaseUrl, username, password } = req.body || {};
+    if (!rawBaseUrl || !username || !password) {
+        return res.status(400).json({ error: 'Enter the AEM server URL, your username and your password.' });
+    }
+    const baseUrl = normalizeAemBaseUrl(rawBaseUrl).replace(/\/+$/, '');
+    try {
+        const u = new URL(baseUrl);
+        if (!['http:', 'https:'].includes(u.protocol) || !u.hostname) throw new Error('bad url');
+    } catch (_) {
+        return res.status(400).json({ error: 'The AEM server URL must look like https://author-p…adobeaemcloud.com or http://host:4502.' });
+    }
+    const check = await checkAemCredentials(baseUrl, username, password);
+    if (!check.ok) {
+        log.warn(`Sign-in failed for ${username} on ${new URL(baseUrl).host}: ${check.code}`);
+        return res.status(401).json({ error: check.error, code: check.code });
+    }
+    const s = auth.createSession(req, res, {
+        baseUrl, username, password,
+        userId: check.user && check.user.id, userName: check.user && check.user.name,
+    });
+    log.info(`Signed in: ${s.user.key}${s.isAdmin ? ' (admin)' : ''}`);
+    res.json({ user: auth.publicUser(s) });
+});
+
+app.get('/api/auth/me', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Not signed in', code: 'AUTH_REQUIRED' });
+    const { aem, ...user } = req.user;
+    res.json({ user });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    if (req.user && !req.user.viaApiKey) log.info(`Signed out: ${req.user.key}`);
+    auth.destroySession(req, res);
+    res.json({ message: 'Signed out' });
+});
+
 // ─── API: health check ───
 app.get('/api/health', (_req, res) => {
     res.json({
@@ -638,6 +681,7 @@ app.get('/api/health', (_req, res) => {
         platform: process.platform,
         sep: nodePath.sep,
         authEnabled: !!API_KEY,
+        signInRequired: true,
     });
 });
 
@@ -653,7 +697,7 @@ app.get('/api/targets', (_req, res) => {
 });
 
 // ─── API: scan local directory ───
-app.get('/api/scan', async (req, res) => {
+app.get('/api/scan', auth.requireAdmin, async (req, res) => {
     const analysis = await analyzeLocalPath(req.query.localPath);
     if (!analysis.valid) {
         log.debug('Scan rejected — invalid path:', req.query.localPath, analysis.error);
@@ -673,10 +717,10 @@ app.get('/api/scan', async (req, res) => {
 });
 
 // ─── API: start upload ───
-app.post('/api/upload', uploadLimiter, async (req, res) => {
+app.post('/api/upload', uploadLimiter, auth.requireAdmin, async (req, res) => {
+    const { baseUrl, username, password } = auth.resolveAemTarget(req);
     const {
-        targetId, baseUrl, damPath, localPath: rawLocalPath,
-        username, password,
+        targetId, damPath, localPath: rawLocalPath,
         maxConcurrent, maxUploadFiles,
         httpRetryCount, httpRetryDelay, httpRequestTimeout
     } = req.body;
@@ -747,6 +791,8 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
         failedFiles: 0,
         fileErrors: {},
         meta: {
+            owner: req.user.key,
+            ownerName: req.user.name,
             target: targetLabel,
             baseUrl: resolvedBaseUrl,
             damPath: resolvedDamPath,
@@ -830,7 +876,7 @@ app.post('/api/upload', uploadLimiter, async (req, res) => {
             });
         } catch (e) { log.error('broadcast error in .then:', e.message); }
 
-        uploadHistory.unshift({
+        addHistoryRow(session.meta, {
             uploadId,
             target: targetLabel,
             baseUrl: resolvedBaseUrl,
@@ -885,7 +931,8 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
         return res.status(400).json({ error: 'No files received' });
     }
 
-    const { baseUrl, damPath, username, password,
+    const { baseUrl, username, password } = auth.resolveAemTarget(req);
+    const { damPath,
             maxConcurrent, maxUploadFiles,
             httpRetryCount, httpRetryDelay, httpRequestTimeout } = req.body;
 
@@ -965,6 +1012,8 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
         fileErrors: {},
         tempDir,
         meta: {
+            owner: req.user.key,
+            ownerName: req.user.name,
             target: targetLabel,
             baseUrl: normalizedBaseUrl,
             damPath,
@@ -1064,7 +1113,7 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
             });
         } catch (e) { log.error('broadcast error in browser .then:', e.message); }
 
-        uploadHistory.unshift({
+        addHistoryRow(session.meta, {
             uploadId,
             target: targetLabel,
             baseUrl: normalizedBaseUrl,
@@ -1110,7 +1159,8 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
 
 // ─── API: chunked browser upload — init session ───
 app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
-    const { baseUrl, damPath, username, password,
+    const { baseUrl, username, password } = auth.resolveAemTarget(req);
+    const { damPath,
             maxConcurrent, maxUploadFiles,
             httpRetryCount, httpRetryDelay, httpRequestTimeout,
             totalBytes, fileCount } = req.body;
@@ -1149,6 +1199,7 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
     await fsPromises.mkdir(nodePath.join(tempDir, '__staging'), { recursive: true });
 
     browserUploadSessions.set(sessionId, {
+        owner: req.user.key,
         tempDir,
         config: { baseUrl: normalizedInitUrl, damPath, username, password,
                   maxConcurrent, maxUploadFiles,
@@ -1166,11 +1217,12 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
 
 // ─── API: cancel chunked browser session (before finalize) ───
 app.post('/api/upload/browser/cancel/:sessionId', uploadLimiter, (req, res) => {
-    const session = browserUploadSessions.get(req.params.sessionId);
+    const ownedSession = browserUploadSessions.get(req.params.sessionId);
+    const session = ownedSession && auth.canAccess(req, ownedSession.owner) ? ownedSession : null;
     if (!session) {
         const startedId = finalizedBrowserSessions.get(req.params.sessionId);
         const started = startedId && uploadSessions.get(startedId);
-        if (started && !started.done) {
+        if (started && !started.done && auth.canAccess(req, started.meta.owner)) {
             if (typeof started.cancelFn === 'function') { try { started.cancelFn(); } catch (_) {} }
             emitUserCancelledUpload(startedId, started, started.uploadKey);
             log.info(`Browser session ${req.params.sessionId} cancelled after its AEM upload ${startedId} started`);
@@ -1194,7 +1246,8 @@ app.post('/api/upload/browser/cancel/:sessionId', uploadLimiter, (req, res) => {
 
 // ─── API: chunked browser upload — receive chunk ───
 app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
-    const session = browserUploadSessions.get(req.params.sessionId);
+    const ownedSession = browserUploadSessions.get(req.params.sessionId);
+    const session = ownedSession && auth.canAccess(req, ownedSession.owner) ? ownedSession : null;
     if (!session) {
         return res.status(404).json({ error: 'Upload session not found or expired' });
     }
@@ -1254,7 +1307,8 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     if (res.req && res.req.socket) res.req.socket.setTimeout(30 * 60 * 1000);
 
     const { sessionId } = req.body;
-    const session = browserUploadSessions.get(sessionId);
+    const ownedSession = browserUploadSessions.get(sessionId);
+    const session = ownedSession && auth.canAccess(req, ownedSession.owner) ? ownedSession : null;
     if (!session) {
         return res.status(404).json({ error: 'Upload session not found or expired' });
     }
@@ -1331,6 +1385,8 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
         fileErrors: {},
         tempDir,
         meta: {
+            owner: req.user.key,
+            ownerName: req.user.name,
             target: targetLabel,
             baseUrl,
             damPath,
@@ -1471,7 +1527,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
             });
         } catch (e) { log.error('broadcast error in chunked browser .then:', e.message); }
 
-        uploadHistory.unshift({
+        addHistoryRow(uploadSession.meta, {
             uploadId,
             target: targetLabel,
             baseUrl,
@@ -1520,7 +1576,8 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 // Upload IDs are crypto.randomUUID() — 128-bit unguessable capability tokens.
 // This provides implicit authorization: only clients that initiated the upload know the ID.
 app.post('/api/upload/cancel/:uploadId', (req, res) => {
-    const session = uploadSessions.get(req.params.uploadId);
+    const found = uploadSessions.get(req.params.uploadId);
+    const session = found && auth.canAccess(req, found.meta.owner) ? found : null;
     if (!session) {
         return res.status(404).json({ error: 'Upload session not found' });
     }
@@ -1539,7 +1596,8 @@ app.post('/api/upload/cancel/:uploadId', (req, res) => {
 // ─── API: SSE stream for an upload ───
 app.get('/api/upload/stream/:uploadId', async (req, res) => {
     log.debug(`SSE stream requested: ${req.params.uploadId} from ${req.ip}`);
-    const session = uploadSessions.get(req.params.uploadId);
+    const found = uploadSessions.get(req.params.uploadId);
+    const session = found && auth.canAccess(req, found.meta.owner) ? found : null;
     if (!session) {
         return res.status(404).json({ error: 'Upload session not found' });
     }
@@ -1589,12 +1647,13 @@ app.get('/api/upload/stream/:uploadId', async (req, res) => {
 });
 
 // ─── API: list active uploads ───
-app.get('/api/upload/active', (_req, res) => {
+app.get('/api/upload/active', (req, res) => {
     const active = [];
     uploadSessions.forEach((session, uploadId) => {
-        if (!session.done) {
+        if (!session.done && auth.canAccess(req, session.meta.owner)) {
             active.push({
                 uploadId,
+                ownerName: session.meta.ownerName || null,
                 target: session.meta.target,
                 baseUrl: session.meta.baseUrl,
                 damPath: session.meta.damPath,
@@ -1615,7 +1674,8 @@ app.get('/api/upload/active', (_req, res) => {
 
 // ─── API: single upload status ───
 app.get('/api/upload/status/:uploadId', (req, res) => {
-    const session = uploadSessions.get(req.params.uploadId);
+    const found = uploadSessions.get(req.params.uploadId);
+    const session = found && auth.canAccess(req, found.meta.owner) ? found : null;
     if (!session) return res.status(404).json({ error: 'Upload session not found' });
     res.json({
         uploadId: req.params.uploadId,
@@ -1636,13 +1696,13 @@ app.get('/api/upload/status/:uploadId', (req, res) => {
 });
 
 // ─── API: upload history ───
-app.get('/api/upload/history', (_req, res) => {
-    res.json(uploadHistory);
+app.get('/api/upload/history', (req, res) => {
+    res.json(uploadHistory.filter((h) => auth.canAccess(req, h.owner)));
 });
 
 app.delete('/api/upload/history/:uploadId', (req, res) => {
     const id = req.params.uploadId;
-    const idx = uploadHistory.findIndex(h => h.uploadId === id);
+    const idx = uploadHistory.findIndex(h => h.uploadId === id && auth.canAccess(req, h.owner));
     if (idx === -1) {
         return res.status(404).json({ error: 'History entry not found' });
     }
@@ -1652,16 +1712,19 @@ app.delete('/api/upload/history/:uploadId', (req, res) => {
     res.json({ message: 'Deleted', item: removed[0] });
 });
 
-app.delete('/api/upload/history', (_req, res) => {
-    const count = uploadHistory.length;
+app.delete('/api/upload/history', (req, res) => {
+    // Users clear only their own rows; admins clear everything
+    const before = uploadHistory.length;
+    const kept = uploadHistory.filter((h) => !auth.canAccess(req, h.owner));
     uploadHistory.length = 0;
+    uploadHistory.push(...kept);
     saveHistoryToDisk();
-    log.info(`All history cleared (${count} entries)`);
-    res.json({ message: 'All history cleared' });
+    log.info(`History cleared by ${req.user.key}: ${before - kept.length} entries removed, ${kept.length} kept`);
+    res.json({ message: 'History cleared', removed: before - kept.length });
 });
 
 // ─── API: browse filesystem ───
-app.get('/api/browse', async (req, res) => {
+app.get('/api/browse', auth.requireAdmin, async (req, res) => {
     log.debug('Browse request:', req.query.path || '(root)');
     const requestedPath = (req.query.path || '').trim();
     const showHidden = req.query.showHidden === 'true';
@@ -1714,14 +1777,14 @@ app.get('/api/browse', async (req, res) => {
 });
 
 // ─── API: validate path ───
-app.get('/api/validate-path', async (req, res) => {
+app.get('/api/validate-path', auth.requireAdmin, async (req, res) => {
     const result = await analyzeLocalPath(req.query.localPath);
     log.debug(`Validate path: "${req.query.localPath}" → valid=${result.valid}${result.error ? ', error=' + result.error : ''}${result.warnings?.length ? ', warnings=' + result.warnings.length : ''}`);
     res.json(result);
 });
 
 // ─── API: open path in OS file explorer (command injection hardened) ───
-app.post('/api/open-path', async (req, res) => {
+app.post('/api/open-path', auth.requireAdmin, async (req, res) => {
     const reqPath = req.body.path;
     if (!reqPath) return res.status(400).json({ error: 'Path is required' });
 
@@ -1793,7 +1856,7 @@ async function shutdown(signal) {
     uploadSessions.forEach((session, uploadId) => {
         if (session.done) return;
         const meta = session.meta;
-        uploadHistory.unshift({
+        addHistoryRow(meta, {
             uploadId,
             target: meta.target,
             baseUrl: meta.baseUrl,
