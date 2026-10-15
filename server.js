@@ -2248,7 +2248,8 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
         ? (req, res) => {
             if (req.url === '/api/health') return app(req, res);
             const host = String(req.headers.host || 'localhost').replace(/:\d+$/, '');
-            res.writeHead(301, { Location: `https://${host}${HTTPS_PORT === 443 ? '' : ':' + HTTPS_PORT}${req.url}` });
+            // 302, not 301: browsers keep a 301 forever, so a wrong HTTPS address could not be taken back
+            res.writeHead(302, { Location: `https://${host}${HTTPS_PORT === 443 ? '' : ':' + HTTPS_PORT}${req.url}` });
             res.end();
         }
         : app;
