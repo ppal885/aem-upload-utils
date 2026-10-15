@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --max-old-space-size=4096 server.js",
     "start:low": "node --max-old-space-size=2048 server.js",
-    "test": "echo \"No tests configured yet\" && exit 0"
+    "test": "node tools/test-package-builder.js"
   },
   "dependencies": {
     "@adobe/aem-upload": "2.0.3",
@@ -14,7 +14,8 @@
     "cors": "^2.8.5",
     "express": "^4.22.1",
     "express-rate-limit": "^7.5.0",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "nodemailer": "^6.9.16"
   },
   "engines": {
     "node": ">=18.0.0"

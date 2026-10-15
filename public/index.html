@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guides Upload Utility</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231473E6'/><path d='M16 5L8 27h5.2l1.5-4.2h2.6L16 19.5l-1.8-5L16 10l4 11.5h-3.2L18.3 27H24L16 5z' fill='white'/></svg>" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&display=swap" rel="stylesheet">
@@ -94,6 +94,23 @@
             font-size: 15px; transition: background .15s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
         #loginScreen .login-btn:hover { background: #0d66d0; }
         #loginScreen .login-btn:disabled { background: #8eb8ec; cursor: wait; }
+        #loginScreen .login-link { color: #1473E6; font-weight: 600; }
+        .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: 14px 0 4px; border-radius: 10px; background: #f1f5f9; }
+        .mode-switch button { padding: 7px 6px; border-radius: 7px; font-size: 13px; font-weight: 600; color: #475569; }
+        .mode-switch button.on { background: #fff; color: #1473E6; box-shadow: 0 1px 3px rgba(15, 23, 42, .15); }
+        .dark .mode-switch { background: #12121c; }
+        .dark .mode-switch button { color: #94a3b8; }
+        .dark .mode-switch button.on { background: #2d2d44; color: #8ec5ff; }
+        .pkg-fields { margin: 10px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+        .pkg-fields label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 2px; }
+        .pkg-fields input { width: 100%; height: 34px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: #fff; color: #0f172a; }
+        .pkg-fields p { font-size: 12px; color: #64748b; line-height: 1.45; }
+        .dark .pkg-fields input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
+        .pkg-progress { margin: 10px 0 4px; }
+        .pkg-bar { margin-top: 6px; height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
+        .pkg-bar div { height: 100%; width: 0; background: #1473E6; transition: width .3s; }
+        #loginScreen .login-link:hover { text-decoration: underline; }
+        .dark #loginScreen .login-link { color: #6aa9f5; }
         #loginScreen .brand-panel { background: radial-gradient(1200px 600px at -10% -20%, #3b2bdb 0%, transparent 55%),
             radial-gradient(900px 600px at 120% 120%, #eb1000 0%, transparent 50%), linear-gradient(135deg, #1a1a2e 0%, #121226 100%); }
         .dark #loginScreen .login-card { background: #1e1e2e !important; border-color: #2d2d44 !important; }
@@ -265,10 +282,10 @@
             <ul class="space-y-3 text-white/80 text-[15px]">
                 <li class="flex gap-3"><span class="text-[#7cc0ff]">&#10003;</span>Tens of thousands of files with live progress</li>
                 <li class="flex gap-3"><span class="text-[#7cc0ff]">&#10003;</span>Automatic retries, partial-upload reports, cancel at any time</li>
-                <li class="flex gap-3"><span class="text-[#7cc0ff]">&#10003;</span>Your own upload history, private to your account</li>
+                <li class="flex gap-3"><span class="text-[#7cc0ff]">&#10003;</span>Team accounts &middot; your uploads and history stay private to you</li>
             </ul>
         </div>
-        <div class="text-xs text-white/40">Internal tool &middot; Signs in with your AEM account on the server you choose</div>
+        <div class="text-xs text-white/40">Internal tool &middot; Sign in with your Adobe email</div>
     </aside>
     <main class="flex-1 flex items-center justify-center p-6 overflow-y-auto">
         <form id="loginForm" class="login-card w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitLogin();" novalidate>
@@ -277,29 +294,95 @@
                 <span class="brand-title">Guides Upload Utility</span>
             </div>
             <h1 id="loginTitle" class="text-2xl font-bold text-gray-900 mb-1">Sign in</h1>
-            <p class="text-sm text-gray-500 mb-6">Use your AEM account on the server you want to upload to.</p>
+            <p class="text-sm text-gray-500 mb-6">Use your Adobe email and your password for this tool.</p>
             <div id="loginNotice" class="hidden mb-4 rounded-md border border-amber-300 bg-amber-50 text-amber-800 text-sm px-3 py-2"></div>
             <div id="loginError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
             <div class="mb-4">
-                <label class="login-label" for="loginServer">AEM server</label>
-                <input id="loginServer" class="login-input" type="url" list="loginServerList" autocomplete="url"
-                    placeholder="https://author-p12345-e67890.adobeaemcloud.com" />
-                <datalist id="loginServerList"></datalist>
-            </div>
-            <div class="mb-4">
-                <label class="login-label" for="loginUser">Username</label>
-                <input id="loginUser" class="login-input" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" />
+                <label class="login-label" for="loginEmail">Email</label>
+                <input id="loginEmail" class="login-input" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="name@adobe.com" />
             </div>
             <div class="mb-6">
-                <label class="login-label" for="loginPassword">Password</label>
+                <div class="flex items-baseline justify-between">
+                    <label class="login-label" for="loginPassword">Password</label>
+                    <button type="button" class="login-link text-xs" onclick="showAuthCard('forgotForm')">Forgot password?</button>
+                </div>
                 <div class="relative">
                     <input id="loginPassword" class="login-input pr-16" type="password" autocomplete="current-password" />
                     <button type="button" onclick="toggleLoginPassword()" id="loginPwToggle" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-500 hover:text-gray-800 px-2 py-1">Show</button>
                 </div>
             </div>
             <button id="loginSubmit" type="submit" class="login-btn">Sign in</button>
-            <p class="mt-5 text-xs text-gray-400 leading-relaxed">AEM local accounts only. Your password is checked by the AEM server, kept in the upload
-                server's memory for this session only, and never saved.</p>
+            <p id="signupPrompt" class="mt-5 text-sm text-gray-500 text-center">New here? <button type="button" class="login-link" onclick="showAuthCard('signupForm')">Create an account</button></p>
+        </form>
+        <form id="signupForm" class="login-card hidden w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitSignup();" novalidate>
+            <h1 class="text-2xl font-bold text-gray-900 mb-1">Create your account</h1>
+            <p class="text-sm text-gray-500 mb-6">Use your Adobe email. The password is only for this tool.</p>
+            <div id="signupError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
+            <div class="mb-4">
+                <label class="login-label" for="signupName">Full name</label>
+                <input id="signupName" class="login-input" type="text" autocomplete="name" maxlength="80" />
+            </div>
+            <div class="mb-4">
+                <label class="login-label" for="signupEmail">Adobe email</label>
+                <input id="signupEmail" class="login-input" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="name@adobe.com" />
+            </div>
+            <div class="mb-4">
+                <label class="login-label" for="signupPassword">Password</label>
+                <input id="signupPassword" class="login-input" type="password" autocomplete="new-password" />
+                <p class="mt-1 text-xs text-gray-400">Not your Adobe password.</p>
+            </div>
+            <div class="mb-6">
+                <label class="login-label" for="signupConfirm">Repeat password</label>
+                <input id="signupConfirm" class="login-input" type="password" autocomplete="new-password" />
+            </div>
+            <button id="signupSubmit" type="submit" class="login-btn">Create account</button>
+            <p class="mt-5 text-sm text-gray-500 text-center">Already have an account? <button type="button" class="login-link" onclick="showAuthCard('loginForm')">Sign in</button></p>
+        </form>
+        <form id="forgotForm" class="login-card hidden w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitForgot();" novalidate>
+            <h1 class="text-2xl font-bold text-gray-900 mb-1">Forgot password</h1>
+            <p class="text-sm text-gray-500 mb-6">Enter the Adobe email of your account.</p>
+            <div id="forgotError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
+            <div id="forgotDone" role="status" class="hidden mb-4 rounded-md border border-green-300 bg-green-50 text-green-800 text-sm px-3 py-2"></div>
+            <div class="mb-6">
+                <label class="login-label" for="forgotEmail">Adobe email</label>
+                <input id="forgotEmail" class="login-input" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="name@adobe.com" />
+            </div>
+            <button id="forgotSubmit" type="submit" class="login-btn">Reset password</button>
+            <p class="mt-5 text-sm text-gray-500 text-center"><button type="button" class="login-link" onclick="showAuthCard('loginForm')">Back to sign in</button></p>
+        </form>
+        <form id="resetForm" class="login-card hidden w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitReset();" novalidate>
+            <h1 class="text-2xl font-bold text-gray-900 mb-1">Choose a new password</h1>
+            <p class="text-sm text-gray-500 mb-6">Not your Adobe password.</p>
+            <div id="resetError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
+            <div class="mb-4">
+                <label class="login-label" for="resetPassword">New password</label>
+                <input id="resetPassword" class="login-input" type="password" autocomplete="new-password" />
+            </div>
+            <div class="mb-6">
+                <label class="login-label" for="resetConfirm">Repeat new password</label>
+                <input id="resetConfirm" class="login-input" type="password" autocomplete="new-password" />
+            </div>
+            <button id="resetSubmit" type="submit" class="login-btn">Save new password</button>
+        </form>
+        <form id="changePwForm" class="login-card hidden w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitChangePassword();" novalidate>
+            <h1 class="text-2xl font-bold text-gray-900 mb-1">Change your password</h1>
+            <p id="changePwIntro" class="text-sm text-gray-500 mb-6">Choose a new password.</p>
+            <div id="changePwError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
+            <input type="email" autocomplete="username" id="changePwUser" class="hidden" tabindex="-1" aria-hidden="true" />
+            <div class="mb-4">
+                <label class="login-label" for="changePwCurrent">Current password</label>
+                <input id="changePwCurrent" class="login-input" type="password" autocomplete="current-password" />
+            </div>
+            <div class="mb-4">
+                <label class="login-label" for="changePwNew">New password</label>
+                <input id="changePwNew" class="login-input" type="password" autocomplete="new-password" />
+            </div>
+            <div class="mb-6">
+                <label class="login-label" for="changePwConfirm">Repeat new password</label>
+                <input id="changePwConfirm" class="login-input" type="password" autocomplete="new-password" />
+            </div>
+            <button id="changePwSubmit" type="submit" class="login-btn">Save new password</button>
+            <button id="changePwCancel" type="button" onclick="cancelChangePassword()" class="hidden mt-3 w-full text-sm font-semibold text-gray-500 hover:text-gray-800">Cancel</button>
         </form>
     </main>
 </div>
@@ -316,7 +399,7 @@
                     <span id="userAvatar" class="user-avatar">?</span>
                     <span class="hidden sm:flex flex-col items-start leading-tight text-left">
                         <span id="userName" class="text-sm font-semibold text-gray-800"></span>
-                        <span id="userServer" class="text-[11px] text-gray-500"></span>
+                        <span id="userServer" class="text-[11px] text-gray-500 max-w-[200px] truncate"></span>
                     </span>
                     <span id="userAdminBadge" class="hidden text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 rounded px-1.5 py-0.5">Admin</span>
                 </button>
@@ -325,7 +408,8 @@
                         <div id="userDropdownName" class="text-sm font-semibold text-gray-800"></div>
                         <div id="userDropdownServer" class="text-xs text-gray-500 break-all"></div>
                     </div>
-                    <button onclick="signOut()" id="signOutBtn" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">Sign out</button>
+                    <button onclick="showChangePassword(false)" id="changePwBtn" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">Change password</button>
+                    <button onclick="signOut()" id="signOutBtn" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100">Sign out</button>
                 </div>
             </div>
             <div id="connectionStatus" class="hidden sm:flex items-center gap-1.5 text-xs text-gray-500" title="Server connection status">
@@ -390,8 +474,16 @@
                 <span>History</span>
                 <span class="nav-badge hidden" data-history-count></span>
             </button>
+            <button type="button" class="nav-item" data-view="packages" onclick="showView('packages')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                <span>Packages</span>
+            </button>
+            <button type="button" class="nav-item hidden" data-admin-only data-view="team" onclick="showView('team')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span>Team members</span>
+            </button>
         <div class="nav-footer">
-            <div class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Signed in to</div>
+            <div class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Signed in as</div>
             <div id="navServer" class="text-xs text-gray-700 font-medium break-all">—</div>
             <div id="navRole" class="mt-2 text-[11px] text-gray-500"></div>
         </div>
@@ -407,6 +499,14 @@
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 <span>History</span>
                 <span class="nav-badge hidden" data-history-count></span>
+            </button>
+            <button type="button" class="nav-item nav-tab" data-view="packages" onclick="showView('packages')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                <span>Packages</span>
+            </button>
+            <button type="button" class="nav-item nav-tab hidden" data-admin-only data-view="team" onclick="showView('team')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span>Team members</span>
             </button>
     </div>
 
@@ -434,14 +534,7 @@
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <span class="block text-sm font-medium text-gray-700 mb-1">AEM server</span>
-                        <div class="h-[38px] px-3 flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-700" title="Uploads go to the server you signed in to. Sign out to use another server.">
-                            <svg class="h-4 w-4 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                            <span id="sessionServerName" class="truncate">—</span>
-                        </div>
-                    </div>
-                    <div class="hidden">
-                        <label for="aemUrl" class="block text-sm font-medium text-gray-700 mb-1">AEM Author URL <span class="text-red-400">*</span></label>
+                        <label for="aemUrl" class="block text-sm font-medium text-gray-700 mb-1">AEM server URL <span class="text-red-400">*</span></label>
                         <div class="relative">
                             <input id="aemUrl" type="text" placeholder="e.g. http://localhost:4502, http://host:4502, or https://author-p..adobeaemcloud.com"
                                 class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition"
@@ -465,6 +558,25 @@
                         <p id="damPathHint" class="text-xs text-gray-400 mt-1 hidden"></p>
                     </div>
                 </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <label for="username" class="block text-sm font-medium text-gray-700 mb-1">AEM username <span class="text-red-400">*</span></label>
+                        <input id="username" type="text" placeholder="admin"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition" />
+                        <p id="usernameErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                    </div>
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">AEM password <span class="text-red-400">*</span></label>
+                        <div class="relative">
+                            <input id="password" type="password" placeholder="********"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none pr-14 transition" />
+                            <button type="button" onclick="togglePassword()" id="pwToggle"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs select-none px-1">Show</button>
+                        </div>
+                        <p id="passwordErr" class="text-xs text-red-500 mt-1 hidden"></p>
+                    </div>
+                </div>
+                <p class="mt-2 text-[11px] text-gray-400" id="aemCredNote">Checked with AEM before each upload. The AEM password is never saved; the server URL and username are remembered for you.</p>
             </div>
         </section>
 
@@ -518,12 +630,11 @@
                         </div>
                         <!-- Folder info (shown when a folder is selected) -->
                         <div id="browserFolderInfo" class="hidden flex items-center gap-1.5 mt-2 text-sm"></div>
+                        <div id="systemFilesNote" class="hidden mt-2 text-xs text-gray-500"></div>
                         <div id="skipTopFolderRow" class="hidden mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
-                            <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                                <input id="skipTopFolder" type="checkbox" class="mt-0.5 h-4 w-4 accent-adobe-blue" onchange="updateSkipTopFolderHint()" />
-                                <span><span class="font-medium">Upload the folder's contents, not the folder itself</span>
-                                    <span id="skipTopFolderHint" class="block text-xs text-gray-500 mt-0.5 break-all"></span></span>
-                            </label>
+                            <label for="skipLevels" class="block text-sm font-medium text-gray-700">Start the upload from</label>
+                            <select id="skipLevels" class="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-800" onchange="updateSkipTopFolderHint()"></select>
+                            <span id="skipTopFolderHint" class="block text-xs text-gray-500 mt-1 break-words"></span>
                         </div>
                         <div id="browserFileExtensions" class="mt-2 flex flex-wrap gap-1.5"></div>
                         <!-- File type filter -->
@@ -551,25 +662,6 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username <span class="text-red-400">*</span></label>
-                        <input id="username" type="text" placeholder="admin"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none transition" />
-                        <p id="usernameErr" class="text-xs text-red-500 mt-1 hidden"></p>
-                    </div>
-                    <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password <span class="text-red-400">*</span></label>
-                        <div class="relative">
-                            <input id="password" type="password" placeholder="********"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none pr-14 transition" />
-                            <button type="button" onclick="togglePassword()" id="pwToggle"
-                                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs select-none px-1">Show</button>
-                        </div>
-                        <p id="passwordErr" class="text-xs text-red-500 mt-1 hidden"></p>
-                    </div>
-                </div>
             </div>
         </section>
 
@@ -587,8 +679,8 @@
                     <div>
                         <label for="maxConcurrent" class="block text-sm font-medium text-gray-700 mb-1">Max Concurrent Uploads</label>
                         <div class="flex items-center gap-3">
-                            <input id="maxConcurrent" type="range" min="1" max="10" value="2" aria-valuemin="1" aria-valuemax="10" aria-valuenow="2" aria-label="Max Concurrent Uploads" oninput="document.getElementById('maxConcVal').textContent=this.value;this.setAttribute('aria-valuenow',this.value)" class="flex-1 accent-adobe-blue" />
-                            <span id="maxConcVal" class="text-sm font-mono text-gray-700 w-8 text-right">2</span>
+                            <input id="maxConcurrent" type="range" min="1" max="10" value="4" aria-valuemin="1" aria-valuemax="10" aria-valuenow="4" aria-label="Max Concurrent Uploads" oninput="document.getElementById('maxConcVal').textContent=this.value;this.setAttribute('aria-valuenow',this.value)" class="flex-1 accent-adobe-blue" />
+                            <span id="maxConcVal" class="text-sm font-mono text-gray-700 w-8 text-right">4</span>
                         </div>
                     </div>
                     <div>
@@ -731,6 +823,23 @@
                         <div><dt>Size</dt><dd id="sumSize">—</dd></div>
                         <div><dt>Options</dt><dd id="sumOptions">—</dd></div>
                     </dl>
+                    <div class="mode-switch" role="radiogroup" aria-label="What to do with the files">
+                        <button type="button" id="modeUpload" role="radio" aria-checked="true" class="on" onclick="setWorkMode('upload')">Upload to AEM</button>
+                        <button type="button" id="modePackage" role="radio" aria-checked="false" onclick="setWorkMode('package')">Build package</button>
+                    </div>
+                    <div id="packageFields" class="hidden pkg-fields">
+                        <label for="pkgName">Package name</label>
+                        <input id="pkgName" type="text" maxlength="80" placeholder="my-content" />
+                        <div class="grid grid-cols-2 gap-2">
+                            <div><label for="pkgVersion">Version</label><input id="pkgVersion" type="text" maxlength="40" value="1.0" /></div>
+                            <div><label for="pkgGroup">Group</label><input id="pkgGroup" type="text" maxlength="80" value="guides-upload" /></div>
+                        </div>
+                        <p>A CRX content package (.zip) of the selected files, placed under the DAM folder. Install it in AEM yourself or from the Packages page. AEM sign-in is only needed to install.</p>
+                    </div>
+                    <div id="pkgProgress" class="hidden pkg-progress" role="status" aria-live="polite">
+                        <div id="pkgProgressText" class="text-sm font-medium text-gray-700"></div>
+                        <div class="pkg-bar"><div id="pkgProgressBar"></div></div>
+                    </div>
                     <!-- Upload / Cancel buttons -->
                     <div class="flex flex-col gap-2 summary-actions">
                         <sp-button id="uploadBtn" onclick="initiateUpload()" variant="accent" size="l">
@@ -746,6 +855,59 @@
                     <p class="summary-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to start &middot; <kbd>Esc</kbd> twice to cancel</p>
                 </div>
             </aside>
+        </div>
+    </section>
+
+    <section id="viewPackages" data-view-panel="packages" class="hidden">
+        <div class="page-head">
+            <h2>Content packages</h2>
+            <p>Packages you built from a local folder. Download them for CRX Package Manager, or install them on an AEM server from here. They are kept for 7 days.</p>
+            <p class="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">On AEM as a Cloud Service, assets installed from a package are not processed automatically: run <strong>Reprocess Assets</strong> on the folder afterwards, or use Upload, which processes every file.</p>
+        </div>
+        <div class="card bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
+                    <tr><th class="px-4 py-3">Package</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Built</th><th class="px-4 py-3 text-right">Actions</th></tr>
+                </thead>
+                <tbody id="pkgBody" class="divide-y divide-gray-100"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="viewTeam" data-view-panel="team" class="hidden">
+        <div class="page-head">
+            <h2>Team members</h2>
+            <p>Add the people who may use this tool. They get a temporary password and choose their own at first sign-in.</p>
+        </div>
+        <div id="tempPwBox" role="status" class="hidden card mb-6 border border-green-200 bg-green-50 p-5">
+            <div class="text-sm font-semibold text-green-800">Temporary password for <span id="tempPwEmail"></span></div>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+                <code id="tempPwValue" class="text-lg font-mono bg-white border border-green-200 rounded px-3 py-1 select-all"></code>
+                <button type="button" onclick="copyTempPassword()" class="text-sm font-semibold text-green-800 underline">Copy</button>
+            </div>
+            <p class="mt-2 text-xs text-green-800">Shown only once. Share it privately; it must be changed at first sign-in.</p>
+            <button type="button" onclick="hideTempPassword()" class="mt-3 text-xs font-semibold text-green-900 underline">I've shared it, hide it</button>
+        </div>
+        <div class="card bg-white rounded-xl border border-gray-200 p-5 mb-6">
+            <h3 class="text-sm font-bold text-gray-800 mb-3">Add a team member</h3>
+            <form id="addMemberForm" class="grid grid-cols-1 md:grid-cols-[2fr_2fr_1fr_auto] gap-3 items-end" onsubmit="event.preventDefault(); addTeamMember();" novalidate>
+                <div><label for="newMemberEmail" class="block text-xs font-semibold text-gray-600 mb-1">Email</label>
+                    <input id="newMemberEmail" type="email" placeholder="name@adobe.com" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                <div><label for="newMemberName" class="block text-xs font-semibold text-gray-600 mb-1">Name</label>
+                    <input id="newMemberName" type="text" placeholder="Full name" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                <div><label for="newMemberRole" class="block text-xs font-semibold text-gray-600 mb-1">Role</label>
+                    <select id="newMemberRole" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="member">Member</option><option value="admin">Admin</option></select></div>
+                <button id="addMemberBtn" type="submit" class="h-[38px] px-4 rounded-lg bg-adobe-blue text-white text-sm font-semibold hover:bg-adobe-darkBlue">Add member</button>
+            </form>
+            <p id="addMemberError" role="alert" class="hidden mt-2 text-xs text-red-600"></p>
+        </div>
+        <div class="card bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table class="w-full text-sm text-left min-w-[720px]">
+                <thead class="text-xs text-gray-500 uppercase tracking-wider bg-gray-50 border-b border-gray-100">
+                    <tr><th class="px-4 py-3">Member</th><th class="px-4 py-3">Role</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Last sign-in</th><th class="px-4 py-3 text-right">Actions</th></tr>
+                </thead>
+                <tbody id="teamBody" class="divide-y divide-gray-100"></tbody>
+            </table>
         </div>
     </section>
 
@@ -853,6 +1015,7 @@
     </div>
 </div>
 
+<script src="aem-names.js"></script>
 <script>
 // ═══ Error / message normalization (APIs may return strings or { message, code }) ═══
 function toErrorMessage(x) {
@@ -1319,7 +1482,7 @@ function setBrowserFileEntries(entries) {
     showToast(entries.length + ' file(s) selected (' + fmtBytes(totalSize) + ')' + (folderSet.size > 0 ? ' in ' + folderSet.size + ' folders' : ''), 'success');
     renderFolderTree(entries);
 
-    updateSkipTopFolderHint();
+    renderSkipLevels();
     updateSummaryPanel();
 
     // Show file type filter when files are selected
@@ -1329,23 +1492,65 @@ function setBrowserFileEntries(entries) {
 
 let _allBrowserFileEntries = []; // Unfiltered copy for filter reset
 
-// "c/f1/f2" selected as f1 with this option: f1 is not created in AEM, f2 lands directly in the DAM folder
+function relPathsOf(entries) {
+    return (entries || []).map((e) => e.relativePath || e.file.name);
+}
+
+// Folders every selected file sits in: "c/f1/f2/a.dita" + "c/f1/f2/b/x.dita" -> [c, f1, f2]
+function commonSelectedFolders() {
+    return AemNames.commonFolders(relPathsOf(browserFileEntries));
+}
+
+function skipLevels() {
+    const sel = document.getElementById('skipLevels');
+    const n = sel ? parseInt(sel.value, 10) || 0 : 0;
+    return Math.min(n, commonSelectedFolders().length);
+}
+
 function skipTopFolderActive() {
-    const box = document.getElementById('skipTopFolder');
-    return !!(box && box.checked && getRootFolderName(browserFileEntries || []));
+    return skipLevels() > 0;
+}
+
+function uploadRelativePaths() {
+    const n = skipLevels();
+    return relPathsOf(browserFileEntries).map((p) => AemNames.stripLevels(p, n));
+}
+
+function currentDamPath() {
+    return AemNames.normalizeDamPath(document.getElementById('damPath').value).path || 'content/dam/…';
+}
+
+function renderSkipLevels() {
+    const row = document.getElementById('skipTopFolderRow');
+    const sel = document.getElementById('skipLevels');
+    if (!row || !sel) return;
+    const common = commonSelectedFolders();
+    row.classList.toggle('hidden', !common.length);
+    const keep = Math.min(parseInt(sel.value, 10) || 0, common.length);
+    sel.innerHTML = '';
+    for (let i = 0; i <= common.length; i++) {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = i === 0
+            ? 'The "' + common[0] + '" folder (keeps the whole structure)'
+            : 'Inside ' + common.slice(0, i).join(' / ') + '  (skips ' + i + ' level' + (i > 1 ? 's' : '') + ')';
+        sel.appendChild(opt);
+    }
+    sel.value = String(keep);
+    updateSkipTopFolderHint();
 }
 
 function updateSkipTopFolderHint() {
-    const row = document.getElementById('skipTopFolderRow');
     const hint = document.getElementById('skipTopFolderHint');
-    if (!row || !hint) return;
-    const root = getRootFolderName(browserFileEntries || []);
-    row.classList.toggle('hidden', !root);
-    if (!root) return;
-    const dam = '/' + ((document.getElementById('damPath').value || 'content/dam/…').trim().replace(/^\/+|\/+$/g, ''));
-    hint.textContent = document.getElementById('skipTopFolder').checked
-        ? '"' + root + '" is not created in AEM. Its files and subfolders go straight into ' + dam + '/'
-        : 'Creates ' + dam + '/' + root + '/ in AEM';
+    if (!hint) return;
+    const common = commonSelectedFolders();
+    const n = skipLevels();
+    const dam = '/' + currentDamPath();
+    const kept = common.slice(n);
+    const skipped = common.slice(0, n);
+    hint.textContent = (kept.length ? 'Creates ' + dam + '/' + kept.join('/') + '/ in AEM.' : 'Files and subfolders go straight into ' + dam + '/.')
+        + (skipped.length ? ' Not created: ' + skipped.map((f) => '"' + f + '"').join(', ') + '.' : '');
+    updateSummaryPanel();
 }
 
 function resetFileTypeFilter() {
@@ -1359,7 +1564,17 @@ function resetFileTypeFilter() {
 // A brand-new selection must not inherit the previous selection's file-type filter
 function selectNewFiles(entries) {
     resetFileTypeFilter();
-    setBrowserFileEntries(entries);
+    const kept = entries.filter((e) => !AemNames.isSystemPath(e.relativePath || e.file.name));
+    const skipped = entries.length - kept.length;
+    const note = document.getElementById('systemFilesNote');
+    if (note) {
+        note.classList.toggle('hidden', !skipped);
+        note.textContent = skipped ? skipped.toLocaleString() + ' system file' + (skipped !== 1 ? 's' : '')
+            + ' left out (hidden files, .DS_Store, Thumbs.db, desktop.ini, Office lock files).' : '';
+    }
+    const sel = document.getElementById('skipLevels');
+    if (sel) sel.value = '0';
+    setBrowserFileEntries(kept);
 }
 
 function blockedWhileUploading() {
@@ -1564,7 +1779,10 @@ document.addEventListener('visibilitychange', () => {
 
 // ═══ Views (sidebar navigation) ═══
 function showView(view) {
-    const target = view === 'history' ? 'history' : 'upload';
+    let target = ['history', 'team', 'packages'].includes(view) ? view : 'upload';
+    if (target === 'team' && !(currentUser && currentUser.isAdmin)) target = 'upload';
+    if (target === 'team') loadTeam();
+    if (target === 'packages') loadPackages();
     document.querySelectorAll('[data-view-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.viewPanel !== target));
     document.querySelectorAll('.nav-item[data-view]').forEach((b) => {
         const on = b.dataset.view === target;
@@ -1575,7 +1793,7 @@ function showView(view) {
         const panel = document.getElementById('histPanel');
         if (panel && panel.classList.contains('hidden')) toggleHistory();
     }
-    try { history.replaceState(null, '', target === 'history' ? '#history' : '#upload'); } catch (_) { /* ignore */ }
+    try { history.replaceState(null, '', '#' + target); } catch (_) { /* ignore */ }
 }
 
 // Long DAM paths wrap at slashes instead of in the middle of a folder name
@@ -1596,17 +1814,20 @@ function shortSource(localPath) {
 function updateSummaryPanel() {
     const dest = document.getElementById('sumDest');
     if (!dest) return;
-    const dam = (document.getElementById('damPath').value || '').trim().replace(/^\/+|\/+$/g, '');
+    const dam = AemNames.normalizeDamPath(document.getElementById('damPath').value).path;
     const root = getRootFolderName(browserFileEntries || []);
-    const into = dam ? '/' + dam + (root && !skipTopFolderActive() ? '/' + root : '') : '';
-    dest.textContent = (currentUser ? currentUser.host : '') + (into || ' — choose a DAM folder');
+    const kept = commonSelectedFolders().slice(skipLevels());
+    const into = dam ? '/' + dam + (kept.length ? '/' + kept[0] : '') : '';
+    const server = (document.getElementById('aemUrl').value || '').trim();
+    dest.textContent = (server ? hostOf(normalizeAemBaseUrl(server)) : 'AEM server not set') + (into || ' — choose a DAM folder');
     const entries = browserFileEntries || [];
     document.getElementById('sumFiles').textContent = entries.length
         ? entries.length.toLocaleString() + ' file' + (entries.length !== 1 ? 's' : '') + (root ? ' in "' + root + '"' : '')
         : 'No files selected';
     document.getElementById('sumSize').textContent = entries.length ? fmtBytes(entries.reduce((n, e) => n + e.file.size, 0)) : '—';
     const opts = [];
-    if (skipTopFolderActive()) opts.push('Contents only (folder not created)');
+    if (skipLevels()) opts.push('Skips ' + skipLevels() + ' folder level' + (skipLevels() > 1 ? 's' : ''));
+    if (workMode === 'package') opts.unshift('Build package');
     if (document.getElementById('dryRun').checked) opts.push('Dry run');
     if (!document.getElementById('overwriteExisting').checked) opts.push('Overwrite reminder');
     document.getElementById('sumOptions').textContent = opts.length ? opts.join(' · ') : 'Default';
@@ -1630,41 +1851,187 @@ function updateHistoryStats(data) {
     if (sub) sub.textContent = currentUser && currentUser.isAdmin ? 'Everyone\'s uploads (you are an admin).' : 'Your uploads.';
 }
 
-// ═══ Session (sign-in with AEM credentials) ═══
+// ═══ Session (team member accounts) ═══
 let currentUser = null;
-const SESSION_PASSWORD_PLACEHOLDER = '••••••••';
 
-// Any API call that finds the session gone brings back the sign-in screen
+// Any API call that finds the session gone (or a temporary password still unchanged) brings back the sign-in screen
 const _nativeFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
     const res = await _nativeFetch(input, init);
     const url = typeof input === 'string' ? input : (input && input.url) || '';
-    if (res.status === 401 && /\/api\//.test(url) && !/\/api\/auth\//.test(url)) {
+    if ((res.status === 401 || res.status === 403) && /\/api\//.test(url) && !/\/api\/auth\//.test(url)) {
         res.clone().json().then((j) => {
             if (j && j.code === 'AUTH_REQUIRED') showLogin('Your session has ended. Please sign in again.');
+            else if (j && j.code === 'PASSWORD_CHANGE_REQUIRED') showChangePassword(true);
         }).catch(() => {});
     }
     return res;
 };
 
-function getRecentServers() {
-    try { return JSON.parse(localStorage.getItem('recentServers') || '[]'); } catch (_) { return []; }
+function aemPrefsKey() { return 'aemPrefs:' + (currentUser ? currentUser.email : ''); }
+
+// Server URL and AEM username are remembered per team member; the AEM password never is
+function loadAemPrefs() {
+    let p = {};
+    try { p = JSON.parse(localStorage.getItem(aemPrefsKey()) || '{}'); } catch (_) { p = {}; }
+    const url = document.getElementById('aemUrl');
+    const user = document.getElementById('username');
+    if (!url.value && p.url) url.value = p.url;
+    if (!user.value && p.username) user.value = p.username;
+}
+
+function syncSessionFields() {
+    if (!currentUser) return;
+    const url = document.getElementById('aemUrl').value.trim();
+    const username = document.getElementById('username').value.trim();
+    if (!url && !username) return;
+    try { localStorage.setItem(aemPrefsKey(), JSON.stringify({ url, username })); } catch (_) { /* storage unavailable */ }
 }
 
 function showLogin(notice) {
-    const screen = document.getElementById('loginScreen');
     const n = document.getElementById('loginNotice');
-    if (notice && currentUser) { n.textContent = notice; n.classList.remove('hidden'); } else { n.classList.add('hidden'); }
+    // the start-up session check can answer after someone has started typing; keep what they typed
+    const wasSignedIn = !!currentUser;
+    if (notice && wasSignedIn) { n.textContent = notice; n.classList.remove('hidden'); } else if (wasSignedIn) { n.classList.add('hidden'); }
     currentUser = null;
     document.getElementById('userMenu').classList.add('hidden');
-    const recent = getRecentServers();
-    document.getElementById('loginServerList').innerHTML = recent.map((r) => `<option value="${esc(r.url)}"></option>`).join('');
-    const server = document.getElementById('loginServer');
-    const user = document.getElementById('loginUser');
-    if (!server.value && recent[0]) { server.value = recent[0].url; user.value = recent[0].username || ''; }
-    document.getElementById('loginPassword').value = '';
-    screen.classList.remove('hidden');
-    setTimeout(() => (server.value ? (user.value ? document.getElementById('loginPassword') : user) : server).focus(), 50);
+    if (wasSignedIn || !document.querySelector('#loginScreen .login-card:not(.hidden)')) showAuthCard('loginForm');
+    const email = document.getElementById('loginEmail');
+    if (!email.value) { try { email.value = localStorage.getItem('lastEmail') || ''; } catch (_) { /* ignore */ } }
+    if (wasSignedIn) document.getElementById('loginPassword').value = '';
+    document.getElementById('loginScreen').classList.remove('hidden');
+    setTimeout(() => {
+        if (document.getElementById('loginForm').contains(document.activeElement)) return;
+        (email.value ? document.getElementById('loginPassword') : email).focus();
+    }, 50);
+}
+
+const AUTH_CARDS = ['loginForm', 'signupForm', 'forgotForm', 'resetForm', 'changePwForm'];
+let authOptions = { emailDomains: ['adobe.com'], signup: true, minPasswordLength: 1, resetByEmail: false };
+
+function showAuthCard(id) {
+    AUTH_CARDS.forEach((c) => document.getElementById(c).classList.toggle('hidden', c !== id));
+    document.querySelectorAll('#loginScreen [role=alert]').forEach((el) => el.classList.add('hidden'));
+    const carry = (document.querySelector('#loginScreen .login-card:not(.hidden) input[type=email]') || {});
+    const typed = ['loginEmail', 'signupEmail', 'forgotEmail'].map((x) => document.getElementById(x).value.trim()).find(Boolean) || '';
+    if (carry.id && !carry.value && typed) carry.value = typed;
+    if (id === 'forgotForm') document.getElementById('forgotDone').classList.add('hidden');
+    const first = document.querySelector('#' + id + ' input:not([type=hidden]):not(.hidden)');
+    if (first) setTimeout(() => first.focus(), 30);
+}
+
+let authOptionsLoaded = null;
+
+// Submit handlers wait for this, so a fast click never checks against the built-in defaults
+function loadAuthOptions() {
+    if (!authOptionsLoaded) authOptionsLoaded = fetchAuthOptions();
+    return authOptionsLoaded;
+}
+
+async function fetchAuthOptions() {
+    try {
+        const r = await fetch('/api/auth/options');
+        if (r.ok) authOptions = { ...authOptions, ...(await r.json()) };
+    } catch (_) { /* defaults */ }
+    document.getElementById('signupPrompt').classList.toggle('hidden', !authOptions.signup);
+    const hint = authOptions.emailDomains.map((d) => 'name@' + d)[0] || 'name@adobe.com';
+    ['loginEmail', 'signupEmail', 'forgotEmail'].forEach((x) => { document.getElementById(x).placeholder = hint; });
+}
+
+// Same rule as the server: only Adobe addresses
+function emailProblem(email) {
+    if (!email) return 'Enter your Adobe email.';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address.';
+    const domain = email.split('@').pop().toLowerCase();
+    if (!authOptions.emailDomains.includes(domain)) return 'Use your Adobe email address (' + authOptions.emailDomains.map((d) => '@' + d).join(' or ') + ').';
+    return '';
+}
+
+function showAuthError(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.classList.remove('hidden');
+}
+
+async function postJson(url, body) {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) };
+}
+
+async function submitSignup() {
+    await loadAuthOptions();
+    const name = document.getElementById('signupName').value.trim();
+    const email = document.getElementById('signupEmail').value.trim();
+    const pw = document.getElementById('signupPassword').value;
+    const pw2 = document.getElementById('signupConfirm').value;
+    document.getElementById('signupError').classList.add('hidden');
+    const problem = !name ? 'Enter your name.' : emailProblem(email)
+        || (!pw ? 'Enter a password.' : pw.length < authOptions.minPasswordLength ? 'The password must have at least ' + authOptions.minPasswordLength + ' characters.' : '')
+        || (pw !== pw2 ? 'The two passwords are not the same.' : '');
+    if (problem) { showAuthError('signupError', problem); return; }
+    const btn = document.getElementById('signupSubmit');
+    setBusy(btn, true, 'Creating account…');
+    try {
+        const r = await postJson('/api/auth/register', { name, email, password: pw });
+        if (!r.ok) { showAuthError('signupError', toErrorMessage(r.body.error || 'Could not create the account (HTTP ' + r.status + ')')); return; }
+        try { localStorage.setItem('lastEmail', r.body.user.email); } catch (_) { /* ignore */ }
+        ['signupName', 'signupEmail', 'signupPassword', 'signupConfirm'].forEach((x) => { document.getElementById(x).value = ''; });
+        applySignedIn(r.body.user);
+        showToast('Welcome, ' + r.body.user.name + '! Your account is ready.', 'success');
+    } catch (e) {
+        showAuthError('signupError', 'Could not reach the server. Check your connection and try again.');
+    } finally {
+        setBusy(btn, false, 'Create account');
+    }
+}
+
+async function submitForgot() {
+    await loadAuthOptions();
+    const email = document.getElementById('forgotEmail').value.trim();
+    document.getElementById('forgotError').classList.add('hidden');
+    document.getElementById('forgotDone').classList.add('hidden');
+    const problem = emailProblem(email);
+    if (problem) { showAuthError('forgotError', problem); return; }
+    const btn = document.getElementById('forgotSubmit');
+    setBusy(btn, true, 'Sending…');
+    try {
+        const r = await postJson('/api/auth/forgot', { email });
+        if (!r.ok) { showAuthError('forgotError', toErrorMessage(r.body.error || 'HTTP ' + r.status)); return; }
+        const done = document.getElementById('forgotDone');
+        done.textContent = r.body.message;
+        done.classList.remove('hidden');
+    } catch (e) {
+        showAuthError('forgotError', 'Could not reach the server. Check your connection and try again.');
+    } finally {
+        setBusy(btn, false, 'Reset password');
+    }
+}
+
+async function submitReset() {
+    await loadAuthOptions();
+    const pw = document.getElementById('resetPassword').value;
+    const pw2 = document.getElementById('resetConfirm').value;
+    document.getElementById('resetError').classList.add('hidden');
+    const problem = !pw ? 'Enter a password.' : pw.length < authOptions.minPasswordLength ? 'The password must have at least ' + authOptions.minPasswordLength + ' characters.'
+        : pw !== pw2 ? 'The two passwords are not the same.' : '';
+    if (problem) { showAuthError('resetError', problem); return; }
+    const btn = document.getElementById('resetSubmit');
+    setBusy(btn, true, 'Saving…');
+    try {
+        const r = await postJson('/api/auth/reset', { token: window._resetToken, password: pw });
+        if (!r.ok) { showAuthError('resetError', toErrorMessage(r.body.error || 'HTTP ' + r.status)); return; }
+        window._resetToken = null;
+        history.replaceState(null, '', location.pathname);
+        showAuthCard('loginForm');
+        document.getElementById('loginEmail').value = r.body.email || '';
+        const n = document.getElementById('loginNotice');
+        n.textContent = r.body.message;
+        n.classList.remove('hidden');
+    } catch (e) {
+        showAuthError('resetError', 'Could not reach the server. Check your connection and try again.');
+    } finally {
+        setBusy(btn, false, 'Save new password');
+    }
 }
 
 function hideLogin() {
@@ -1678,24 +2045,33 @@ function toggleLoginPassword() {
     document.getElementById('loginPwToggle').textContent = pw.type === 'password' ? 'Show' : 'Hide';
 }
 
+function setBusy(btn, busy, label) {
+    btn.disabled = busy;
+    btn.innerHTML = busy
+        ? '<svg class="spinner h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> ' + label
+        : label;
+}
+
 async function submitLogin() {
-    const server = normalizeAemBaseUrl(document.getElementById('loginServer').value.trim());
-    const username = document.getElementById('loginUser').value.trim();
+    const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
     const err = document.getElementById('loginError');
-    if (!server || !username || !password) {
-        err.textContent = 'Enter the AEM server, your username and your password.';
+    await loadAuthOptions();
+    if (!email || !password) {
+        err.textContent = 'Enter your email and password.';
+        err.classList.remove('hidden');
+        return;
+    }
+    const problem = emailProblem(email);
+    if (problem) {
+        err.textContent = problem;
         err.classList.remove('hidden');
         return;
     }
     const btn = document.getElementById('loginSubmit');
-    btn.disabled = true;
-    btn.innerHTML = '<svg class="spinner h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Checking with AEM…';
+    setBusy(btn, true, 'Signing in…');
     try {
-        const r = await fetch('/api/auth/login', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ baseUrl: server, username, password }),
-        });
+        const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
             err.textContent = toErrorMessage(j.error || 'Sign-in failed (HTTP ' + r.status + ')');
@@ -1703,37 +2079,90 @@ async function submitLogin() {
             document.getElementById('loginPassword').select();
             return;
         }
-        try {
-            const recent = getRecentServers().filter((x) => x.url !== j.user.aemUrl);
-            recent.unshift({ url: j.user.aemUrl, username });
-            localStorage.setItem('recentServers', JSON.stringify(recent.slice(0, 8)));
-        } catch (_) { /* storage unavailable */ }
+        try { localStorage.setItem('lastEmail', email); } catch (_) { /* ignore */ }
+        err.classList.add('hidden');
+        if (j.user.mustChangePassword) {
+            currentUser = j.user;
+            document.getElementById('changePwCurrent').value = password;
+            document.getElementById('loginPassword').value = '';
+            showChangePassword(true);
+            return;
+        }
         document.getElementById('loginPassword').value = '';
         applySignedIn(j.user);
     } catch (e) {
         err.textContent = 'Cannot reach the upload server: ' + toErrorMessage(e);
         err.classList.remove('hidden');
     } finally {
-        btn.disabled = false;
-        btn.textContent = 'Sign in';
+        setBusy(btn, false, 'Sign in');
     }
 }
 
-// The upload form keeps its (now hidden) server and credential fields, filled from the session
-function syncSessionFields() {
-    if (!currentUser) return;
-    document.getElementById('aemUrl').value = currentUser.aemUrl;
-    document.getElementById('username').value = currentUser.id;
-    document.getElementById('password').value = SESSION_PASSWORD_PLACEHOLDER;
+// forced = temporary password that must be changed before anything else
+function showChangePassword(forced) {
+    document.getElementById('userDropdown').classList.add('hidden');
+    document.getElementById('loginForm').classList.add('hidden');
+    document.getElementById('changePwForm').classList.remove('hidden');
+    document.getElementById('changePwError').classList.add('hidden');
+    document.getElementById('changePwIntro').textContent = forced
+        ? 'You signed in with a temporary password. Choose your own password to continue.'
+        : 'Choose a new password.';
+    document.getElementById('changePwCancel').classList.toggle('hidden', !!forced);
+    document.getElementById('changePwUser').value = currentUser ? currentUser.email : '';
+    if (!forced) document.getElementById('changePwCurrent').value = '';
+    document.getElementById('changePwNew').value = '';
+    document.getElementById('changePwConfirm').value = '';
+    document.getElementById('loginScreen').classList.remove('hidden');
+    setTimeout(() => document.getElementById(forced ? 'changePwNew' : 'changePwCurrent').focus(), 50);
+}
+
+function cancelChangePassword() {
+    document.getElementById('changePwForm').classList.add('hidden');
+    document.getElementById('loginForm').classList.remove('hidden');
+    if (currentUser && !currentUser.mustChangePassword) hideLogin();
+}
+
+async function submitChangePassword() {
+    const current = document.getElementById('changePwCurrent').value;
+    const next = document.getElementById('changePwNew').value;
+    const confirm = document.getElementById('changePwConfirm').value;
+    const err = document.getElementById('changePwError');
+    const fail = (m) => { err.textContent = m; err.classList.remove('hidden'); };
+    if (!current || !next) return fail('Fill in your current and new password.');
+    if (!next) return fail('Enter a new password.');
+    if (next.length < authOptions.minPasswordLength) return fail('The new password must have at least ' + authOptions.minPasswordLength + ' characters.');
+    if (next !== confirm) return fail('The two new passwords are not the same.');
+    const btn = document.getElementById('changePwSubmit');
+    setBusy(btn, true, 'Saving…');
+    try {
+        const r = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currentPassword: current, newPassword: next }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return fail(toErrorMessage(j.error || 'Could not change the password (HTTP ' + r.status + ')'));
+        ['changePwCurrent', 'changePwNew', 'changePwConfirm'].forEach((id) => { document.getElementById(id).value = ''; });
+        document.getElementById('changePwForm').classList.add('hidden');
+        document.getElementById('loginForm').classList.remove('hidden');
+        applySignedIn(j.user);
+        showToast('Password changed', 'success');
+    } catch (e) {
+        fail('Cannot reach the upload server: ' + toErrorMessage(e));
+    } finally {
+        setBusy(btn, false, 'Save new password');
+    }
 }
 
 // The last account this page was used with; a different account gets a clean form
 let lastSignedInKey = null;
 
 function resetWorkspace() {
+    // Admin-only content must not survive into the next account's session
+    hideTempPassword();
+    document.getElementById('teamBody').innerHTML = '';
+    document.getElementById('pkgBody').innerHTML = '';
+    setPackageProgress(null);
     if (uploading) return;
     if (browserFileEntries && browserFileEntries.length) clearBrowserFiles();
-    document.getElementById('damPath').value = '';
+    ['damPath', 'aemUrl', 'username', 'password'].forEach((id) => { document.getElementById(id).value = ''; });
     clearFieldErrors();
     ['damPathErr', 'damPathHint'].forEach((id) => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     document.getElementById('damPath').classList.remove('field-error', 'field-valid', 'field-warning');
@@ -1748,27 +2177,41 @@ function applySignedIn(user) {
     lastSignedInKey = user.key;
     currentUser = user;
     hideLogin();
-    const initials = (user.name || user.id).split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+    const initials = (user.name || user.email).split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
     document.getElementById('userAvatar').textContent = initials;
-    document.getElementById('userName').textContent = user.name || user.id;
-    document.getElementById('userServer').textContent = user.host;
-    document.getElementById('userDropdownName').textContent = (user.name || user.id) + (user.name && user.name !== user.id ? ' (' + user.id + ')' : '');
-    document.getElementById('userDropdownServer').textContent = user.aemUrl;
+    document.getElementById('userName').textContent = user.name || user.email;
+    document.getElementById('userServer').textContent = user.email;
+    document.getElementById('userDropdownName').textContent = user.name || user.email;
+    document.getElementById('userDropdownServer').textContent = user.email + (user.isAdmin ? ' · admin' : '');
     document.getElementById('userAdminBadge').classList.toggle('hidden', !user.isAdmin);
     document.getElementById('userMenu').classList.remove('hidden');
-    document.getElementById('sessionServerName').textContent = user.host;
-    document.getElementById('navServer').textContent = user.aemUrl;
-    document.getElementById('navRole').textContent = user.isAdmin ? 'Admin — sees everyone\'s uploads' : 'Signed in as ' + (user.name || user.id);
+    document.getElementById('navServer').textContent = user.email;
+    document.getElementById('navRole').textContent = user.isAdmin ? 'Admin — sees everyone\'s uploads' : 'Team member';
+    document.querySelectorAll('[data-admin-only]').forEach((el) => el.classList.toggle('hidden', !user.isAdmin));
+    loadAemPrefs();
     updateSummaryPanel();
-    syncSessionFields();
     loadHistory();
     checkForActiveUploads();
+    // Re-evaluate the view for this account: a member must never stay on an admin page
+    showView((location.hash || '').replace('#', '') || 'upload');
 }
 
 async function initSession() {
+    await loadAuthOptions();
+    const reset = /^#reset=([A-Za-z0-9_-]{20,})$/.exec(location.hash || '');
+    if (reset) {
+        window._resetToken = reset[1];
+        showAuthCard('resetForm');
+        return;
+    }
     try {
         const r = await fetch('/api/auth/me');
-        if (r.ok) { applySignedIn((await r.json()).user); return; }
+        if (r.ok) {
+            const { user } = await r.json();
+            if (user.mustChangePassword) { currentUser = user; showChangePassword(true); return; }
+            applySignedIn(user);
+            return;
+        }
     } catch (_) { /* fall through to sign-in */ }
     showLogin();
 }
@@ -1789,6 +2232,102 @@ async function signOut() {
     resetWorkspace();
     lastSignedInKey = null;
     showLogin();
+}
+
+// ═══ Team members (admins) ═══
+async function loadTeam() {
+    const body = document.getElementById('teamBody');
+    try {
+        const r = await fetch('/api/admin/users');
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+        renderTeam(j.users || []);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-sm text-red-600">Could not load team members: ' + esc(toErrorMessage(e)) + '</td></tr>';
+    }
+}
+
+function renderTeam(users) {
+    const body = document.getElementById('teamBody');
+    if (!users.length) { body.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-sm text-gray-400">No team members yet</td></tr>'; return; }
+    body.innerHTML = users.map((u) => {
+        const me = currentUser && u.email === currentUser.email;
+        const status = u.disabled ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Disabled</span>'
+            : u.resetRequestedAt ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700" title="Asked ' + esc(timeAgo(u.resetRequestedAt)) + '">Asked for password reset</span>'
+            : u.mustChangePassword ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Temporary password</span>'
+            : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>';
+        const btn = (action, label, cls) => `<button type="button" onclick="teamAction(${esc(JSON.stringify(u.email))}, '${action}')" class="text-xs font-semibold ${cls} hover:underline">${label}</button>`;
+        const actions = me ? '<span class="text-xs text-gray-400">This is you</span>' : [
+            btn('reset', 'Reset password', 'text-adobe-blue'),
+            u.role === 'admin' ? btn('member', 'Make member', 'text-gray-600') : btn('admin', 'Make admin', 'text-gray-600'),
+            u.disabled ? btn('enable', 'Enable', 'text-green-700') : btn('disable', 'Disable', 'text-red-600'),
+        ].join('<span class="text-gray-300 mx-1">|</span>');
+        return `<tr>
+            <td class="px-4 py-3"><div class="font-semibold text-gray-800">${esc(u.name)}</div><div class="text-xs text-gray-500">${esc(u.email)}</div></td>
+            <td class="px-4 py-3 text-xs">${u.role === 'admin' ? '<span class="font-bold uppercase tracking-wider text-purple-700">Admin</span>' : 'Member'}</td>
+            <td class="px-4 py-3">${status}</td>
+            <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">${u.lastSignInAt ? timeAgo(u.lastSignInAt) : 'Never'}</td>
+            <td class="px-4 py-3 text-right whitespace-nowrap">${actions}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function addTeamMember() {
+    const err = document.getElementById('addMemberError');
+    err.classList.add('hidden');
+    const email = document.getElementById('newMemberEmail').value.trim();
+    const name = document.getElementById('newMemberName').value.trim();
+    const role = document.getElementById('newMemberRole').value;
+    if (!email) { err.textContent = 'Enter an email address.'; err.classList.remove('hidden'); return; }
+    const btn = document.getElementById('addMemberBtn');
+    btn.disabled = true;
+    try {
+        const r = await fetch('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, name, role }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { err.textContent = toErrorMessage(j.error || 'HTTP ' + r.status); err.classList.remove('hidden'); return; }
+        document.getElementById('newMemberEmail').value = '';
+        document.getElementById('newMemberName').value = '';
+        document.getElementById('newMemberRole').value = 'member';
+        showTempPassword(j.user.email, j.temporaryPassword);
+        loadTeam();
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function teamAction(email, action) {
+    const labels = { reset: 'Reset the password of ' + email + '? Their current password stops working and they are signed out.',
+        disable: 'Disable ' + email + '? They are signed out and cannot sign in until enabled again.' };
+    const run = async () => {
+        const body = action === 'reset' ? { resetPassword: true } : action === 'disable' ? { disabled: true }
+            : action === 'enable' ? { disabled: false } : { role: action };
+        const r = await fetch('/api/admin/users/' + encodeURIComponent(email), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { showToast(toErrorMessage(j.error || 'HTTP ' + r.status), 'error'); return; }
+        if (j.temporaryPassword) showTempPassword(email, j.temporaryPassword);
+        else showToast('Updated ' + email, 'success');
+        loadTeam();
+    };
+    if (labels[action]) showCustomConfirm(action === 'reset' ? 'Reset password' : 'Disable account', labels[action], run);
+    else run();
+}
+
+function showTempPassword(email, pw) {
+    document.getElementById('tempPwEmail').textContent = email;
+    document.getElementById('tempPwValue').textContent = pw;
+    const box = document.getElementById('tempPwBox');
+    box.classList.remove('hidden');
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function hideTempPassword() {
+    document.getElementById('tempPwValue').textContent = '';
+    document.getElementById('tempPwBox').classList.add('hidden');
+}
+
+async function copyTempPassword() {
+    try { await navigator.clipboard.writeText(document.getElementById('tempPwValue').textContent); showToast('Copied', 'success'); }
+    catch (_) { showToast('Copy failed; select the password and copy it', 'warn'); }
 }
 
 document.addEventListener('click', (e) => {
@@ -2018,15 +2557,16 @@ function validateForm() {
             ok = false;
         }
     }
-    const damPathVal = (document.getElementById('damPath')?.value || '').trim();
-    if (damPathVal && !damPathVal.replace(/^\/+/, '').startsWith('content/dam')) {
-        setFieldError('damPath', 'DAM path should start with content/dam');
-        if (!firstBadId) firstBadId = 'damPath';
-        ok = false;
-    } else if (damPathVal.includes('..')) {
-        setFieldError('damPath', 'Path must not contain directory traversal (..)');
-        if (!firstBadId) firstBadId = 'damPath';
-        ok = false;
+    const damEl = document.getElementById('damPath');
+    if (damEl && damEl.value.trim()) {
+        const dam = AemNames.normalizeDamPath(damEl.value);
+        if (dam.error) {
+            setFieldError('damPath', dam.error);
+            if (!firstBadId) firstBadId = 'damPath';
+            ok = false;
+        } else {
+            damEl.value = dam.path;
+        }
     }
     if (!browserFileEntries || browserFileEntries.length === 0) {
         showToast('Please select files or a folder to upload', 'error');
@@ -2055,7 +2595,176 @@ function readIntField(id, fallback, min, max) {
     return n;
 }
 
+// ═══ Content packages ═══
+var workMode = 'upload';
+var packageBuilding = false;
+
+function setWorkMode(mode) {
+    if (uploading || packageBuilding) return;
+    workMode = mode === 'package' ? 'package' : 'upload';
+    const pkg = workMode === 'package';
+    [['modeUpload', !pkg], ['modePackage', pkg]].forEach(([id, on]) => {
+        const b = document.getElementById(id);
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-checked', String(on));
+    });
+    document.getElementById('packageFields').classList.toggle('hidden', !pkg);
+    document.getElementById('uploadBtnText').textContent = pkg ? 'Build package' : 'Start Upload';
+    const name = document.getElementById('pkgName');
+    if (pkg && !name.value) name.value = suggestedPackageName();
+    updateSummaryPanel();
+}
+
+function suggestedPackageName() {
+    const kept = commonSelectedFolders().slice(skipLevels());
+    const base = kept[0] || AemNames.normalizeDamPath(document.getElementById('damPath').value).path.split('/').pop() || 'dam-content';
+    return base.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 80) || 'dam-content';
+}
+
+function setPackageProgress(text, pct) {
+    const box = document.getElementById('pkgProgress');
+    box.classList.toggle('hidden', text == null);
+    if (text == null) return;
+    document.getElementById('pkgProgressText').textContent = text;
+    document.getElementById('pkgProgressBar').style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+}
+
+async function apiJson(url, opts) {
+    const r = await fetch(url, opts);
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+    return body;
+}
+
+async function buildPackageFromSelection() {
+    if (packageBuilding) return;
+    const entries = browserFileEntries || [];
+    if (!entries.length) { showToast('Select a folder or files first', 'error'); return; }
+    const dam = AemNames.normalizeDamPath(document.getElementById('damPath').value);
+    if (dam.error) { setFieldError('damPath', dam.error); document.getElementById('damPath').focus(); return; }
+    document.getElementById('damPath').value = dam.path;
+    const packageName = document.getElementById('pkgName').value.trim() || suggestedPackageName();
+    const version = document.getElementById('pkgVersion').value.trim() || '1.0';
+    const group = document.getElementById('pkgGroup').value.trim() || 'guides-upload';
+    const paths = uploadRelativePaths();
+    const plan = AemNames.planUpload(relPathsOf(entries), dam.path, skipLevels());
+    if (plan.clashes.length && !confirm(plan.clashes.length + ' file(s) would overwrite another file after renaming. Build anyway?')) return;
+    const totalBytes = entries.reduce((n, e) => n + e.file.size, 0);
+
+    packageBuilding = true;
+    const btn = document.getElementById('uploadBtn');
+    btn.setAttribute('disabled', '');
+    setPackageProgress('Starting…', 0);
+    try {
+        const { sessionId } = await apiJson('/api/packages/init', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ damPath: dam.path, packageName, version, group, totalBytes, fileCount: entries.length }),
+        });
+        const CHUNK = 500;
+        const chunks = [];
+        for (let i = 0; i < entries.length; i += CHUNK) chunks.push(i);
+        let sentBytes = 0;
+        let next = 0;
+        const sendNext = async () => {
+            while (next < chunks.length) {
+                const start = chunks[next++];
+                const slice = entries.slice(start, start + CHUNK);
+                const fd = new FormData();
+                slice.forEach((e) => fd.append('files', e.file, e.file.name));
+                fd.append('_relativePaths', JSON.stringify(paths.slice(start, start + CHUNK)));
+                let ok = false;
+                for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+                    try { await apiJson('/api/upload/browser/chunk/' + sessionId, { method: 'POST', body: fd }); ok = true; } catch (e) { if (attempt === 2) throw e; }
+                }
+                sentBytes += slice.reduce((n, e) => n + e.file.size, 0);
+                setPackageProgress('Sending files to the server… ' + fmtBytes(sentBytes) + ' of ' + fmtBytes(totalBytes), totalBytes ? (sentBytes * 60) / totalBytes : 30);
+            }
+        };
+        await Promise.all([sendNext(), sendNext(), sendNext(), sendNext()]);
+        let { package: pkg } = await apiJson('/api/packages/build/' + sessionId, { method: 'POST' });
+        while (pkg.state === 'building') {
+            await new Promise((r) => setTimeout(r, 800));
+            ({ package: pkg } = await apiJson('/api/packages/' + pkg.id));
+            const pr = pkg.progress || {};
+            setPackageProgress('Building package… ' + (pr.files || 0).toLocaleString() + ' of ' + (pr.totalFiles || entries.length).toLocaleString() + ' files',
+                60 + (pr.totalFiles ? (pr.files * 40) / pr.totalFiles : 0));
+        }
+        if (pkg.state !== 'ready') throw new Error(pkg.error || 'The package could not be built');
+        setPackageProgress('Package ready: ' + pkg.downloadName + ' (' + fmtBytes(pkg.zipBytes) + ')', 100);
+        showToast('Package ready: ' + pkg.downloadName, 'success');
+        showView('packages');
+    } catch (e) {
+        setPackageProgress(null);
+        showToast('Package not built: ' + toErrorMessage(e), 'error');
+    } finally {
+        packageBuilding = false;
+        btn.removeAttribute('disabled');
+    }
+}
+
+async function loadPackages() {
+    const body = document.getElementById('pkgBody');
+    try {
+        const { packages } = await apiJson('/api/packages');
+        renderPackages(packages || []);
+        if ((packages || []).some((p) => p.state === 'building')) setTimeout(() => { if (!document.getElementById('viewPackages').classList.contains('hidden')) loadPackages(); }, 1500);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-sm text-red-600">Could not load packages: ' + esc(toErrorMessage(e)) + '</td></tr>';
+    }
+}
+
+function renderPackages(list) {
+    const body = document.getElementById('pkgBody');
+    if (!list.length) {
+        body.innerHTML = '<tr><td colspan="5" class="px-4 py-10 text-center text-sm text-gray-400">No packages yet. On New upload, choose <strong>Build package</strong>.</td></tr>';
+        return;
+    }
+    body.innerHTML = list.map((p) => {
+        const status = p.state === 'ready' ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Ready</span>'
+            : p.state === 'building' ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Building ' + ((p.progress && p.progress.files) || 0).toLocaleString() + '</span>'
+            : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700" title="' + esc(p.error || '') + '">Failed</span>';
+        const last = (p.installs || [])[0];
+        const installed = last ? '<div class="text-xs mt-1 ' + (last.ok ? 'text-green-700' : 'text-red-600') + '">' + (last.ok ? 'Installed on ' : 'Install failed on ') + esc(hostOf(last.server)) + ' ' + esc(timeAgo(last.at)) + '</div>' : '';
+        const actions = p.state !== 'ready' ? '' :
+            '<a class="text-xs font-semibold text-adobe-blue hover:underline" href="/api/packages/' + encodeURIComponent(p.id) + '/download" download>Download</a>'
+            + '<span class="text-gray-300 mx-1">|</span><button type="button" class="text-xs font-semibold text-gray-700 hover:underline" onclick="installPackage(' + esc(JSON.stringify(p.id)) + ')">Install on AEM</button>';
+        return '<tr>'
+            + '<td class="px-4 py-3"><div class="font-semibold text-gray-800">' + esc(p.downloadName) + '</div><div class="text-xs text-gray-500">' + esc(p.group) + (currentUser && currentUser.isAdmin && p.ownerName ? ' &middot; ' + esc(p.ownerName) : '') + '</div></td>'
+            + '<td class="px-4 py-3 text-xs text-gray-600"><div class="font-mono break-all">' + esc(p.damPath) + '</div>' + (p.files != null ? '<div>' + p.files.toLocaleString() + ' files &middot; ' + fmtBytes(p.zipBytes || 0) + (p.skippedCount ? ' &middot; ' + p.skippedCount + ' skipped' : '') + '</div>' : '') + '</td>'
+            + '<td class="px-4 py-3">' + status + installed + '</td>'
+            + '<td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">' + esc(timeAgo(p.createdAt)) + '</td>'
+            + '<td class="px-4 py-3 text-right whitespace-nowrap">' + actions + '</td></tr>';
+    }).join('');
+}
+
+function installPackage(id) {
+    const baseUrl = normalizeAemBaseUrl((document.getElementById('aemUrl').value || '').trim());
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    if (!baseUrl || !username || !password) {
+        showToast('Enter the AEM server, username and password on New upload first', 'warn');
+        showView('upload');
+        return;
+    }
+    const cloud = /\.adobeaemcloud\.com$/i.test(hostOf(baseUrl).split(':')[0]);
+    showCustomConfirm('Install package', 'Install this package on ' + hostOf(baseUrl) + ' as ' + username + '? Existing assets with the same path are overwritten; nothing else is removed.'
+        + (cloud ? ' Note: AEM as a Cloud Service does not process assets that come from a package. After installing, select the folder in Assets and run Reprocess Assets (needed for renditions and Guides features), or use Upload instead.' : ''), async () => {
+        showToast('Installing on ' + hostOf(baseUrl) + '…', 'info');
+        try {
+            const r = await fetch('/api/packages/' + encodeURIComponent(id) + '/install', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseUrl, username, password }),
+            });
+            const j = await r.json().catch(() => ({}));
+            showToast(j.message || j.error || ('HTTP ' + r.status), r.ok ? 'success' : 'error');
+        } catch (e) {
+            showToast('Install failed: ' + toErrorMessage(e), 'error');
+        }
+        loadPackages();
+    });
+}
+
 async function initiateUpload() {
+    if (workMode === 'package') return buildPackageFromSelection();
     if (uploading) return;
     syncSessionFields();
     if (!validateForm()) return;
@@ -2084,12 +2793,35 @@ async function initiateUpload() {
         return;
     }
 
-    const folderNote = !rootFolder ? ''
-        : skipTopFolderActive()
-            ? '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> is <strong>not</strong> created in AEM; its contents go straight into the DAM folder.</p>'
-            : '<p class="mt-2 text-xs text-gray-500">Folder: <strong>' + esc(rootFolder) + '</strong> (full directory structure will be preserved)</p>';
+    const plan = AemNames.planUpload(relPathsOf(browserFileEntries), damPath, skipLevels());
+    const skippedFolders = commonSelectedFolders().slice(0, skipLevels());
+    const exampleIdx = plan.landed.findIndex((p) => p.split('/').length === Math.max(...plan.landed.slice(0, 200).map((x) => x.split('/').length)));
+    let folderNote = '<p class="mt-2 text-xs text-gray-500">Example: <span class="font-mono break-all">' + esc(plan.landed[Math.max(0, exampleIdx)] || '') + '</span></p>';
+    if (skippedFolders.length) {
+        folderNote += '<p class="mt-1 text-xs text-gray-500">Not created in AEM: <strong>' + skippedFolders.map(esc).join(' / ') + '</strong></p>';
+    }
+    if (plan.unwrapped) {
+        folderNote += '<p class="mt-1 text-xs text-gray-500">"' + esc(plan.unwrapped) + '" has the same name as the DAM folder, so its contents go straight in (no ' + esc(plan.unwrapped) + '/' + esc(plan.unwrapped) + ').</p>';
+    }
+    if (plan.renamed.length) {
+        folderNote += '<div class="mt-2 text-xs text-amber-700 bg-amber-50 rounded p-2"><strong>' + plan.renamed.length.toLocaleString()
+            + ' name' + (plan.renamed.length !== 1 ? 's' : '') + ' will change</strong> (AEM does not allow some characters):<ul class="mt-1 font-mono break-all">'
+            + plan.renamed.slice(0, 5).map((r) => '<li>' + esc(r.from) + ' &rarr; ' + esc(r.to) + '</li>').join('')
+            + (plan.renamed.length > 5 ? '<li>…</li>' : '') + '</ul>'
+            + (plan.renamed.some((r) => r.folder) ? '<p class="mt-1">Folders keep the original name as their title.</p>' : '') + '</div>';
+    }
+    if (plan.clashes.length) {
+        folderNote += '<div class="mt-2 text-xs text-red-700 bg-red-50 rounded p-2"><strong>' + plan.clashes.length
+            + ' file' + (plan.clashes.length !== 1 ? 's' : '') + ' would overwrite another file</strong> after renaming:<ul class="mt-1 font-mono break-all">'
+            + plan.clashes.slice(0, 3).map((c) => '<li>' + esc(c.a) + ' + ' + esc(c.b) + '</li>').join('') + '</ul></div>';
+    }
+    if (plan.tooLong.length) {
+        folderNote += '<div class="mt-2 text-xs text-red-700 bg-red-50 rounded p-2"><strong>' + plan.tooLong.length
+            + ' name' + (plan.tooLong.length !== 1 ? 's are' : ' is') + ' longer than 255 bytes</strong> and will fail:<ul class="mt-1 font-mono break-all">'
+            + plan.tooLong.slice(0, 3).map((p) => '<li>' + esc(p) + '</li>').join('') + '</ul></div>';
+    }
     const largeTip = browserFileEntries.length > 5000
-        ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + ') &mdash; AEM concurrency auto-capped to 2 for stability.</p>'
+        ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + ') &mdash; each of the 8 pipelines sends at most 4 files at a time.</p>'
         : '';
     const overwriteChecked = document.getElementById('overwriteExisting').checked;
     const overwriteNote = !overwriteChecked
@@ -2107,7 +2839,7 @@ async function initiateUpload() {
         folderNote + largeTip + overwriteNote +
         '<p class="mt-2 text-xs text-gray-400">Files will be transferred: Browser &rarr; Server &rarr; AEM</p>';
     pendingUploadBody = { baseUrl, damPath, username, password,
-        maxConcurrent: readIntField('maxConcurrent', 2, 1, 10),
+        maxConcurrent: readIntField('maxConcurrent', 4, 1, 10),
         maxUploadFiles,
         httpRetryCount: readIntField('httpRetryCount', 5, 0, 10),
         httpRetryDelay: readIntField('httpRetryDelay', 8, 1, 30) * 1000,
@@ -2205,11 +2937,7 @@ async function doBrowserUpload(config) {
     const fileCount = browserFileEntries.length;
     const totalSize = browserFileEntries.reduce((s, e) => s + e.file.size, 0);
 
-    let allRelativePaths = browserFileEntries.map(entry => entry.relativePath || entry.file.name);
-    if (skipTopFolderActive()) {
-        const prefix = getRootFolderName(browserFileEntries) + '/';
-        allRelativePaths = allRelativePaths.map((p) => (p.startsWith(prefix) ? p.slice(prefix.length) : p));
-    }
+    const allRelativePaths = uploadRelativePaths();
 
     Logger.info('Starting chunked upload:', fileCount, 'files (' + fmtBytes(totalSize) + ')');
     Logger.debug('First 5 relative paths:', allRelativePaths.slice(0, 5));
@@ -2704,7 +3432,7 @@ function setUploading(state) {
     // Disable/enable all input controls during upload to prevent accidental changes
     const controlIds = ['aemUrl', 'damPath', 'username', 'password',
         'maxConcurrent', 'maxUploadFiles', 'httpRetryCount', 'httpRetryDelay',
-        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter', 'skipTopFolder'];
+        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter', 'skipLevels'];
     controlIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = state;
@@ -3992,8 +4720,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initDropZone();
     renderPresets();
     document.getElementById('damPath').addEventListener('input', () => { updateSkipTopFolderHint(); updateSummaryPanel(); });
-    ['skipTopFolder', 'dryRun', 'overwriteExisting'].forEach((id) => document.getElementById(id).addEventListener('change', updateSummaryPanel));
-    showView(location.hash === '#history' ? 'history' : 'upload');
+    ['dryRun', 'overwriteExisting'].forEach((id) => document.getElementById(id).addEventListener('change', updateSummaryPanel));
+    document.getElementById('damPath').addEventListener('input', updateSkipTopFolderHint);
+    document.getElementById('damPath').addEventListener('blur', (e) => {
+        const dam = AemNames.normalizeDamPath(e.target.value);
+        if (e.target.value.trim() && !dam.error && dam.path !== e.target.value) { e.target.value = dam.path; updateSkipTopFolderHint(); }
+    });
+    showView((location.hash || '').replace('#', '') || 'upload');
+    document.getElementById('aemUrl').addEventListener('input', updateSummaryPanel);
 
     window.addEventListener('online', handleOnlineStatus);
     window.addEventListener('offline', handleOnlineStatus);

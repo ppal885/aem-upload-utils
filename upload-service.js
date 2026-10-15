@@ -1,16 +1,60 @@
+const fs = require('fs');
+const fsPromises = require('fs').promises;
+const path = require('path');
+const AemNames = require('./public/aem-names');
+
+// @adobe/aem-upload 2.0.3 silently drops every file named TestFile*, *.tmp or starting with "~"
+// (desktop-app scratch files). Real content uses such names, so only system files are skipped;
+// the walker is replaced before the library loads because it imports these functions by name.
+const aemUtils = require('@adobe/aem-upload/src/utils');
+const UploadError = require('@adobe/aem-upload/src/upload-error');
+const ErrorCodes = require('@adobe/aem-upload/src/error-codes');
+aemUtils.isTempPath = (p) => AemNames.isSystemName(path.basename(String(p)));
+aemUtils.walkDirectory = async function walkDirectory(rootDir, maximumPaths = 5000, includeDescendents = true) {
+    const directories = [];
+    const files = [];
+    const errors = [];
+    let totalSize = 0;
+    let pending = [rootDir];
+    while (pending.length) {
+        const next = [];
+        for (const dir of pending) {
+            let entries;
+            try { entries = await fsPromises.readdir(dir, { withFileTypes: true }); } catch (e) { errors.push(e); continue; }
+            const stats = await Promise.all(entries
+                .filter((e) => !AemNames.isSystemName(e.name))
+                .map(async (e) => {
+                    const full = path.join(dir, e.name);
+                    try { return { full, stat: await fsPromises.stat(full) }; } catch (err) { errors.push(err); return null; }
+                }));
+            for (const item of stats) {
+                if (!item) continue;
+                if (item.stat.isDirectory()) {
+                    directories.push({ path: item.full });
+                    if (includeDescendents) next.push(item.full);
+                } else if (item.stat.isFile()) {
+                    files.push({ path: item.full, size: item.stat.size });
+                    totalSize += item.stat.size;
+                }
+            }
+            if (directories.length + files.length > maximumPaths) {
+                throw new UploadError(`Walked directory exceeded the maximum number of ${maximumPaths} paths`, ErrorCodes.TOO_LARGE);
+            }
+        }
+        pending = next;
+    }
+    return { directories, files, errors, totalSize };
+};
+
 const {
     DirectBinaryUpload,
     DirectBinaryUploadOptions,
     FileSystemUploadOptions,
     FileSystemUpload
 } = require('@adobe/aem-upload');
-const { RegularExpressions } = require('@adobe/aem-upload/src/constants');
 const UploadResult = require('@adobe/aem-upload/src/upload-result');
-const fs = require('fs');
-const fsPromises = require('fs').promises;
 const http = require('http');
 const https = require('https');
-const path = require('path');
 
 const ALLOW_SELF_SIGNED = /^(1|true|yes)$/i.test(process.env.AEM_ALLOW_SELF_SIGNED || '');
 
@@ -20,7 +64,7 @@ const ALLOW_SELF_SIGNED = /^(1|true|yes)$/i.test(process.env.AEM_ALLOW_SELF_SIGN
 const NOT_FOUND_RETRY_DELAYS_MS = [15000, 30000];
 const CREDENTIAL_CHECK_TIMEOUT_MS = 15000;
 const FOLDER_CREATE_CONCURRENCY = 5;
-const DEFAULT_UPLOAD_PIPELINES = 4;
+const DEFAULT_UPLOAD_PIPELINES = 8;
 // @adobe/aem-upload cannot abort a running transfer, so each pipeline uploads in batches and
 // checks for a cancel between them; this bounds how much is still sent after Cancel.
 const PIPELINE_BATCH_SIZE = 50;
@@ -40,6 +84,15 @@ function buildSelfSignedAgent(baseUrl) {
 // ─── Structured Logging (aligned with server.js format) ───
 const LOG_LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
 const LOG_LEVEL = LOG_LEVELS[process.env.LOG_LEVEL || 'info'] ?? LOG_LEVELS.info;
+// @adobe/httptransfer prints ~10 unconditional console.log lines per file ("Opening file …"); on a 59K-file
+// upload that is hundreds of MB of PM2 log and synchronous stdout writes. Our own log lines start with an
+// ISO timestamp, so anything else is library chatter and is only shown with LOG_LEVEL=debug.
+if (LOG_LEVEL < LOG_LEVELS.debug) {
+    const consoleLog = console.log.bind(console);
+    console.log = (...args) => {
+        if (typeof args[0] === 'string' && /^\d{4}-\d\d-\d\dT/.test(args[0])) consoleLog(...args);
+    };
+}
 const LOG_FILE = process.env.LOG_FILE || '';
 let _svcLogStream = null;
 if (LOG_FILE) {
@@ -140,8 +193,8 @@ function validateUploadConfig(config) {
         return 'baseUrl is not a valid URL';
     }
 
-    if (/[<>"|*?]/.test(damPath)) return 'damPath contains invalid characters';
-    if (damPath.includes('..')) return 'damPath must not contain directory traversal (..)';
+    const dam = AemNames.normalizeDamPath(damPath);
+    if (dam.error) return dam.error;
 
     return null;
 }
@@ -244,9 +297,9 @@ function runUpload(config, eventCallback) {
 
     svcLog.info(`Upload starting → ${url}`);
     svcLog.info(`  Local paths: ${localPaths.join(', ')}`);
-    svcLog.info(`  Config: concurrent=${config.maxConcurrent || 2}, pipelines=${config.uploadPipelines || DEFAULT_UPLOAD_PIPELINES}, maxFiles=${config.maxUploadFiles || 50000}, retries=${config.httpRetryCount ?? 3}, timeout=${config.httpRequestTimeout ?? 60000}ms`);
+    svcLog.info(`  Config: concurrent=${config.maxConcurrent || 4}, pipelines=${config.uploadPipelines || DEFAULT_UPLOAD_PIPELINES}, maxFiles=${config.maxUploadFiles || 50000}, retries=${config.httpRetryCount ?? 3}, timeout=${config.httpRequestTimeout ?? 60000}ms`);
 
-    const maxConcurrent = config.maxConcurrent || 2;
+    const maxConcurrent = config.maxConcurrent || 4;
     const maxUploadFiles = config.maxUploadFiles || 50000;
     const httpRetryCount = config.httpRetryCount != null ? config.httpRetryCount : 5;
     const httpRetryDelay = config.httpRetryDelay != null ? config.httpRetryDelay : 8000;
@@ -274,18 +327,8 @@ function runUpload(config, eventCallback) {
         .withHttpRetryDelay(httpRetryDelay)
         .withHttpRequestTimeout(httpRequestTimeout)
         .withHttpOptions(httpOptions)
-        .withFolderNodeNameProcessor(async (folderName) => {
-            return folderName.replace(
-                RegularExpressions.INVALID_FOLDER_CHARACTERS_REGEX,
-                '-',
-            );
-        })
-        .withAssetNodeNameProcessor(async (assetName) => {
-            return assetName.replace(
-                RegularExpressions.INVALID_ASSET_CHARACTERS_REGEX,
-                '-',
-            );
-        });
+        .withFolderNodeNameProcessor(async (folderName) => AemNames.folderNodeName(folderName))
+        .withAssetNodeNameProcessor(async (assetName) => AemNames.assetNodeName(assetName));
 
     const errors = [];
     let totalFiles = 0;

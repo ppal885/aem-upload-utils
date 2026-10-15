@@ -10,12 +10,16 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const auth = require('./auth');
+const AemNames = require('./public/aem-names');
+const mailer = require('./lib/mailer');
+const packages = require('./lib/packages');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HISTORY_FILE = nodePath.join(__dirname, 'upload-history.json');
-const MAX_HISTORY = parseInt(process.env.MAX_HISTORY) || 100;
+const MAX_HISTORY = parseInt(process.env.MAX_HISTORY, 10) || 5000;
+const MAX_HISTORY_PER_USER = parseInt(process.env.MAX_HISTORY_PER_USER, 10) || 200;
 const SSE_EVENT_CAP = parseInt(process.env.SSE_EVENT_CAP) || 10000;
 const MAX_UPLOAD_SIZE = parseInt(process.env.MAX_UPLOAD_SIZE) || 5 * 1024 * 1024 * 1024; // 5 GB default
 const TEMP_DIR_PREFIX = 'guides-upload-';
@@ -29,7 +33,8 @@ const FILE_ERRORS_CAP = parseInt(process.env.FILE_ERRORS_CAP) || 1000;
 // Staged files take at least one filesystem block each, so many small files need far more
 // space than their byte total suggests.
 const TEMP_SPACE_PER_FILE_BYTES = 4096;
-const DEFAULT_UPLOAD_PIPELINES = parseInt(process.env.UPLOAD_PIPELINES, 10) || 4;
+// 8 pipelines x 4 transfers: 1.7x the old 4 x 2 on AEM Cloud (README, Speed) without one upload flooding a shared server
+const DEFAULT_UPLOAD_PIPELINES = parseInt(process.env.UPLOAD_PIPELINES, 10) || 8;
 const TEMP_SPACE_MARGIN = 1.2;
 
 // ─── Multer config for browser file uploads ───
@@ -88,6 +93,8 @@ const chunkUpload = multer({
 });
 
 // Rearranges files from flat staging dir into proper folder structure
+const WINDOWS = process.platform === 'win32';
+
 async function rearrangeUploadedFiles(tempDir, files, relativePathsJson) {
     const stagingDir = nodePath.join(tempDir, '__staging');
     const contentDir = nodePath.join(tempDir, 'content');
@@ -136,8 +143,9 @@ async function rearrangeUploadedFiles(tempDir, files, relativePathsJson) {
             }
             const sanitized = relPath
                 .split(/[/\\]/)
-                .filter(seg => seg.length > 0)
-                .map(seg => seg.replace(/\.\./g, '_').replace(/[<>"|?*]/g, '_'))
+                .map(seg => seg.normalize('NFC'))
+                .filter(seg => seg.length > 0 && seg !== '.' && seg !== '..')
+                .map(seg => (WINDOWS ? seg.replace(/[<>:"|?*]/g, '_') : seg))
                 .join(nodePath.sep);
             if (!sanitized) continue;
             const destPath = nodePath.resolve(contentDir, sanitized);
@@ -174,6 +182,18 @@ async function rearrangeUploadedFiles(tempDir, files, relativePathsJson) {
     return contentDir;
 }
 
+// Newest first. Each person keeps their own last MAX_HISTORY_PER_USER uploads, so one busy user cannot
+// push everyone else's history out.
+function trimHistory() {
+    const perOwner = new Map();
+    uploadHistory = uploadHistory.filter((h) => {
+        const n = (perOwner.get(h.owner) || 0) + 1;
+        perOwner.set(h.owner, n);
+        return n <= MAX_HISTORY_PER_USER;
+    });
+    if (uploadHistory.length > MAX_HISTORY) uploadHistory.length = MAX_HISTORY;
+}
+
 // ─── Temp directory cleanup ───
 async function cleanupTempDir(dirPath) {
     if (!dirPath || !dirPath.includes(TEMP_DIR_PREFIX)) return;
@@ -201,6 +221,31 @@ async function sweepStaleTempDirs() {
     const stale = entries.filter((e) => e.isDirectory() && e.name.startsWith(TEMP_DIR_PREFIX));
     for (const entry of stale) await cleanupTempDir(nodePath.join(tmpBase, entry.name));
     if (stale.length > 0) log.info(`Removed ${stale.length} leftover temp dir(s) from ${tmpBase}`);
+}
+
+// Staging dirs that no live session owns and that are over a day old (a crash mid-upload, a killed
+// process) are removed every hour, not only at start-up.
+const ORPHAN_TEMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+async function sweepOrphanTempDirs() {
+    const tmpBase = os.tmpdir();
+    const owned = new Set();
+    uploadSessions.forEach((sess) => { if (sess.tempDir) owned.add(nodePath.resolve(sess.tempDir)); });
+    browserUploadSessions.forEach((sess) => { if (sess.tempDir) owned.add(nodePath.resolve(sess.tempDir)); });
+    let entries;
+    try { entries = await fsPromises.readdir(tmpBase, { withFileTypes: true }); } catch (_) { return; }
+    let removed = 0;
+    for (const e of entries) {
+        if (!e.isDirectory() || !e.name.startsWith(TEMP_DIR_PREFIX)) continue;
+        const full = nodePath.resolve(tmpBase, e.name);
+        if (owned.has(full)) continue;
+        try {
+            const st = await fsPromises.stat(full);
+            if (Date.now() - st.mtimeMs < ORPHAN_TEMP_MAX_AGE_MS) continue;
+        } catch (_) { continue; }
+        await cleanupTempDir(full);
+        removed++;
+    }
+    if (removed) log.info(`Hourly cleanup removed ${removed} orphaned temp dir(s)`);
 }
 
 async function getTempFreeBytes() {
@@ -316,7 +361,7 @@ function emitUserCancelledUpload(uploadId, session, uploadKey) {
         duration,
         timestamp: new Date().toISOString(),
     });
-    if (uploadHistory.length > MAX_HISTORY) uploadHistory.length = MAX_HISTORY;
+    trimHistory();
     saveHistoryToDisk();
 }
 
@@ -337,20 +382,23 @@ app.use(cors({
 }));
 
 // Rate limiting
+// Limits count per signed-in person, not per IP: a whole team behind one VPN/proxy address shares an IP
+const perUserKey = (req) => (req.user && req.user.key ? 'u:' + req.user.key : 'ip:' + req.ip);
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 200,
+    max: 300,
+    keyGenerator: perUserKey,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' },
     skip: (req) => req.path.startsWith('/upload/browser/chunk/'),
 });
-app.use('/api/', apiLimiter);
 
 // Upload-specific rate limit (init/finalize endpoints)
 const uploadLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 30,
+    max: 60,
+    keyGenerator: perUserKey,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many upload requests, please slow down' },
@@ -360,6 +408,7 @@ const uploadLimiter = rateLimit({
 const API_KEY = process.env.API_KEY || '';
 app.use('/api/', express.json({ limit: '1mb' }));
 app.use('/api/', auth.requireAuth(log));
+app.use('/api/', apiLimiter);
 
 // Counts failed sign-ins only, so many users behind one proxy IP are not locked out by each other
 const loginLimiter = rateLimit({
@@ -369,6 +418,15 @@ const loginLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many failed sign-in attempts. Wait a minute and try again.' },
+});
+
+// Sign-up and forgot-password count every request (they never "fail" in a way that reveals anything)
+const accountLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Wait a few minutes and try again.' },
 });
 
 // HTTP request logger
@@ -417,6 +475,7 @@ let uploadHistory = [];
 // Session reaper: clean up stuck/orphaned sessions every 2 minutes
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const SESSION_DONE_LINGER_MS = 2 * 60 * 1000; // Keep done sessions 2 min for final SSE delivery
+setInterval(() => { sweepOrphanTempDirs().catch((e) => log.warn('Temp cleanup failed:', e.message)); }, 60 * 60 * 1000).unref();
 const BROWSER_SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8 hours — 50K files at 2 AEM threads can take hours
 setInterval(() => {
     const now = Date.now();
@@ -626,52 +685,156 @@ function getUploadKey(baseUrl, damPath, localPath) {
 function clampUploadParams(raw) {
     const intOrDefault = (val, def) => { const n = parseInt(val); return Number.isNaN(n) ? def : n; };
     return {
-        maxConcurrent: Math.min(Math.max(intOrDefault(raw.maxConcurrent, 2), 1), 10),
+        maxConcurrent: Math.min(Math.max(intOrDefault(raw.maxConcurrent, 4), 1), 10),
         maxUploadFiles: Math.min(Math.max(intOrDefault(raw.maxUploadFiles, 50000), 1), 200000),
         httpRetryCount: Math.min(Math.max(intOrDefault(raw.httpRetryCount, 5), 0), 10),
         httpRetryDelay: Math.min(Math.max(intOrDefault(raw.httpRetryDelay, 8000), 0), 60000),
         httpRequestTimeout: Math.min(Math.max(intOrDefault(raw.httpRequestTimeout, 120000), 5000), 600000),
-        uploadPipelines: Math.min(Math.max(intOrDefault(raw.uploadPipelines, DEFAULT_UPLOAD_PIPELINES), 1), 8),
+        uploadPipelines: Math.min(Math.max(intOrDefault(raw.uploadPipelines, DEFAULT_UPLOAD_PIPELINES), 1), 16),
     };
 }
 
-// ─── API: sign in / out ───
-app.post('/api/auth/login', loginLimiter, async (req, res) => {
-    const { baseUrl: rawBaseUrl, username, password } = req.body || {};
-    if (!rawBaseUrl || !username || !password) {
-        return res.status(400).json({ error: 'Enter the AEM server URL, your username and your password.' });
+// ─── API: sign in / out (team member accounts, see auth.js) ───
+app.post('/api/auth/login', loginLimiter, (req, res) => {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Enter your email and password.' });
+    if (!auth.isAllowedDomain(auth.normalizeEmail(email))) {
+        return res.status(400).json({ error: `Use your Adobe email address (${auth.domainHint()}).`, code: 'EMAIL_DOMAIN' });
     }
-    const baseUrl = normalizeAemBaseUrl(rawBaseUrl).replace(/\/+$/, '');
+    let u;
     try {
-        const u = new URL(baseUrl);
-        if (!['http:', 'https:'].includes(u.protocol) || !u.hostname) throw new Error('bad url');
-    } catch (_) {
-        return res.status(400).json({ error: 'The AEM server URL must look like https://author-p…adobeaemcloud.com or http://host:4502.' });
+        u = auth.checkPassword(email, password);
+    } catch (e) {
+        log.error('Sign-in failed:', e.message);
+        return res.status(500).json({ error: 'Sign-in is not available right now. Contact an admin.' });
     }
-    const check = await checkAemCredentials(baseUrl, username, password);
-    if (!check.ok) {
-        log.warn(`Sign-in failed for ${username} on ${new URL(baseUrl).host}: ${check.code}`);
-        const error = check.code === 'AUTH_FAILED' ? 'Wrong username or password for this AEM server.' : check.error;
-        return res.status(401).json({ error, code: check.code });
+    if (!u) {
+        log.warn(`Sign-in failed for ${auth.normalizeEmail(email)}`);
+        return res.status(401).json({ error: 'Wrong email or password.', code: 'AUTH_FAILED' });
     }
-    const s = auth.createSession(req, res, {
-        baseUrl, username, password,
-        userId: check.user && check.user.id, userName: check.user && check.user.name,
-    });
-    log.info(`Signed in: ${s.user.key}${s.isAdmin ? ' (admin)' : ''}`);
+    if (u.disabled) {
+        log.warn(`Sign-in refused for disabled account ${auth.normalizeEmail(email)}`);
+        return res.status(403).json({ error: 'This account is disabled. Contact an admin.', code: 'ACCOUNT_DISABLED' });
+    }
+    const s = auth.createSession(req, res, u);
+    auth.recordSignIn(u.email);
+    log.info(`Signed in: ${u.email}${u.role === 'admin' ? ' (admin)' : ''}${u.mustChangePassword ? ' (must change password)' : ''}`);
     res.json({ user: auth.publicUser(s) });
+});
+
+app.get('/api/auth/options', (_req, res) => {
+    res.json({ ...auth.authOptions(), resetByEmail: mailer.mailEnabled() });
+});
+
+app.post('/api/auth/register', accountLimiter, (req, res) => {
+    try {
+        const u = auth.registerUser(req.body || {});
+        const s = auth.createSession(req, res, u);
+        auth.recordSignIn(u.email);
+        log.info(`Account created: ${u.email}${u.role === 'admin' ? ' (admin)' : ''}`);
+        res.status(201).json({ user: auth.publicUser(s) });
+    } catch (e) {
+        res.status(e.status || 500).json({ error: e.message, code: e.code });
+    }
+});
+
+function appOrigin(req) {
+    return process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/+$/, '') : `${req.protocol}://${req.get('host')}`;
+}
+
+// The answer is the same whether or not the account exists
+app.post('/api/auth/forgot', accountLimiter, async (req, res) => {
+    let request;
+    try {
+        request = auth.requestPasswordReset((req.body || {}).email);
+    } catch (e) {
+        return res.status(e.status || 500).json({ error: e.message, code: e.code });
+    }
+    const viaEmail = mailer.mailEnabled();
+    if (request) {
+        log.info(`Password reset requested: ${request.user.email}`);
+        if (viaEmail) {
+            try {
+                await mailer.sendPasswordReset(request.user.email, request.user.name, `${appOrigin(req)}/#reset=${request.token}`);
+            } catch (e) {
+                log.error(`Reset email to ${request.user.email} failed: ${e.message}`);
+            }
+        }
+    }
+    res.json({
+        viaEmail,
+        message: viaEmail
+            ? 'If an account exists for this email, a reset link is on its way. It works for 1 hour.'
+            : 'Request sent. An admin will reset your password and give you a temporary one.',
+    });
+});
+
+app.post('/api/auth/reset', accountLimiter, (req, res) => {
+    try {
+        const b = req.body || {};
+        const account = auth.resetPasswordWithToken(String(b.token || ''), b.password);
+        log.info(`Password reset with emailed link: ${account.email}`);
+        res.json({ message: 'Password changed. Sign in with your new password.', email: account.email });
+    } catch (e) {
+        res.status(e.status || 500).json({ error: e.message });
+    }
 });
 
 app.get('/api/auth/me', (req, res) => {
     if (!req.user) return res.status(401).json({ error: 'Not signed in', code: 'AUTH_REQUIRED' });
-    const { aem, ...user } = req.user;
-    res.json({ user });
+    res.json({ user: req.user });
 });
 
 app.post('/api/auth/logout', (req, res) => {
     if (req.user && !req.user.viaApiKey) log.info(`Signed out: ${req.user.key}`);
     auth.destroySession(req, res);
     res.json({ message: 'Signed out' });
+});
+
+app.post('/api/auth/change-password', loginLimiter, (req, res) => {
+    if (!req.user || req.user.viaApiKey) return res.status(401).json({ error: 'Not signed in', code: 'AUTH_REQUIRED' });
+    try {
+        const account = auth.changePassword(req.user.email, req.body && req.body.currentPassword, req.body && req.body.newPassword);
+        const s = auth.passwordChanged(req, account);
+        log.info(`Password changed: ${account.email}`);
+        res.json({ user: s ? auth.publicUser(s) : req.user });
+    } catch (e) {
+        res.status(e.status || 500).json({ error: e.message });
+    }
+});
+
+// ─── API: team members (admins) ───
+app.get('/api/admin/users', auth.requireAdmin, (_req, res) => {
+    res.json({ users: auth.listUsers() });
+});
+
+app.post('/api/admin/users', auth.requireAdmin, (req, res) => {
+    try {
+        const { user, temporaryPassword } = auth.addUser({ ...req.body, createdBy: req.user.email });
+        log.info(`Team member added: ${user.email} (${user.role}) by ${req.user.email}`);
+        res.status(201).json({ user, temporaryPassword });
+    } catch (e) {
+        res.status(e.status || 500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/users/:email', auth.requireAdmin, (req, res) => {
+    const b = req.body || {};
+    const target = auth.normalizeEmail(req.params.email);
+    if (target === req.user.email && (b.disabled === true || b.role === 'member')) {
+        return res.status(400).json({ error: 'You cannot disable or demote your own account.' });
+    }
+    try {
+        const changes = {};
+        if (b.role === 'admin' || b.role === 'member') changes.role = b.role;
+        if (typeof b.disabled === 'boolean') changes.disabled = b.disabled;
+        if (b.resetPassword === true) changes.resetPassword = true;
+        const { user, temporaryPassword } = auth.updateUser(target, changes);
+        log.info(`Team member updated: ${user.email} ${JSON.stringify(changes)} by ${req.user.email}`);
+        res.json({ user, temporaryPassword });
+    } catch (e) {
+        res.status(e.status || 500).json({ error: e.message });
+    }
 });
 
 // ─── API: health check ───
@@ -720,7 +883,16 @@ app.get('/api/scan', auth.requireAdmin, async (req, res) => {
 });
 
 // ─── API: start upload ───
+// "/content/dam/en/", "content\dam\en" and a pasted Assets URL all mean content/dam/en
+function useNormalizedDamPath(req) {
+    if (req.body && typeof req.body.damPath === 'string') {
+        const dam = AemNames.normalizeDamPath(req.body.damPath);
+        if (!dam.error) req.body.damPath = dam.path;
+    }
+}
+
 app.post('/api/upload', uploadLimiter, auth.requireAdmin, async (req, res) => {
+    useNormalizedDamPath(req);
     const { baseUrl, username, password } = auth.resolveAemTarget(req);
     const {
         targetId, damPath, localPath: rawLocalPath,
@@ -895,7 +1067,7 @@ app.post('/api/upload', uploadLimiter, auth.requireAdmin, async (req, res) => {
             duration,
             timestamp: new Date().toISOString(),
         });
-        if (uploadHistory.length > MAX_HISTORY) uploadHistory.length = MAX_HISTORY;
+        trimHistory();
         saveHistoryToDisk();
     }).catch((err) => {
         if (session.userCancelled) {
@@ -934,6 +1106,7 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
         return res.status(400).json({ error: 'No files received' });
     }
 
+    useNormalizedDamPath(req);
     const { baseUrl, username, password } = auth.resolveAemTarget(req);
     const { damPath,
             maxConcurrent, maxUploadFiles,
@@ -1132,7 +1305,7 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
             duration,
             timestamp: new Date().toISOString(),
         });
-        if (uploadHistory.length > MAX_HISTORY) uploadHistory.length = MAX_HISTORY;
+        trimHistory();
         saveHistoryToDisk();
     }).catch((err) => {
         if (session.userCancelled) {
@@ -1162,6 +1335,7 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
 
 // ─── API: chunked browser upload — init session ───
 app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
+    useNormalizedDamPath(req);
     const { baseUrl, username, password } = auth.resolveAemTarget(req);
     const { damPath,
             maxConcurrent, maxUploadFiles,
@@ -1217,6 +1391,117 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
     log.info(`Browser chunk session created: ${sessionId}, tempDir=${tempDir}`);
     res.json({ sessionId });
 });
+
+// ─── API: content packages built from a folder sent by the browser (see lib/packages.js) ───
+// The files arrive through the same chunk route as an upload: init here, then /api/upload/browser/chunk/:id.
+const PACKAGE_FIELD = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/;
+
+app.post('/api/packages/init', uploadLimiter, async (req, res) => {
+    useNormalizedDamPath(req);
+    const b = req.body || {};
+    const dam = AemNames.normalizeDamPath(b.damPath);
+    if (dam.error) return res.status(400).json({ error: dam.error });
+    if (dam.path === 'content/dam') return res.status(400).json({ error: 'Choose a folder inside /content/dam for the package.' });
+    const packageName = String(b.packageName || '').trim();
+    const version = String(b.version || '1.0').trim();
+    const group = String(b.group || 'guides-upload').trim();
+    if (!PACKAGE_FIELD.test(packageName)) return res.status(400).json({ error: 'Package name: letters, numbers, dot, dash, underscore or space.' });
+    if (!PACKAGE_FIELD.test(version)) return res.status(400).json({ error: 'Version: letters, numbers, dot, dash or underscore.' });
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/ -]{0,79}$/.test(group) || group.includes('..')) return res.status(400).json({ error: 'Group: letters, numbers, dot, dash, underscore or slash.' });
+    const totalBytes = Number(b.totalBytes) || 0;
+    const fileCount = Number(b.fileCount) || 0;
+    // staging + the zip itself
+    const spaceErr = await checkTempSpace(totalBytes * 2, fileCount);
+    if (spaceErr) return res.status(507).json({ error: spaceErr, code: 'INSUFFICIENT_SERVER_SPACE' });
+
+    const sessionId = crypto.randomUUID();
+    const tempDir = nodePath.join(os.tmpdir(), TEMP_DIR_PREFIX + 'pkg-' + sessionId.slice(0, 8));
+    await fsPromises.mkdir(nodePath.join(tempDir, '__staging'), { recursive: true });
+    browserUploadSessions.set(sessionId, {
+        owner: req.user.key, mode: 'package', tempDir,
+        config: { damPath: dam.path, packageName, version, group, description: String(b.description || '').slice(0, 500) },
+        receivedFiles: 0, totalReceivedBytes: 0, relativePaths: [], files: [], createdAt: Date.now(),
+    });
+    log.info(`Package session created: ${sessionId} (${packageName} ${version}) by ${req.user.key}`);
+    res.json({ sessionId });
+});
+
+app.post('/api/packages/build/:sessionId', uploadLimiter, async (req, res) => {
+    const session = browserUploadSessions.get(req.params.sessionId);
+    if (!session || session.mode !== 'package' || !auth.canAccess(req, session.owner)) {
+        return res.status(404).json({ error: 'Package session not found or expired' });
+    }
+    if (session.finalized) return res.status(409).json({ error: 'This package is already being built' });
+    if (!session.files.length) return res.status(400).json({ error: 'No files were received' });
+    session.finalized = true;
+    let contentDir;
+    try {
+        contentDir = await rearrangeUploadedFiles(session.tempDir, session.files, session.relativePaths);
+    } catch (e) {
+        browserUploadSessions.delete(req.params.sessionId);
+        cleanupTempDir(session.tempDir).catch(() => {});
+        return res.status(500).json({ error: 'Could not prepare the files: ' + e.message });
+    }
+    const fileCount = session.files.length;
+    session.files = []; session.relativePaths = [];
+    browserUploadSessions.delete(req.params.sessionId);
+    const { damPath, packageName, version, group, description } = session.config;
+    const record = packages.startBuild({
+        owner: session.owner, ownerName: req.user.name, contentDir, damPath, packageName, version, group, description, fileCount,
+    }, (err, p) => {
+        cleanupTempDir(session.tempDir).catch(() => {});
+        if (err) log.error(`Package build failed (${p.name} ${p.version}): ${err.message}`);
+        else log.info(`Package built: ${p.downloadName} — ${p.files} files, ${(p.zipBytes / 1048576).toFixed(1)} MB in ${p.buildSeconds}s`);
+    });
+    res.status(202).json({ package: packages.publicPackage(record) });
+});
+
+app.get('/api/packages', (req, res) => {
+    res.json({ packages: packages.list(req.user.key, !!req.user.isAdmin) });
+});
+
+function ownPackage(req, res) {
+    const p = packages.get(req.params.id);
+    if (!p || !auth.canAccess(req, p.owner)) { res.status(404).json({ error: 'Package not found' }); return null; }
+    return p;
+}
+
+app.get('/api/packages/:id', (req, res) => {
+    const p = ownPackage(req, res);
+    if (p) res.json({ package: packages.publicPackage(p) });
+});
+
+app.get('/api/packages/:id/download', (req, res) => {
+    const p = ownPackage(req, res);
+    if (!p) return;
+    if (p.state !== 'ready') return res.status(409).json({ error: 'The package is not ready yet' });
+    res.download(packages.fileOf(p), p.downloadName, { headers: { 'Cache-Control': 'no-store' } });
+});
+
+app.post('/api/packages/:id/install', uploadLimiter, async (req, res) => {
+    const p = ownPackage(req, res);
+    if (!p) return;
+    if (p.state !== 'ready') return res.status(409).json({ error: 'The package is not ready yet' });
+    const { baseUrl, username, password } = auth.resolveAemTarget(req);
+    if (!baseUrl || !username || !password) return res.status(400).json({ error: 'Enter the AEM server, username and password' });
+    const target = normalizeAemBaseUrl(baseUrl);
+    const cred = await checkAemCredentials(target, username, password);
+    if (!cred.ok) return res.status(400).json({ error: cred.error, code: cred.code });
+    log.info(`Installing package ${p.downloadName} on ${target} as ${username} (by ${req.user.key})`);
+    let result;
+    try {
+        result = await packages.install(p, { baseUrl: target, username, password });
+    } catch (e) {
+        result = { ok: false, message: e.name === 'AbortError' ? 'AEM did not answer within 30 minutes.' : 'Could not reach AEM: ' + e.message };
+    }
+    packages.recordInstall(p, { at: new Date().toISOString(), server: target, by: req.user.key, ok: result.ok, message: result.message });
+    log.info(`Package install ${result.ok ? 'succeeded' : 'failed'}: ${p.downloadName} on ${target}: ${result.message}`);
+    res.status(result.ok ? 200 : 502).json({ ...result, package: packages.publicPackage(p) });
+});
+
+setInterval(() => {
+    packages.sweepExpired().then((n) => { if (n) log.info(`Removed ${n} expired package(s)`); }).catch(() => {});
+}, 60 * 60 * 1000).unref();
 
 // ─── API: cancel chunked browser session (before finalize) ───
 app.post('/api/upload/browser/cancel/:sessionId', uploadLimiter, (req, res) => {
@@ -1409,10 +1694,10 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 
     const clamped = clampUploadParams({ maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout });
 
-    // Auto-cap concurrency for large uploads — AEM handles max ~2 concurrent
-    if (receivedFiles > 5000 && clamped.maxConcurrent > 2) {
-        log.info(`[finalize] Large upload (${receivedFiles} files): capping maxConcurrent from ${clamped.maxConcurrent} to 2`);
-        clamped.maxConcurrent = 2;
+    // Very large uploads stay at 8 x 4 even if a higher per-pipeline value was chosen
+    if (receivedFiles > 5000 && clamped.maxConcurrent > 4) {
+        log.info(`[finalize] Large upload (${receivedFiles} files): capping maxConcurrent from ${clamped.maxConcurrent} to 4`);
+        clamped.maxConcurrent = 4;
     }
 
     // List children of contentDir so the library uploads contents directly
@@ -1546,7 +1831,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
             duration,
             timestamp: new Date().toISOString(),
         });
-        if (uploadHistory.length > MAX_HISTORY) uploadHistory.length = MAX_HISTORY;
+        trimHistory();
         saveHistoryToDisk();
     }).catch((err) => {
         if (uploadSession.userCancelled) {
@@ -1879,7 +2164,7 @@ async function shutdown(signal) {
         });
         log.warn(`Upload ${uploadId} interrupted by shutdown (${session.completedFiles || 0} files done)`);
     });
-    if (uploadHistory.length > MAX_HISTORY) uploadHistory.length = MAX_HISTORY;
+    trimHistory();
     await saveHistoryToDisk();
     for (let i = 0; i < 100 && !historyWritesIdle(); i++) await new Promise((r) => setTimeout(r, 50));
 

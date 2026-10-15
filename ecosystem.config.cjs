@@ -14,8 +14,14 @@ module.exports = {
     watch: false,
     max_memory_restart: '4500M',
     // Many VMs mount /tmp as a small RAM-backed tmpfs; stage uploads on the app's disk instead
-    env: { NODE_ENV: 'production', TMPDIR: process.env.UPLOAD_TMPDIR || require('path').join(__dirname, '.upload-tmp'),
-      ADMIN_USERS: process.env.ADMIN_USERS || '' },
+    // Account and mail settings are taken from the shell that runs `pm2 start` (see README, Configuration)
+    env: {
+      NODE_ENV: 'production',
+      TMPDIR: process.env.UPLOAD_TMPDIR || require('path').join(__dirname, '.upload-tmp'),
+      ...Object.fromEntries(['ADMIN_EMAILS', 'ALLOWED_EMAIL_DOMAINS', 'SIGNUP_ENABLED', 'PUBLIC_URL', 'SMTP_HOST', 'SMTP_PORT',
+        'SMTP_USER', 'SMTP_PASS', 'SMTP_SECURE', 'MAIL_FROM', 'PACKAGES_DIR', 'PACKAGE_KEEP_DAYS', 'UPLOAD_PIPELINES']
+        .filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])),
+    },
     merge_logs: true,
     time: true,
   }],

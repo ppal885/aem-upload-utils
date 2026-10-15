@@ -1,21 +1,255 @@
 /**
- * Sign-in with AEM credentials and per-user access.
+ * Team member accounts and sessions.
  *
- * Users sign in with an AEM server URL, username and password, checked against that server. The
- * password is kept only in this process's memory for the session (it is needed to upload on the
- * user's behalf) and is dropped on sign-out, idle expiry or restart; it is never written to disk.
+ * Team members sign in with their work email (ALLOWED_EMAIL_DOMAINS, default adobe.com) and a password
+ * for this tool. People create their own account on the sign-in page, or an admin adds them (Team
+ * members page, or tools/manage-users.js) with a temporary password that must be changed at first
+ * sign-in. Emails listed in ADMIN_EMAILS become admins when they create their account. Passwords are stored only as scrypt hashes in users.json.
+ * AEM credentials are not part of the session: they are entered with each upload.
  */
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const COOKIE_NAME = 'gus_session';
 const SESSION_IDLE_MS = (parseInt(process.env.SESSION_IDLE_HOURS, 10) || 8) * 60 * 60 * 1000;
 const SESSION_MAX_MS = (parseInt(process.env.SESSION_MAX_HOURS, 10) || 24) * 60 * 60 * 1000;
 const API_KEY = process.env.API_KEY || '';
-// Comma-separated AEM user ids, optionally scoped to a host: "jdoe" or "jdoe@author-p1-e2.adobeaemcloud.com"
-const ADMIN_USERS = (process.env.ADMIN_USERS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, 'users.json');
+// No length rule by default (team decision); set MIN_PASSWORD_LENGTH to require one
+const MIN_PASSWORD_LENGTH = Math.max(parseInt(process.env.MIN_PASSWORD_LENGTH, 10) || 1, 1);
+const ALLOWED_EMAIL_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || 'adobe.com')
+    .split(',').map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+const SIGNUP_ENABLED = !/^(0|false|no)$/i.test(process.env.SIGNUP_ENABLED || '');
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
 const sessions = new Map();
 
+// ─── User store ───
+function normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isAllowedDomain(email) {
+    const domain = String(email).split('@').pop();
+    return ALLOWED_EMAIL_DOMAINS.includes(domain);
+}
+
+function domainHint() {
+    return ALLOWED_EMAIL_DOMAINS.map((d) => '@' + d).join(' or ');
+}
+
+/** Throws a 400 unless the email is well formed and on an allowed domain. */
+function assertTeamEmail(e) {
+    if (!isValidEmail(e)) throw Object.assign(new Error('Enter a valid email address.'), { status: 400 });
+    if (!isAllowedDomain(e)) throw Object.assign(new Error(`Use your Adobe email address (${domainHint()}).`), { status: 400, code: 'EMAIL_DOMAIN' });
+}
+
+function assertNewPassword(pw, email) {
+    if (!pw) throw Object.assign(new Error('Enter a password.'), { status: 400 });
+    if (pw.length < MIN_PASSWORD_LENGTH) throw Object.assign(new Error(`The password must have at least ${MIN_PASSWORD_LENGTH} characters.`), { status: 400 });
+    if (pw.toLowerCase() === email || pw.toLowerCase() === email.split('@')[0]) {
+        throw Object.assign(new Error('The password cannot be your email or user name.'), { status: 400 });
+    }
+}
+
+function loadUsers() {
+    try {
+        const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+        return Array.isArray(users) ? users : [];
+    } catch (e) {
+        if (e.code === 'ENOENT') return [];
+        throw new Error(`Cannot read ${USERS_FILE}: ${e.message}`);
+    }
+}
+
+function saveUsers(users) {
+    const tmp = USERS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(users, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, USERS_FILE);
+}
+
+function hashPassword(password) {
+    const salt = crypto.randomBytes(16);
+    const hash = crypto.scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
+    return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+function verifyPassword(password, stored) {
+    const [scheme, saltHex, hashHex] = String(stored || '').split('$');
+    if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
+    const expected = Buffer.from(hashHex, 'hex');
+    const actual = crypto.scryptSync(password, Buffer.from(saltHex, 'hex'), expected.length, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
+    return crypto.timingSafeEqual(actual, expected);
+}
+
+function generateTemporaryPassword() {
+    // 16 chars from an unambiguous alphabet (no 0/O/1/l/I)
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    const bytes = crypto.randomBytes(16);
+    return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
+function publicAccount(u) {
+    return { email: u.email, name: u.name, role: u.role, disabled: !!u.disabled, mustChangePassword: !!u.mustChangePassword,
+        createdAt: u.createdAt, createdBy: u.createdBy || null, lastSignInAt: u.lastSignInAt || null,
+        resetRequestedAt: u.resetRequestedAt || null };
+}
+
+function listUsers() {
+    return loadUsers().map(publicAccount);
+}
+
+/** Creates an account with a temporary password; returns { user, temporaryPassword }. */
+function addUser({ email, name, role, createdBy }) {
+    const e = normalizeEmail(email);
+    assertTeamEmail(e);
+    const r = role === 'admin' ? 'admin' : 'member';
+    const users = loadUsers();
+    if (users.some((u) => u.email === e)) throw Object.assign(new Error('A team member with this email already exists.'), { status: 409 });
+    const temporaryPassword = generateTemporaryPassword();
+    const user = { email: e, name: String(name || '').trim() || e.split('@')[0], role: r, passwordHash: hashPassword(temporaryPassword),
+        mustChangePassword: true, disabled: false, createdAt: new Date().toISOString(), createdBy: createdBy || null };
+    users.push(user);
+    saveUsers(users);
+    return { user: publicAccount(user), temporaryPassword };
+}
+
+/** Self sign-up from the sign-in page; the person chooses their own password. */
+function registerUser({ email, name, password }) {
+    if (!SIGNUP_ENABLED) throw Object.assign(new Error('Creating accounts is turned off. Ask an admin to add you.'), { status: 403 });
+    const e = normalizeEmail(email);
+    assertTeamEmail(e);
+    const n = String(name || '').trim();
+    if (!n) throw Object.assign(new Error('Enter your name.'), { status: 400 });
+    const pw = String(password || '');
+    assertNewPassword(pw, e);
+    const users = loadUsers();
+    if (users.some((u) => u.email === e)) {
+        throw Object.assign(new Error('An account with this email already exists. Sign in, or ask an admin to reset your password.'), { status: 409 });
+    }
+    // ADMIN_EMAILS become admins; with none configured, the very first account runs the tool
+    const role = ADMIN_EMAILS.includes(e) || (!ADMIN_EMAILS.length && !users.some((u) => u.role === 'admin')) ? 'admin' : 'member';
+    const user = { email: e, name: n.slice(0, 80), role, passwordHash: hashPassword(pw), mustChangePassword: false, disabled: false,
+        createdAt: new Date().toISOString(), createdBy: 'self sign-up' };
+    users.push(user);
+    saveUsers(users);
+    return user;
+}
+
+const RESET_TOKEN_MS = 60 * 60 * 1000;
+
+function tokenHash(token) {
+    return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+/**
+ * "Forgot password": returns { user, token } for an active account (token goes in the emailed link),
+ * or null. The request is also recorded so admins see it on the Team members page.
+ */
+function requestPasswordReset(email) {
+    const e = normalizeEmail(email);
+    assertTeamEmail(e);
+    const users = loadUsers();
+    const u = users.find((x) => x.email === e);
+    if (!u || u.disabled) return null;
+    const token = crypto.randomBytes(32).toString('base64url');
+    u.resetTokenHash = tokenHash(token);
+    u.resetExpiresAt = new Date(Date.now() + RESET_TOKEN_MS).toISOString();
+    u.resetRequestedAt = new Date().toISOString();
+    saveUsers(users);
+    return { user: publicAccount(u), token };
+}
+
+function resetPasswordWithToken(token, newPassword) {
+    const h = tokenHash(token);
+    const users = loadUsers();
+    const u = users.find((x) => x.resetTokenHash && x.resetTokenHash === h);
+    if (!u || u.disabled || !u.resetExpiresAt || Date.parse(u.resetExpiresAt) < Date.now()) {
+        throw Object.assign(new Error('This reset link has expired or was already used. Ask for a new one.'), { status: 400 });
+    }
+    const pw = String(newPassword || '');
+    assertNewPassword(pw, u.email);
+    u.passwordHash = hashPassword(pw);
+    u.mustChangePassword = false;
+    delete u.resetTokenHash; delete u.resetExpiresAt; delete u.resetRequestedAt;
+    saveUsers(users);
+    endSessionsFor(u.email);
+    return publicAccount(u);
+}
+
+function authOptions() {
+    return { emailDomains: ALLOWED_EMAIL_DOMAINS, signup: SIGNUP_ENABLED, minPasswordLength: MIN_PASSWORD_LENGTH };
+}
+
+function updateUser(email, changes) {
+    const e = normalizeEmail(email);
+    const users = loadUsers();
+    const u = users.find((x) => x.email === e);
+    if (!u) throw Object.assign(new Error('No team member with this email.'), { status: 404 });
+    if (changes.role && changes.role !== u.role) {
+        if (u.role === 'admin' && users.filter((x) => x.role === 'admin' && !x.disabled).length === 1) {
+            throw Object.assign(new Error('There must be at least one active admin.'), { status: 400 });
+        }
+        u.role = changes.role === 'admin' ? 'admin' : 'member';
+    }
+    if (typeof changes.disabled === 'boolean' && changes.disabled !== !!u.disabled) {
+        if (changes.disabled && u.role === 'admin' && users.filter((x) => x.role === 'admin' && !x.disabled).length === 1) {
+            throw Object.assign(new Error('There must be at least one active admin.'), { status: 400 });
+        }
+        u.disabled = changes.disabled;
+    }
+    let temporaryPassword = null;
+    if (changes.resetPassword) {
+        temporaryPassword = generateTemporaryPassword();
+        u.passwordHash = hashPassword(temporaryPassword);
+        u.mustChangePassword = true;
+        delete u.resetTokenHash; delete u.resetExpiresAt; delete u.resetRequestedAt;
+    }
+    saveUsers(users);
+    // A disabled account, or a reset password, ends that person's sessions
+    if (u.disabled || changes.resetPassword) endSessionsFor(u.email);
+    return { user: publicAccount(u), temporaryPassword };
+}
+
+function checkPassword(email, password) {
+    const e = normalizeEmail(email);
+    const u = loadUsers().find((x) => x.email === e);
+    // Same work whether or not the account exists, so timing does not reveal valid emails
+    if (!u) { verifyPassword(String(password), hashPassword('timing-equalizer')); return null; }
+    if (!verifyPassword(String(password), u.passwordHash)) return null;
+    if (u.disabled) return { disabled: true };
+    return u;
+}
+
+function recordSignIn(email) {
+    const users = loadUsers();
+    const u = users.find((x) => x.email === normalizeEmail(email));
+    if (u) { u.lastSignInAt = new Date().toISOString(); saveUsers(users); }
+}
+
+function changePassword(email, currentPassword, newPassword) {
+    const e = normalizeEmail(email);
+    const users = loadUsers();
+    const u = users.find((x) => x.email === e);
+    if (!u || !verifyPassword(String(currentPassword || ''), u.passwordHash)) {
+        throw Object.assign(new Error('Your current password is not correct.'), { status: 400 });
+    }
+    const pw = String(newPassword || '');
+    assertNewPassword(pw, e);
+    if (pw === currentPassword) throw Object.assign(new Error('Choose a password different from the current one.'), { status: 400 });
+    u.passwordHash = hashPassword(pw);
+    u.mustChangePassword = false;
+    saveUsers(users);
+    return publicAccount(u);
+}
+
+// ─── Sessions ───
 function parseCookies(req) {
     const out = {};
     (req.headers.cookie || '').split(';').forEach((part) => {
@@ -25,33 +259,20 @@ function parseCookies(req) {
     return out;
 }
 
-function isAdminUser(id, host) {
-    const lid = String(id).toLowerCase();
-    return ADMIN_USERS.includes(lid) || ADMIN_USERS.includes(`${lid}@${String(host).toLowerCase()}`);
-}
-
-function publicUser(s) {
-    return { id: s.user.id, name: s.user.name, key: s.user.key, aemUrl: s.aem.baseUrl, host: s.user.host, isAdmin: s.isAdmin };
-}
-
 function cookieHeader(req, value, maxAgeSec) {
     const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
     return `${COOKIE_NAME}=${encodeURIComponent(value)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSec}${secure}`;
 }
 
-function createSession(req, res, { baseUrl, username, password, userId, userName }) {
-    const host = new URL(baseUrl).host;
-    const id = userId || username;
+function publicUser(s) {
+    const u = s.user;
+    return { id: u.email, email: u.email, key: u.email, name: u.name, role: u.role, isAdmin: u.role === 'admin', mustChangePassword: !!s.mustChangePassword };
+}
+
+function createSession(req, res, user) {
     const sid = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    const s = {
-        sid,
-        user: { id, name: userName || id, host, key: `${id}@${host}`.toLowerCase() },
-        aem: { baseUrl, username, password },
-        isAdmin: isAdminUser(id, host),
-        createdAt: now,
-        lastSeen: now,
-    };
+    const s = { sid, user: { email: user.email, name: user.name, role: user.role }, mustChangePassword: !!user.mustChangePassword, createdAt: now, lastSeen: now };
     sessions.set(sid, s);
     res.setHeader('Set-Cookie', cookieHeader(req, sid, Math.floor(SESSION_MAX_MS / 1000)));
     return s;
@@ -77,7 +298,19 @@ function destroySession(req, res) {
     res.setHeader('Set-Cookie', cookieHeader(req, '', 0));
 }
 
-// Drop expired sessions (and their in-memory passwords) even if their users never come back
+function endSessionsFor(email, exceptSid) {
+    sessions.forEach((s, sid) => { if (s.user.email === email && sid !== exceptSid) sessions.delete(sid); });
+}
+
+/** After a password change: this session is cleared to continue, other sessions of the account end. */
+function passwordChanged(req, user) {
+    const sid = parseCookies(req)[COOKIE_NAME];
+    const s = sid && sessions.get(sid);
+    if (s) { s.mustChangePassword = false; s.user.role = user.role; s.user.name = user.name; }
+    endSessionsFor(user.email, sid);
+    return s;
+}
+
 setInterval(() => {
     const now = Date.now();
     sessions.forEach((s, sid) => {
@@ -85,16 +318,16 @@ setInterval(() => {
     });
 }, 10 * 60 * 1000).unref();
 
-const PUBLIC_API_PATHS = ['/health', '/auth/login', '/auth/me', '/auth/logout'];
+const PUBLIC_API_PATHS = ['/health', '/auth/login', '/auth/me', '/auth/logout', '/auth/register', '/auth/options', '/auth/forgot', '/auth/reset'];
+// Allowed while a temporary password still has to be changed
+const PASSWORD_CHANGE_PATHS = ['/health', '/auth/me', '/auth/logout', '/auth/change-password'];
 
 /**
- * Sets req.user for every /api request: a signed-in session, or an API-key client (admin, sends
- * AEM credentials in the request body as before). Rejects everything else with 401.
+ * Sets req.user for every /api request: a signed-in team member, or an API-key client (admin).
  * Mounted on '/api/', so req.path is relative to /api.
  */
 function requireAuth(log) {
     return (req, res, next) => {
-        // Cookies are sent with cross-site requests in some cases; reject writes from other origins
         if (req.method !== 'GET' && req.headers.origin) {
             let originHost = '';
             try { originHost = new URL(req.headers.origin).host; } catch (_) { /* invalid origin */ }
@@ -106,13 +339,16 @@ function requireAuth(log) {
         if (API_KEY) {
             const provided = req.headers['x-api-key'] || req.query.apiKey;
             if (provided === API_KEY) {
-                req.user = { id: 'api-key', name: 'API key', key: 'api-key', isAdmin: true, viaApiKey: true };
+                req.user = { id: 'api-key', email: 'api-key', key: 'api-key', name: 'API key', role: 'admin', isAdmin: true, viaApiKey: true };
                 return next();
             }
         }
         const s = getSession(req);
         if (s) {
-            req.user = { ...publicUser(s), aem: s.aem };
+            req.user = publicUser(s);
+            if (s.mustChangePassword && !PASSWORD_CHANGE_PATHS.includes(req.path)) {
+                return res.status(403).json({ error: 'Change your temporary password first.', code: 'PASSWORD_CHANGE_REQUIRED' });
+            }
             return next();
         }
         if (PUBLIC_API_PATHS.includes(req.path)) return next();
@@ -125,21 +361,21 @@ function requireAdmin(req, res, next) {
     return res.status(403).json({ error: 'Only administrators can do this.', code: 'ADMIN_ONLY' });
 }
 
-/** Whether the current user may see or act on something owned by ownerKey (null = created before sign-in existed). */
+/** Whether the current user may see or act on something owned by ownerKey (null = created before accounts existed). */
 function canAccess(req, ownerKey) {
     if (!req.user) return false;
     if (req.user.isAdmin) return true;
     return !!ownerKey && ownerKey === req.user.key;
 }
 
-/** AEM target and credentials for an upload: the signed-in session's, or the request body's for API-key clients. */
+/** AEM target and credentials for an upload: always from the request (they are entered with each upload). */
 function resolveAemTarget(req) {
-    if (req.user && req.user.aem) return { ...req.user.aem };
     const b = req.body || {};
     return { baseUrl: b.baseUrl, username: b.username, password: b.password };
 }
 
 module.exports = {
     createSession, getSession, destroySession, publicUser, requireAuth, requireAdmin, canAccess, resolveAemTarget,
-    sessionCount: () => sessions.size, adminsConfigured: () => ADMIN_USERS.length > 0, apiKeyEnabled: () => !!API_KEY,
+    checkPassword, recordSignIn, changePassword, passwordChanged, listUsers, addUser, registerUser, updateUser, normalizeEmail,
+    isAllowedDomain, domainHint, authOptions, requestPasswordReset, resetPasswordWithToken, MIN_PASSWORD_LENGTH, USERS_FILE,
 };
