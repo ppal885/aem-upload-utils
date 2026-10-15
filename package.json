@@ -1,12 +1,13 @@
 {
   "name": "aem-upload",
   "version": "2.1.0",
-  "description": "GUIdes Upload Utility — Bulk asset upload for Adobe Experience Manager",
+  "description": "GUIdes Upload Utility \u2014 Bulk asset upload for Adobe Experience Manager",
   "main": "server.js",
   "scripts": {
     "start": "node --max-old-space-size=4096 server.js",
     "start:low": "node --max-old-space-size=2048 server.js",
-    "test": "node tools/test-package-builder.js"
+    "test": "node tools/test-package-builder.js",
+    "build:css": "node tools/build-css.js"
   },
   "dependencies": {
     "@adobe/aem-upload": "2.0.3",

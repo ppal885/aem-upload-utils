@@ -7,6 +7,8 @@ const os = require('os');
 const { execFile } = require('child_process');
 const cors = require('cors');
 const compression = require('compression');
+const http = require('http');
+const https = require('https');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const auth = require('./auth');
@@ -17,6 +19,11 @@ const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBas
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// HTTPS: set TLS_CERT_FILE + TLS_KEY_FILE (PEM). HTTPS_ONLY=true turns the plain-HTTP port into a redirect.
+const TLS_CERT_FILE = process.env.TLS_CERT_FILE || '';
+const TLS_KEY_FILE = process.env.TLS_KEY_FILE || '';
+const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
+const HTTPS_ONLY = /^(1|true|yes)$/i.test(process.env.HTTPS_ONLY || '');
 const HISTORY_FILE = nodePath.join(__dirname, 'upload-history.json');
 const MAX_HISTORY = parseInt(process.env.MAX_HISTORY, 10) || 5000;
 const MAX_HISTORY_PER_USER = parseInt(process.env.MAX_HISTORY_PER_USER, 10) || 200;
@@ -420,10 +427,11 @@ const loginLimiter = rateLimit({
     message: { error: 'Too many failed sign-in attempts. Wait a minute and try again.' },
 });
 
-// Sign-up and forgot-password count every request (they never "fail" in a way that reveals anything)
+// Sign-up and forgot-password count every request. Generous per address: on launch day a whole team
+// signs up at once from one VPN/proxy IP; forgot-password is also limited per email below.
 const accountLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
-    max: 30,
+    max: 300,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests. Wait a few minutes and try again.' },
@@ -453,14 +461,25 @@ app.use(compression({
     },
 }));
 app.use(express.json({ limit: '1mb' }));
+// So people can trust the private HTTPS certificate once (tools/make-cert.sh)
+app.get('/guides-upload-ca.crt', (_req, res) => {
+    const ca = nodePath.join(__dirname, 'certs', 'ca.crt');
+    if (!fs.existsSync(ca)) return res.status(404).end();
+    res.type('application/x-x509-ca-cert').download(ca, 'guides-upload-ca.crt');
+});
+
+// index.html is always revalidated (a deploy shows up at once); the files it links carry a content hash
+// (?v=…, stamped by tools/build-css.js), so browsers keep those for a year and skip the request entirely
 app.use(express.static(nodePath.join(__dirname, 'public'), {
-    etag: false,
+    etag: true,
     lastModified: true,
     setHeaders: (res, filePath) => {
-        // Prevent caching of HTML to ensure latest code is always served
         if (filePath.endsWith('.html')) {
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Cache-Control', 'no-cache');
+        } else if (res.req && res.req.query && res.req.query.v) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+            res.setHeader('Cache-Control', 'no-cache');
         }
     },
 }));
@@ -743,7 +762,19 @@ function appOrigin(req) {
 }
 
 // The answer is the same whether or not the account exists
+const forgotByEmail = new Map();
+const FORGOT_PER_EMAIL_PER_HOUR = 5;
+
 app.post('/api/auth/forgot', accountLimiter, async (req, res) => {
+    const key = auth.normalizeEmail((req.body || {}).email);
+    const now = Date.now();
+    const recent = (forgotByEmail.get(key) || []).filter((t) => now - t < 60 * 60 * 1000);
+    if (recent.length >= FORGOT_PER_EMAIL_PER_HOUR) {
+        return res.status(429).json({ error: 'A reset was already requested several times for this email. Try again in an hour, or ask an admin.' });
+    }
+    recent.push(now);
+    if (forgotByEmail.size > 10000) forgotByEmail.clear();
+    forgotByEmail.set(key, recent);
     let request;
     try {
         request = auth.requestPasswordReset((req.body || {}).email);
@@ -2138,6 +2169,7 @@ app.use((err, req, res, _next) => {
 
 // ─── Graceful shutdown ───
 let server;
+let httpsServer;
 
 async function shutdown(signal) {
     log.info(`${signal} received. Shutting down gracefully...`);
@@ -2184,6 +2216,7 @@ async function shutdown(signal) {
     await Promise.allSettled(cleanupPromises);
 
     // Stop accepting new connections, wait for active ones to drain
+    if (httpsServer) httpsServer.close();
     if (server) {
         server.close(() => {
             log.info('Server closed.');
@@ -2205,7 +2238,22 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 (async () => {
     uploadHistory = await loadHistoryFromDisk();
     const tempFree = await getTempFreeBytes();
-    server = app.listen(PORT, () => {
+    const tls = TLS_CERT_FILE && TLS_KEY_FILE
+        ? { cert: fs.readFileSync(TLS_CERT_FILE), key: fs.readFileSync(TLS_KEY_FILE) } : null;
+    if (tls) {
+        httpsServer = https.createServer(tls, app).listen(HTTPS_PORT, () => log.info(`HTTPS on port ${HTTPS_PORT}${HTTPS_ONLY ? ` (port ${PORT} redirects here)` : ''}`));
+        httpsServer.on('error', (err) => { log.error(`Cannot listen on HTTPS port ${HTTPS_PORT}: ${err.code || err.message}`); process.exit(1); });
+    }
+    // With HTTPS_ONLY the plain port only sends people to the HTTPS address (health checks still answer)
+    const plain = tls && HTTPS_ONLY
+        ? (req, res) => {
+            if (req.url === '/api/health') return app(req, res);
+            const host = String(req.headers.host || 'localhost').replace(/:\d+$/, '');
+            res.writeHead(301, { Location: `https://${host}${HTTPS_PORT === 443 ? '' : ':' + HTTPS_PORT}${req.url}` });
+            res.end();
+        }
+        : app;
+    server = http.createServer(plain).listen(PORT, () => {
         // Only after the port is ours: a second instance must not delete the running one's temp dirs
         sweepStaleTempDirs().catch((e) => log.warn('Temp dir sweep failed:', e.message));
         log.info(`GUIdes Upload Utility running at http://localhost:${PORT}`);

@@ -103,6 +103,26 @@ content that arrives in a package (no renditions, no Guides post-processing). Af
 - Packages expire after `PACKAGE_KEEP_DAYS`. PM2 logs rotate with `pm2-logrotate` (50 MB, 5 files, compressed);
   the upload library's per-file debug output is only logged with `LOG_LEVEL=debug`.
 
+### HTTPS
+
+The server speaks HTTPS when `TLS_CERT_FILE` and `TLS_KEY_FILE` (PEM) are set; it listens on `HTTPS_PORT`
+(default 3443; use 443 for a plain `https://host` address). With `HTTPS_ONLY=true` the normal `PORT` only
+redirects to HTTPS (except `/api/health`), and the session cookie is marked `Secure`.
+
+Without a DNS name and a certificate from IT, `tools/make-cert.sh <ip> [host names]` creates a private CA and a
+server certificate in `certs/` (git-ignored). Browsers show a warning until the CA is trusted; it can be
+downloaded from `/guides-upload-ca.crt` (Windows: open it → Install Certificate → Local Machine →
+"Trusted Root Certification Authorities"). A certificate from IT later just replaces `certs/server-chain.crt`
+and `certs/server.key`.
+
+### Page performance
+
+The page loads no frameworks from CDNs: buttons and toasts are plain HTML/CSS, and Tailwind is built ahead of
+time into `public/app.css` (`npm run build:css` after changing classes in `public/`; it also stamps content
+hashes into `index.html`). Hashed files are cached for a year; `index.html` is revalidated on every visit.
+Measured on a simulated VPN link (150 ms, 10 Mbit/s): 702 requests / 806 KB / 3.1 s fully loaded before,
+9 requests / 100 KB / 1.7 s after; repeat visits transfer about 2 KB.
+
 ### Deploying a new version with PM2
 
 Check that nothing is uploading (`curl -s http://<host>:3000/api/upload/active` prints `[]`), then:
