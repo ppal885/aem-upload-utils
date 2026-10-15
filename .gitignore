@@ -6,3 +6,6 @@ upload-history.json
 .env
 *.log
 .upload-tmp
+users.json
+users.json.tmp
+packages/
