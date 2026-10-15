@@ -121,6 +121,26 @@
         .pkg-fields p { font-size: 12px; color: #64748b; line-height: 1.45; }
         .dark .pkg-fields input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
         .pkg-progress { margin: 10px 0 4px; }
+        .cloud-note { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: 10px; background: #fffbeb;
+            border: 1px solid #fde68a; border-left: 4px solid #e68619; color: #451a03; }
+        .cloud-note-icon { width: 22px; height: 22px; flex-shrink: 0; color: #e68619; margin-top: 1px; }
+        .cloud-note-title { font-size: 15px; font-weight: 700; line-height: 1.35; color: #78350f; }
+        .cloud-note-text { font-size: 13.5px; line-height: 1.55; color: #78350f; margin-top: 4px; }
+        .cloud-note-steps { margin: 8px 0 0; padding-left: 20px; list-style: decimal; font-size: 13.5px; line-height: 1.6; color: #451a03; }
+        .cloud-note-link { color: #1473E6; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+        .cloud-note-close { flex-shrink: 0; align-self: flex-start; font-size: 13px; font-weight: 600; color: #78350f; padding: 5px 12px;
+            border-radius: 9999px; border: 1px solid #f5c26b; background: rgba(255, 255, 255, .6); }
+        .cloud-note-close:hover { background: #fff; }
+        @media (max-width: 640px) { .cloud-note { flex-wrap: wrap; padding: 14px; } .cloud-note > div { flex-basis: calc(100% - 40px); } .cloud-note-close { order: 3; margin-left: 36px; } }
+        .dark .cloud-note { background: rgba(230, 134, 25, .10); border-color: rgba(230, 134, 25, .35); border-left-color: #e68619; }
+        .dark .cloud-note-title, .dark .cloud-note-text { color: #fcd34d; }
+        .dark .cloud-note-steps { color: #fde68a; }
+        .dark .cloud-note-link { color: #6aa9f5; }
+        .dark .cloud-note-close { color: #fde68a; border-color: rgba(230, 134, 25, .5); background: transparent; }
+        .dark .cloud-note-close:hover { background: rgba(230, 134, 25, .15); }
+        .pkg-reprocess { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600;
+            background: #fef3c7; color: #92400e; }
+        .dark .pkg-reprocess { background: rgba(230, 134, 25, .18); color: #fcd34d; }
         .pkg-bar { margin-top: 6px; height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
         .pkg-bar div { height: 100%; width: 0; background: #1473E6; transition: width .3s; }
         #loginScreen .login-link:hover { text-decoration: underline; }
@@ -240,7 +260,7 @@
         }
     </style>
     <!-- after the page styles, so utilities such as "hidden" win, as with the old in-browser Tailwind -->
-    <link rel="stylesheet" href="app.css?v=37d50383bd" />
+    <link rel="stylesheet" href="app.css?v=b5a637c723" />
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
 <div id="appRoot">
@@ -876,10 +896,22 @@
         <div class="page-head">
             <h2>Content packages</h2>
             <p>Packages you built from a local folder. Download them for CRX Package Manager, or install them on an AEM server from here. They are kept for 7 days.</p>
-            <p class="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">On AEM as a Cloud Service, assets installed from a package are not processed automatically: run <strong>Reprocess Assets</strong> on the folder afterwards, or use Upload, which processes every file.</p>
+        </div>
+        <div id="cloudPkgNote" class="cloud-note mb-5" role="note" aria-labelledby="cloudPkgNoteTitle">
+            <svg class="cloud-note-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2L1 18h18L10 2zm1 13H9v-2h2v2zm0-4H9V8h2v3z"/></svg>
+            <div class="flex-1 min-w-0">
+                <h3 id="cloudPkgNoteTitle" class="cloud-note-title">Installing on AEM as a Cloud Service? Reprocess the folder afterwards.</h3>
+                <p class="cloud-note-text">Cloud does not process assets that arrive in a package, so they have no renditions or Guides processing until you reprocess them.</p>
+                <ol class="cloud-note-steps">
+                    <li>In AEM <strong>Assets</strong>, open the parent folder and select the installed folder.</li>
+                    <li>Click <strong>Reprocess Assets</strong> and choose <strong>Full Process</strong>.</li>
+                </ol>
+                <p class="cloud-note-text mt-2">Prefer no extra step? Use <button type="button" class="cloud-note-link" onclick="setWorkMode('upload'); showView('upload')">Upload</button> instead: every file is processed automatically. On-premise AEM processes package content by itself.</p>
+            </div>
+            <button type="button" class="cloud-note-close" onclick="dismissCloudNote()">Got it</button>
         </div>
         <div class="card bg-white rounded-xl border border-gray-200 overflow-x-auto">
-            <table class="w-full text-sm">
+            <table class="w-full min-w-[760px] text-sm">
                 <thead class="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
                     <tr><th class="px-4 py-3">Package</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Built</th><th class="px-4 py-3 text-right">Actions</th></tr>
                 </thead>
@@ -2716,7 +2748,13 @@ async function buildPackageFromSelection() {
     }
 }
 
+function dismissCloudNote() {
+    document.getElementById('cloudPkgNote').classList.add('hidden');
+    try { localStorage.setItem('cloudPkgNoteDismissed', '1'); } catch (_) { /* per-browser only */ }
+}
+
 async function loadPackages() {
+    try { if (localStorage.getItem('cloudPkgNoteDismissed') === '1') document.getElementById('cloudPkgNote').classList.add('hidden'); } catch (_) { /* show it */ }
     const body = document.getElementById('pkgBody');
     try {
         const { packages } = await apiJson('/api/packages');
@@ -2738,7 +2776,9 @@ function renderPackages(list) {
             : p.state === 'building' ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Building ' + ((p.progress && p.progress.files) || 0).toLocaleString() + '</span>'
             : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700" title="' + esc(p.error || '') + '">Failed</span>';
         const last = (p.installs || [])[0];
-        const installed = last ? '<div class="text-xs mt-1 ' + (last.ok ? 'text-green-700' : 'text-red-600') + '">' + (last.ok ? 'Installed on ' : 'Install failed on ') + esc(hostOf(last.server)) + ' ' + esc(timeAgo(last.at)) + '</div>' : '';
+        const cloudInstall = last && last.ok && /\.adobeaemcloud\.com/i.test(last.server || '');
+        const installed = last ? '<div class="text-xs mt-1 ' + (last.ok ? 'text-green-700' : 'text-red-600') + '">' + (last.ok ? 'Installed on ' : 'Install failed on ') + esc(hostOf(last.server)) + ' ' + esc(timeAgo(last.at))
+            + (cloudInstall ? '<span class="pkg-reprocess" title="AEM as a Cloud Service does not process package content: run Reprocess Assets on the folder">Reprocess needed</span>' : '') + '</div>' : '';
         const actions = p.state !== 'ready' ? '' :
             '<a class="text-xs font-semibold text-adobe-blue hover:underline" href="/api/packages/' + encodeURIComponent(p.id) + '/download" download>Download</a>'
             + '<span class="text-gray-300 mx-1">|</span><button type="button" class="text-xs font-semibold text-gray-700 hover:underline" onclick="installPackage(' + esc(JSON.stringify(p.id)) + ')">Install on AEM</button>';
