@@ -19,7 +19,8 @@ module.exports = {
       NODE_ENV: 'production',
       TMPDIR: process.env.UPLOAD_TMPDIR || require('path').join(__dirname, '.upload-tmp'),
       ...Object.fromEntries(['ADMIN_EMAILS', 'ALLOWED_EMAIL_DOMAINS', 'SIGNUP_ENABLED', 'PUBLIC_URL', 'SMTP_HOST', 'SMTP_PORT',
-        'SMTP_USER', 'SMTP_PASS', 'SMTP_SECURE', 'MAIL_FROM', 'PACKAGES_DIR', 'PACKAGE_KEEP_DAYS', 'UPLOAD_PIPELINES']
+        'SMTP_USER', 'SMTP_PASS', 'SMTP_SECURE', 'MAIL_FROM', 'PACKAGES_DIR', 'PACKAGE_KEEP_DAYS', 'UPLOAD_PIPELINES',
+        'TLS_CERT_FILE', 'TLS_KEY_FILE', 'HTTPS_PORT', 'HTTPS_ONLY', 'MIN_PASSWORD_LENGTH']
         .filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])),
     },
     merge_logs: true,

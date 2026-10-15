@@ -4,28 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guides Upload Utility</title>
-    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=e1eeed10ad" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script type="module" src="https://jspm.dev/@spectrum-web-components/bundle/elements.js" async></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ["'Source Sans 3'", 'Inter', 'system-ui', 'sans-serif'],
-                        display: ["'Source Sans 3'", 'Inter', 'system-ui', 'sans-serif'],
-                    },
-                    colors: {
-                        adobe: { blue: '#1473E6', darkBlue: '#0D66D0', dark: '#1D1D1D', gray: '#4B4B4B', lightGray: '#F5F5F5' }
-                    }
-                }
-            }
-        }
-    </script>
     <style>
         /* ─── Typography ─── */
         body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
@@ -76,7 +58,39 @@
         .tree-toggle:hover { background-color: #eff6ff; }
         .tree-node { user-select: none; }
 
-        /* ─── Spectrum Toast Container (for sp-toast elements) ─── */
+        /* ─── Buttons (Spectrum look, native <button>) ─── */
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 9999px; border: 2px solid transparent;
+            font-family: 'Source Sans 3', 'Adobe Clean', Inter, system-ui, sans-serif; font-weight: 700; line-height: 1.2; white-space: nowrap;
+            cursor: pointer; user-select: none; transition: background-color .13s ease-out, border-color .13s ease-out, color .13s ease-out; }
+        .btn:focus-visible { outline: 2px solid #1473E6; outline-offset: 2px; }
+        .btn:disabled, .btn[disabled] { opacity: .45; cursor: not-allowed; }
+        .btn-xs { min-height: 28px; padding: 0 12px; font-size: 13px; }
+        .btn-s { min-height: 28px; padding: 0 12px; font-size: 13px; }
+        .btn-m { min-height: 32px; padding: 0 16px; font-size: 14px; }
+        .btn-l { min-height: 40px; padding: 0 20px; font-size: 16px; }
+        .btn svg { flex-shrink: 0; }
+        .btn.btn-accent { background: #1473E6; color: #fff; }
+        .btn.btn-accent:hover:not(:disabled) { background: #0D66D0; }
+        .btn.btn-negative { background: #D7373F; color: #fff; }
+        .btn.btn-negative:hover:not(:disabled) { background: #C9252D; }
+        .btn.btn-secondary { background: #E1E1E1; color: #2C2C2C; }
+        .btn.btn-secondary:hover:not(:disabled) { background: #CACACA; }
+        .btn.btn-secondary.btn-outline { background: transparent; border-color: #8E8E8E; color: #4B4B4B; }
+        .btn.btn-secondary.btn-outline:hover:not(:disabled) { border-color: #6E6E6E; background: #EAEAEA; color: #2C2C2C; }
+        .btn-group { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+        .btn.btn-outline.hist-pill.on, .dark .btn.btn-outline.hist-pill.on { background: #1473E6; border-color: #1473E6; color: #fff; }
+
+        /* ─── Toasts ─── */
+        .toast { display: flex; align-items: flex-start; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 6px; color: #fff; font-size: 14px;
+            line-height: 1.4; box-shadow: 0 4px 16px rgba(15, 23, 42, .25); animation: toast-in .18s ease-out; }
+        .toast-info { background: #378EF0; } .toast-success { background: #268E6C; } .toast-error { background: #D7373F; } .toast-warn { background: #CB6F10; }
+        .toast-msg { flex: 1; padding-top: 1px; overflow-wrap: anywhere; }
+        .toast-close { flex-shrink: 0; width: 24px; height: 24px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; opacity: .85; }
+        .toast-close:hover { opacity: 1; background: rgba(255, 255, 255, .18); }
+        .toast.toast-out { opacity: 0; transform: translateY(6px); transition: opacity .18s, transform .18s; }
+        @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+        /* ─── Toast container ─── */
         #toastContainer { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; max-width: 500px; width: calc(100% - 40px); }
         #toastContainer > * { pointer-events: auto; }
 
@@ -151,7 +165,7 @@
         .summary-list dt { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #9ca3af; }
         .summary-list dd { font-size: 13px; color: #111827; }
         .summary-actions { margin-top: 16px; }
-        .summary-actions sp-button { width: 100%; }
+        .summary-actions .btn { width: 100%; }
         .summary-hint { margin-top: 10px; font-size: 11px; color: #9ca3af; text-align: center; }
         .summary-hint kbd { font-family: ui-monospace, monospace; font-size: 10px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0 4px; }
         .stat-tile { background: #fff; border: 1px solid #e5e7eb; padding: 16px 18px; }
@@ -192,12 +206,10 @@
         .dark code { background-color: #334155 !important; color: #94a3b8 !important; }
         .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b !important; }
         .dark #confirmModal > div { background-color: #1e293b !important; }
-        .dark sp-button[variant="secondary"] {
-            color: #e2e8f0;
-            --mod-button-content-color-default: #e2e8f0; --mod-button-content-color-hover: #ffffff;
-            --mod-button-content-color-down: #ffffff; --mod-button-content-color-focus: #ffffff;
-            --mod-button-border-color-default: #64748b; --mod-button-border-color-hover: #94a3b8;
-        }
+        .dark .btn.btn-secondary { background: #334155; color: #e2e8f0; }
+        .dark .btn.btn-secondary:hover:not(:disabled) { background: #475569; color: #fff; }
+        .dark .btn.btn-secondary.btn-outline { background: transparent; border-color: #64748b; color: #e2e8f0; }
+        .dark .btn.btn-secondary.btn-outline:hover:not(:disabled) { border-color: #94a3b8; background: rgba(148, 163, 184, .12); color: #fff; }
         .dark .from-blue-50 { --tw-gradient-from: #1e293b !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important; }
         .dark .to-white { --tw-gradient-to: #1a1a2e !important; }
         .dark .bg-gray-200 { background-color: #334155 !important; }
@@ -227,11 +239,13 @@
             #histPanel .hist-mobile-cards { display: none !important; }
         }
     </style>
+    <!-- after the page styles, so utilities such as "hidden" win, as with the old in-browser Tailwind -->
+    <link rel="stylesheet" href="app.css?v=37d50383bd" />
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
-<sp-theme id="spTheme" scale="medium" color="light" system="spectrum" style="display:contents;">
+<div id="appRoot">
 
-<!-- Toast container (bottom-center, holds sp-toast elements) -->
+<!-- Toast container (bottom-center) -->
 <div id="toastContainer" role="region" aria-label="Notifications"></div>
 
 <!-- Full-page drop overlay -->
@@ -263,8 +277,8 @@
         <hr class="border-gray-200"/>
         <div id="confirmBody" class="px-6 py-4" style="font-size:14px;line-height:1.6;"></div>
         <div class="flex justify-end gap-2 px-6 py-4 bg-gray-50 border-t border-gray-200">
-            <sp-button id="confirmCancelBtn" variant="secondary" treatment="outline" onclick="closeConfirm()">Cancel</sp-button>
-            <sp-button id="confirmOkBtn" variant="accent" onclick="handleConfirmOk()">Upload</sp-button>
+            <button type="button" class="btn btn-secondary btn-m btn-outline" id="confirmCancelBtn" onclick="closeConfirm()">Cancel</button>
+            <button type="button" class="btn btn-accent btn-m" id="confirmOkBtn" onclick="handleConfirmOk()">Upload</button>
         </div>
     </div>
 </div>
@@ -603,13 +617,13 @@
                                 <p class="text-xs text-amber-600 mt-1" title="The file picker has a search box that filters results">Tip: If the folder appears empty, clear the search box in the file picker dialog</p>
                             </div>
                             <div class="flex gap-2 mt-1">
-                                <sp-button size="s" variant="accent" onclick="event.stopPropagation(); pickFolder()">
-                                    <svg slot="icon" class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                                <button type="button" class="btn btn-accent btn-s" onclick="event.stopPropagation(); pickFolder()">
+                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
                                     Select Folder
-                                </sp-button>
-                                <sp-button size="s" variant="secondary" treatment="outline" onclick="event.stopPropagation(); document.getElementById('browserFileInput').click()">
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-s btn-outline" onclick="event.stopPropagation(); document.getElementById('browserFileInput').click()">
                                     Select Files
-                                </sp-button>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -728,8 +742,8 @@
                     <div class="flex items-center gap-3 text-sm">
                         <span id="transferSpeed" class="text-gray-500">-- MB/s</span>
                         <span id="transferEta" class="text-gray-500">ETA --</span>
-                        <sp-button id="transferPauseBtn" onclick="pauseTransfer()" variant="secondary" size="s" style="display:none;" aria-label="Pause sending files to server">Pause</sp-button>
-                        <sp-button id="transferResumeBtn" onclick="resumeTransfer()" variant="accent" size="s" style="display:none;" aria-label="Resume sending files to server">Resume</sp-button>
+                        <button type="button" class="btn btn-secondary btn-s" id="transferPauseBtn" onclick="pauseTransfer()" style="display:none;" aria-label="Pause sending files to server">Pause</button>
+                        <button type="button" class="btn btn-accent btn-s" id="transferResumeBtn" onclick="resumeTransfer()" style="display:none;" aria-label="Resume sending files to server">Resume</button>
                     </div>
                 </div>
                 <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -771,9 +785,9 @@
                         <span id="elapsedTime" class="text-sm text-gray-500">0s</span>
                         <span id="uploadSpeed" class="hidden text-sm text-gray-500">-- MB/s</span>
                         <span id="uploadEta" class="hidden text-sm font-medium text-adobe-blue">ETA --</span>
-                        <sp-button id="cancelBtnInProgress" onclick="cancelUpload()" variant="negative" size="s" style="display:none;">
+                        <button type="button" class="btn btn-negative btn-s" id="cancelBtnInProgress" onclick="cancelUpload()" style="display:none;">
                             Cancel Upload
-                        </sp-button>
+                        </button>
                     </div>
                 </div>
                 <!-- Stats row -->
@@ -842,14 +856,14 @@
                     </div>
                     <!-- Upload / Cancel buttons -->
                     <div class="flex flex-col gap-2 summary-actions">
-                        <sp-button id="uploadBtn" onclick="initiateUpload()" variant="accent" size="l">
-                            <svg id="uploadIcon" slot="icon" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
-                            <svg id="uploadSpinner" class="hidden spinner h-5 w-5" slot="icon" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        <button type="button" class="btn btn-accent btn-l" id="uploadBtn" onclick="initiateUpload()">
+                            <svg id="uploadIcon" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                            <svg id="uploadSpinner" class="hidden spinner h-5 w-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                             <span id="uploadBtnText">Start Upload</span>
-                        </sp-button>
-                        <sp-button id="cancelBtn" onclick="cancelUpload()" variant="negative" size="l" style="display:none;">
+                        </button>
+                        <button type="button" class="btn btn-negative btn-l" id="cancelBtn" onclick="cancelUpload()" style="display:none;">
                             Cancel
-                        </sp-button>
+                        </button>
                     </div>
 
                     <p class="summary-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to start &middot; <kbd>Esc</kbd> twice to cancel</p>
@@ -945,13 +959,13 @@
                     <input id="histSearch" type="text" placeholder="Search history..." oninput="filterHistory()"
                         class="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-1 focus:ring-adobe-blue focus:border-transparent outline-none" aria-label="Search upload history" />
                 </div>
-                <sp-button-group id="histFilterPills">
-                    <sp-button onclick="setHistoryFilter('all')" class="hist-pill" data-filter="all" variant="accent" size="xs" selected>All</sp-button>
-                    <sp-button onclick="setHistoryFilter('success')" class="hist-pill" data-filter="success" variant="secondary" size="xs" treatment="outline">Success</sp-button>
-                    <sp-button onclick="setHistoryFilter('partial')" class="hist-pill" data-filter="partial" variant="secondary" size="xs" treatment="outline">Partial</sp-button>
-                    <sp-button onclick="setHistoryFilter('failed')" class="hist-pill" data-filter="failed" variant="secondary" size="xs" treatment="outline">Failed</sp-button>
-                    <sp-button onclick="setHistoryFilter('cancelled')" class="hist-pill" data-filter="cancelled" variant="secondary" size="xs" treatment="outline">Cancelled</sp-button>
-                </sp-button-group>
+                <div id="histFilterPills" class="btn-group" role="group" aria-label="Filter uploads">
+                    <button type="button" class="hist-pill btn btn-secondary btn-xs btn-outline on" onclick="setHistoryFilter('all')" data-filter="all">All</button>
+                    <button type="button" class="hist-pill btn btn-secondary btn-xs btn-outline" onclick="setHistoryFilter('success')" data-filter="success">Success</button>
+                    <button type="button" class="hist-pill btn btn-secondary btn-xs btn-outline" onclick="setHistoryFilter('partial')" data-filter="partial">Partial</button>
+                    <button type="button" class="hist-pill btn btn-secondary btn-xs btn-outline" onclick="setHistoryFilter('failed')" data-filter="failed">Failed</button>
+                    <button type="button" class="hist-pill btn btn-secondary btn-xs btn-outline" onclick="setHistoryFilter('cancelled')" data-filter="cancelled">Cancelled</button>
+                </div>
             </div>
             <table class="w-full text-sm text-left min-w-[800px]">
                 <thead class="text-xs text-gray-500 uppercase bg-gray-50" id="historyHead">
@@ -1015,7 +1029,7 @@
     </div>
 </div>
 
-<script src="aem-names.js"></script>
+<script src="aem-names.js?v=e8d72a4c72"></script>
 <script>
 // ═══ Error / message normalization (APIs may return strings or { message, code }) ═══
 function toErrorMessage(x) {
@@ -2859,12 +2873,12 @@ let _modalPreviousFocus = null;
 
 function trapFocusInModal(modal) {
     _modalPreviousFocus = document.activeElement;
-    const focusable = modal.querySelectorAll('button, sp-button, [tabindex]:not([tabindex="-1"]), input, select, textarea, a[href]');
+    const focusable = modal.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), input, select, textarea, a[href]');
     if (focusable.length) focusable[0].focus();
     if (_modalFocusTrap) modal.removeEventListener('keydown', _modalFocusTrap);
     _modalFocusTrap = (e) => {
         if (e.key !== 'Tab') return;
-        const nodes = modal.querySelectorAll('button, sp-button, [tabindex]:not([tabindex="-1"]), input, select, textarea, a[href]');
+        const nodes = modal.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), input, select, textarea, a[href]');
         if (!nodes.length) return;
         const first = nodes[0], last = nodes[nodes.length - 1];
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -4106,17 +4120,29 @@ function showCustomConfirm(title, message, onConfirm) {
     trapFocusInModal(modal);
 }
 
-// ═══ Spectrum Toast Notifications (using sp-toast web component) ═══
+// ═══ Toast notifications ═══
+const TOAST_ICONS = {
+    success: '<path d="M7.5 13.5l-3-3 1.4-1.4 1.6 1.6 4.6-4.6 1.4 1.4z"/>',
+    error: '<path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-2h2v2zm0-4H9V5h2v4z"/>',
+    warn: '<path d="M10 2L1 18h18L10 2zm1 13H9v-2h2v2zm0-4H9V8h2v3z"/>',
+    info: '<path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 12H9V9h2v5zm0-7H9V5h2v2z"/>',
+};
+
 function showToast(msg, type) {
+    const kind = TOAST_ICONS[type] ? type : 'info';
     const container = document.getElementById('toastContainer');
-    const variantMap = { success: 'positive', error: 'negative', warn: 'warning', info: 'info' };
-    const el = document.createElement('sp-toast');
-    el.setAttribute('open', '');
-    el.setAttribute('variant', variantMap[type] || 'info');
-    el.setAttribute('timeout', '6000');
-    el.textContent = msg;
-    el.addEventListener('close', () => el.remove());
+    const el = document.createElement('div');
+    el.className = 'toast toast-' + kind;
+    el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    el.innerHTML = '<svg class="w-5 h-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">' + TOAST_ICONS[kind] + '</svg>'
+        + '<span class="toast-msg"></span>'
+        + '<button type="button" class="toast-close" aria-label="Close"><svg class="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8"/></svg></button>';
+    el.querySelector('.toast-msg').textContent = msg;
+    const close = () => { el.classList.add('toast-out'); setTimeout(() => el.remove(), 200); };
+    el.querySelector('.toast-close').addEventListener('click', close);
     container.appendChild(el);
+    while (container.children.length > 4) container.firstElementChild.remove();
+    setTimeout(close, kind === 'error' ? 9000 : 6000);
 }
 
 // ═══ Helpers ═══
@@ -4173,14 +4199,10 @@ function initDarkMode() {
 function toggleDarkMode() {
     const isDark = document.documentElement.classList.toggle('dark');
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    const spTheme = document.getElementById('spTheme');
-    if (spTheme) spTheme.color = isDark ? 'dark' : 'light';
     updateDarkModeIcons(isDark);
 }
 function applyDarkMode(isDark) {
     document.documentElement.classList.toggle('dark', isDark);
-    const spTheme = document.getElementById('spTheme');
-    if (spTheme) spTheme.color = isDark ? 'dark' : 'light';
     updateDarkModeIcons(isDark);
 }
 function updateDarkModeIcons(isDark) {
@@ -4367,11 +4389,9 @@ function setHistoryFilter(filter) {
     historyFilter = filter;
     historyPage = 0;
     document.querySelectorAll('.hist-pill').forEach(btn => {
-        if (btn.dataset.filter === filter) {
-            btn.variant = 'accent'; btn.treatment = 'fill'; btn.setAttribute('selected', '');
-        } else {
-            btn.variant = 'secondary'; btn.treatment = 'outline'; btn.removeAttribute('selected');
-        }
+        const on = btn.dataset.filter === filter;
+        btn.classList.toggle('on', on);
+        btn.setAttribute('aria-pressed', String(on));
     });
     renderFilteredHistory();
 }
@@ -4738,6 +4758,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 </script>
-</sp-theme>
+</div>
 </body>
 </html>
