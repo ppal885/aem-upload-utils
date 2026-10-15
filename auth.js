@@ -16,7 +16,8 @@ const SESSION_IDLE_MS = (parseInt(process.env.SESSION_IDLE_HOURS, 10) || 8) * 60
 const SESSION_MAX_MS = (parseInt(process.env.SESSION_MAX_HOURS, 10) || 24) * 60 * 60 * 1000;
 const API_KEY = process.env.API_KEY || '';
 const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, 'users.json');
-const MIN_PASSWORD_LENGTH = 10;
+// No length rule by default (team decision); set MIN_PASSWORD_LENGTH to require one
+const MIN_PASSWORD_LENGTH = Math.max(parseInt(process.env.MIN_PASSWORD_LENGTH, 10) || 1, 1);
 const ALLOWED_EMAIL_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || 'adobe.com')
     .split(',').map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
@@ -50,6 +51,7 @@ function assertTeamEmail(e) {
 }
 
 function assertNewPassword(pw, email) {
+    if (!pw) throw Object.assign(new Error('Enter a password.'), { status: 400 });
     if (pw.length < MIN_PASSWORD_LENGTH) throw Object.assign(new Error(`The password must have at least ${MIN_PASSWORD_LENGTH} characters.`), { status: 400 });
     if (pw.toLowerCase() === email || pw.toLowerCase() === email.split('@')[0]) {
         throw Object.assign(new Error('The password cannot be your email or user name.'), { status: 400 });

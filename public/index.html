@@ -328,12 +328,12 @@
             </div>
             <div class="mb-4">
                 <label class="login-label" for="signupPassword">Password</label>
-                <input id="signupPassword" class="login-input" type="password" autocomplete="new-password" minlength="10" />
-                <p class="mt-1 text-xs text-gray-400">At least 10 characters. Not your Adobe password.</p>
+                <input id="signupPassword" class="login-input" type="password" autocomplete="new-password" />
+                <p class="mt-1 text-xs text-gray-400">Not your Adobe password.</p>
             </div>
             <div class="mb-6">
                 <label class="login-label" for="signupConfirm">Repeat password</label>
-                <input id="signupConfirm" class="login-input" type="password" autocomplete="new-password" minlength="10" />
+                <input id="signupConfirm" class="login-input" type="password" autocomplete="new-password" />
             </div>
             <button id="signupSubmit" type="submit" class="login-btn">Create account</button>
             <p class="mt-5 text-sm text-gray-500 text-center">Already have an account? <button type="button" class="login-link" onclick="showAuthCard('loginForm')">Sign in</button></p>
@@ -352,21 +352,21 @@
         </form>
         <form id="resetForm" class="login-card hidden w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitReset();" novalidate>
             <h1 class="text-2xl font-bold text-gray-900 mb-1">Choose a new password</h1>
-            <p class="text-sm text-gray-500 mb-6">At least 10 characters. Not your Adobe password.</p>
+            <p class="text-sm text-gray-500 mb-6">Not your Adobe password.</p>
             <div id="resetError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
             <div class="mb-4">
                 <label class="login-label" for="resetPassword">New password</label>
-                <input id="resetPassword" class="login-input" type="password" autocomplete="new-password" minlength="10" />
+                <input id="resetPassword" class="login-input" type="password" autocomplete="new-password" />
             </div>
             <div class="mb-6">
                 <label class="login-label" for="resetConfirm">Repeat new password</label>
-                <input id="resetConfirm" class="login-input" type="password" autocomplete="new-password" minlength="10" />
+                <input id="resetConfirm" class="login-input" type="password" autocomplete="new-password" />
             </div>
             <button id="resetSubmit" type="submit" class="login-btn">Save new password</button>
         </form>
         <form id="changePwForm" class="login-card hidden w-full max-w-[400px] bg-white border border-gray-200 rounded-xl shadow-xl p-8" onsubmit="event.preventDefault(); submitChangePassword();" novalidate>
             <h1 class="text-2xl font-bold text-gray-900 mb-1">Change your password</h1>
-            <p id="changePwIntro" class="text-sm text-gray-500 mb-6">Choose a new password with at least 10 characters.</p>
+            <p id="changePwIntro" class="text-sm text-gray-500 mb-6">Choose a new password.</p>
             <div id="changePwError" role="alert" class="hidden mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2"></div>
             <input type="email" autocomplete="username" id="changePwUser" class="hidden" tabindex="-1" aria-hidden="true" />
             <div class="mb-4">
@@ -375,11 +375,11 @@
             </div>
             <div class="mb-4">
                 <label class="login-label" for="changePwNew">New password</label>
-                <input id="changePwNew" class="login-input" type="password" autocomplete="new-password" minlength="10" />
+                <input id="changePwNew" class="login-input" type="password" autocomplete="new-password" />
             </div>
             <div class="mb-6">
                 <label class="login-label" for="changePwConfirm">Repeat new password</label>
-                <input id="changePwConfirm" class="login-input" type="password" autocomplete="new-password" minlength="10" />
+                <input id="changePwConfirm" class="login-input" type="password" autocomplete="new-password" />
             </div>
             <button id="changePwSubmit" type="submit" class="login-btn">Save new password</button>
             <button id="changePwCancel" type="button" onclick="cancelChangePassword()" class="hidden mt-3 w-full text-sm font-semibold text-gray-500 hover:text-gray-800">Cancel</button>
@@ -1907,7 +1907,7 @@ function showLogin(notice) {
 }
 
 const AUTH_CARDS = ['loginForm', 'signupForm', 'forgotForm', 'resetForm', 'changePwForm'];
-let authOptions = { emailDomains: ['adobe.com'], signup: true, minPasswordLength: 10, resetByEmail: false };
+let authOptions = { emailDomains: ['adobe.com'], signup: true, minPasswordLength: 1, resetByEmail: false };
 
 function showAuthCard(id) {
     AUTH_CARDS.forEach((c) => document.getElementById(c).classList.toggle('hidden', c !== id));
@@ -1920,7 +1920,15 @@ function showAuthCard(id) {
     if (first) setTimeout(() => first.focus(), 30);
 }
 
-async function loadAuthOptions() {
+let authOptionsLoaded = null;
+
+// Submit handlers wait for this, so a fast click never checks against the built-in defaults
+function loadAuthOptions() {
+    if (!authOptionsLoaded) authOptionsLoaded = fetchAuthOptions();
+    return authOptionsLoaded;
+}
+
+async function fetchAuthOptions() {
     try {
         const r = await fetch('/api/auth/options');
         if (r.ok) authOptions = { ...authOptions, ...(await r.json()) };
@@ -1951,13 +1959,14 @@ async function postJson(url, body) {
 }
 
 async function submitSignup() {
+    await loadAuthOptions();
     const name = document.getElementById('signupName').value.trim();
     const email = document.getElementById('signupEmail').value.trim();
     const pw = document.getElementById('signupPassword').value;
     const pw2 = document.getElementById('signupConfirm').value;
     document.getElementById('signupError').classList.add('hidden');
     const problem = !name ? 'Enter your name.' : emailProblem(email)
-        || (pw.length < authOptions.minPasswordLength ? 'The password must have at least ' + authOptions.minPasswordLength + ' characters.' : '')
+        || (!pw ? 'Enter a password.' : pw.length < authOptions.minPasswordLength ? 'The password must have at least ' + authOptions.minPasswordLength + ' characters.' : '')
         || (pw !== pw2 ? 'The two passwords are not the same.' : '');
     if (problem) { showAuthError('signupError', problem); return; }
     const btn = document.getElementById('signupSubmit');
@@ -1977,6 +1986,7 @@ async function submitSignup() {
 }
 
 async function submitForgot() {
+    await loadAuthOptions();
     const email = document.getElementById('forgotEmail').value.trim();
     document.getElementById('forgotError').classList.add('hidden');
     document.getElementById('forgotDone').classList.add('hidden');
@@ -1998,10 +2008,11 @@ async function submitForgot() {
 }
 
 async function submitReset() {
+    await loadAuthOptions();
     const pw = document.getElementById('resetPassword').value;
     const pw2 = document.getElementById('resetConfirm').value;
     document.getElementById('resetError').classList.add('hidden');
-    const problem = pw.length < authOptions.minPasswordLength ? 'The password must have at least ' + authOptions.minPasswordLength + ' characters.'
+    const problem = !pw ? 'Enter a password.' : pw.length < authOptions.minPasswordLength ? 'The password must have at least ' + authOptions.minPasswordLength + ' characters.'
         : pw !== pw2 ? 'The two passwords are not the same.' : '';
     if (problem) { showAuthError('resetError', problem); return; }
     const btn = document.getElementById('resetSubmit');
@@ -2045,6 +2056,7 @@ async function submitLogin() {
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
     const err = document.getElementById('loginError');
+    await loadAuthOptions();
     if (!email || !password) {
         err.textContent = 'Enter your email and password.';
         err.classList.remove('hidden');
@@ -2093,8 +2105,8 @@ function showChangePassword(forced) {
     document.getElementById('changePwForm').classList.remove('hidden');
     document.getElementById('changePwError').classList.add('hidden');
     document.getElementById('changePwIntro').textContent = forced
-        ? 'You signed in with a temporary password. Choose your own password (at least 10 characters) to continue.'
-        : 'Choose a new password with at least 10 characters.';
+        ? 'You signed in with a temporary password. Choose your own password to continue.'
+        : 'Choose a new password.';
     document.getElementById('changePwCancel').classList.toggle('hidden', !!forced);
     document.getElementById('changePwUser').value = currentUser ? currentUser.email : '';
     if (!forced) document.getElementById('changePwCurrent').value = '';
@@ -2117,7 +2129,8 @@ async function submitChangePassword() {
     const err = document.getElementById('changePwError');
     const fail = (m) => { err.textContent = m; err.classList.remove('hidden'); };
     if (!current || !next) return fail('Fill in your current and new password.');
-    if (next.length < 10) return fail('The new password must have at least 10 characters.');
+    if (!next) return fail('Enter a new password.');
+    if (next.length < authOptions.minPasswordLength) return fail('The new password must have at least ' + authOptions.minPasswordLength + ' characters.');
     if (next !== confirm) return fail('The two new passwords are not the same.');
     const btn = document.getElementById('changePwSubmit');
     setBusy(btn, true, 'Saving…');

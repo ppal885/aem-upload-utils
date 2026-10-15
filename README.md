@@ -73,6 +73,7 @@ themselves: set the variables in the shell, in `ecosystem.config.cjs` (`env`) fo
 | `ALLOWED_EMAIL_DOMAINS` | `adobe.com` | Email domains that may sign up and sign in (comma-separated) |
 | `ADMIN_EMAILS` | _(empty)_ | Emails that become admins when they create their account |
 | `SIGNUP_ENABLED` | `true` | `false` = only admins create accounts |
+| `MIN_PASSWORD_LENGTH` | `1` | Minimum password length (no rule by default; a password cannot be empty or the email) |
 | `USERS_FILE` | `<app>/users.json` | Team accounts (scrypt password hashes) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `MAIL_FROM` | _(empty)_ | Mail server for password-reset links; without it admins reset passwords |
 | `PUBLIC_URL` | _(request host)_ | Address used in reset links, e.g. `https://guides-upload.example.com` |
