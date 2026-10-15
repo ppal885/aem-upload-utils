@@ -343,6 +343,10 @@ function runUpload(config, eventCallback) {
 
     const uploadStartTime = Date.now();
     let lastProgressLog = 0;
+    // One info line a minute, so a running upload is visible in the server log
+    let filesDone = 0;
+    let plannedFiles = 0;
+    let lastSummaryLog = Date.now();
 
     let lastProgressBroadcast = 0;
     let pendingProgressData = null;
@@ -424,6 +428,13 @@ function runUpload(config, eventCallback) {
                 transferredBytes += (fileSize - prev);
                 delete fileBytes[data.fileName];
                 svcLog.debug(`fileend: ${data.fileName} (${((fileSize) / 1024).toFixed(1)} KB)`);
+                filesDone++;
+                if (Date.now() - lastSummaryLog >= 60000) {
+                    lastSummaryLog = Date.now();
+                    const secs = (Date.now() - uploadStartTime) / 1000;
+                    svcLog.info(`Progress: ${filesDone}/${plannedFiles || '?'} files${plannedFiles ? ` (${((filesDone * 100) / plannedFiles).toFixed(1)}%)` : ''}, `
+                        + `${(filesDone / secs).toFixed(1)} files/s, ${errors.length} error(s), ${Math.round(secs / 60)} min so far`);
+                }
             }
             if (evt === 'fileerror') {
                 if (!startedFiles.has(fileKey(data))) {
@@ -552,6 +563,7 @@ function runUpload(config, eventCallback) {
             errors.push(`Could not read local path: ${msg}`);
         });
         const uploadFiles = fsUpload.convertToUploadFilesWithUrl(options, files);
+        plannedFiles = uploadFiles.length;
         // The library skips temp/hidden files (".*", "~*", "*.tmp", Thumbs.db, ...), so tell the caller the real totals
         if (eventCallback) {
             try {

@@ -9,6 +9,7 @@ const cors = require('cors');
 const compression = require('compression');
 const http = require('http');
 const https = require('https');
+const net = require('net');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const auth = require('./auth');
@@ -22,6 +23,7 @@ const PORT = process.env.PORT || 3000;
 // HTTPS: set TLS_CERT_FILE + TLS_KEY_FILE (PEM). HTTPS_ONLY=true turns the plain-HTTP port into a redirect.
 const TLS_CERT_FILE = process.env.TLS_CERT_FILE || '';
 const TLS_KEY_FILE = process.env.TLS_KEY_FILE || '';
+// HTTPS_PORT equal to PORT serves both on one port (when the network only lets one port through)
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
 const HTTPS_ONLY = /^(1|true|yes)$/i.test(process.env.HTTPS_ONLY || '');
 const HISTORY_FILE = nodePath.join(__dirname, 'upload-history.json');
@@ -2216,7 +2218,7 @@ async function shutdown(signal) {
     await Promise.allSettled(cleanupPromises);
 
     // Stop accepting new connections, wait for active ones to drain
-    if (httpsServer) httpsServer.close();
+    if (httpsServer && httpsServer.listening) httpsServer.close();
     if (server) {
         server.close(() => {
             log.info('Server closed.');
@@ -2240,11 +2242,8 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
     const tempFree = await getTempFreeBytes();
     const tls = TLS_CERT_FILE && TLS_KEY_FILE
         ? { cert: fs.readFileSync(TLS_CERT_FILE), key: fs.readFileSync(TLS_KEY_FILE) } : null;
-    if (tls) {
-        httpsServer = https.createServer(tls, app).listen(HTTPS_PORT, () => log.info(`HTTPS on port ${HTTPS_PORT}${HTTPS_ONLY ? ` (port ${PORT} redirects here)` : ''}`));
-        httpsServer.on('error', (err) => { log.error(`Cannot listen on HTTPS port ${HTTPS_PORT}: ${err.code || err.message}`); process.exit(1); });
-    }
-    // With HTTPS_ONLY the plain port only sends people to the HTTPS address (health checks still answer)
+    const samePort = tls && HTTPS_PORT === Number(PORT);
+    // With HTTPS_ONLY plain HTTP only sends people to the HTTPS address (health checks still answer)
     const plain = tls && HTTPS_ONLY
         ? (req, res) => {
             if (req.url === '/api/health') return app(req, res);
@@ -2253,7 +2252,30 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
             res.end();
         }
         : app;
-    server = http.createServer(plain).listen(PORT, () => {
+    if (tls && !samePort) {
+        httpsServer = https.createServer(tls, app).listen(HTTPS_PORT, () => log.info(`HTTPS on port ${HTTPS_PORT}${HTTPS_ONLY ? ` (port ${PORT} redirects here)` : ''}`));
+        httpsServer.on('error', (err) => { log.error(`Cannot listen on HTTPS port ${HTTPS_PORT}: ${err.code || err.message}`); process.exit(1); });
+    }
+    let listener;
+    if (samePort) {
+        // One port, both protocols: a TLS connection starts with a handshake record (first byte 0x16)
+        const secure = https.createServer(tls, app);
+        const insecure = http.createServer(plain);
+        httpsServer = secure;
+        listener = net.createServer((socket) => {
+            socket.once('data', (first) => {
+                socket.pause();
+                socket.unshift(first);
+                (first[0] === 0x16 ? secure : insecure).emit('connection', socket);
+                process.nextTick(() => socket.resume());
+            });
+            socket.on('error', () => socket.destroy());
+        });
+        log.info(`HTTPS and HTTP on port ${PORT}${HTTPS_ONLY ? ' (HTTP redirects to HTTPS)' : ''}`);
+    } else {
+        listener = http.createServer(plain);
+    }
+    server = listener.listen(PORT, () => {
         // Only after the port is ours: a second instance must not delete the running one's temp dirs
         sweepStaleTempDirs().catch((e) => log.warn('Temp dir sweep failed:', e.message));
         log.info(`GUIdes Upload Utility running at http://localhost:${PORT}`);

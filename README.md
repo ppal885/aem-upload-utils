@@ -106,7 +106,9 @@ content that arrives in a package (no renditions, no Guides post-processing). Af
 ### HTTPS
 
 The server speaks HTTPS when `TLS_CERT_FILE` and `TLS_KEY_FILE` (PEM) are set; it listens on `HTTPS_PORT`
-(default 3443; use 443 for a plain `https://host` address). With `HTTPS_ONLY=true` the normal `PORT` only
+(default 3443; use 443 for a plain `https://host` address). Set `HTTPS_PORT` equal to `PORT` when the network
+lets only one port through (the VM 10.42.75.146 only allows 3000): the server then tells TLS from plain HTTP on
+the first byte of each connection and serves both on that port. With `HTTPS_ONLY=true` the normal `PORT` only
 redirects to HTTPS (except `/api/health`), and the session cookie is marked `Secure`.
 
 Without a DNS name and a certificate from IT, `tools/make-cert.sh <ip> [host names]` creates a private CA and a
