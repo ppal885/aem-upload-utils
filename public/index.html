@@ -169,7 +169,12 @@
             font-weight: 600; color: #4b5563; text-align: left; transition: background .12s, color .12s; }
         .nav-item:hover { background: #eceef2; color: #111827; }
         .nav-item.active { background: #e8f1fd; color: #1473E6; }
-        .nav-item.nav-tab { width: auto; background: #fff; border: 1px solid #e5e7eb; }
+        .nav-item.nav-tab { width: auto; flex-shrink: 0; white-space: nowrap; padding: 8px 14px; gap: 8px; background: #fff; border: 1px solid #e5e7eb; }
+        .nav-item.nav-tab .nav-badge { margin-left: 2px; }
+        /* Phone/narrow windows: one row of tabs that scrolls sideways instead of wrapping or cutting off */
+        .nav-tabs { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; margin-left: -16px; margin-right: -16px;
+            padding: 2px 16px; scroll-padding: 0 16px; }
+        .nav-tabs::-webkit-scrollbar { display: none; }
         .nav-item.nav-tab.active { background: #1473E6; color: #fff; border-color: #1473E6; }
         .nav-badge { margin-left: auto; font-size: 11px; font-weight: 700; color: #4b5563; background: #e5e7eb; border-radius: 999px; padding: 1px 8px; }
         .nav-item.active .nav-badge { background: #cfe2fb; color: #1473E6; }
@@ -260,7 +265,7 @@
         }
     </style>
     <!-- after the page styles, so utilities such as "hidden" win, as with the old in-browser Tailwind -->
-    <link rel="stylesheet" href="app.css?v=b5a637c723" />
+    <link rel="stylesheet" href="app.css?v=2cdab3c5bd" />
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
 <div id="appRoot">
@@ -423,11 +428,11 @@
 
 <header class="bg-white border-b border-gray-200 shadow-sm">
     <div class="max-w-[1400px] mx-auto px-4 sm:px-8 py-4 flex items-center gap-3">
-        <div class="flex items-center gap-3 select-none">
+        <div class="flex items-center gap-3 select-none min-w-0">
             <svg class="w-8 h-7 shrink-0" viewBox="0 0 30 26" aria-hidden="true"><path fill="#FA0F00" d="M19 0h11v26zM11.1 0H0v26zM15 9.6l7.1 16.4h-4.6l-2.1-5.2h-5.2z"/></svg>
-            <h1 class="brand-title">Guides Upload Utility</h1>
+            <h1 class="brand-title truncate" title="Guides Upload Utility">Guides Upload Utility</h1>
         </div>
-        <div class="ml-auto flex items-center gap-3">
+        <div class="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
             <div id="userMenu" class="hidden relative">
                 <button id="userMenuBtn" onclick="toggleUserMenu()" class="flex items-center gap-2 rounded-full pl-1 pr-3 py-1 hover:bg-gray-100 transition" aria-haspopup="true" aria-expanded="false">
                     <span id="userAvatar" class="user-avatar">?</span>
@@ -910,7 +915,7 @@
             </div>
             <button type="button" class="cloud-note-close" onclick="dismissCloudNote()">Got it</button>
         </div>
-        <div class="card bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <div class="relative card bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table class="w-full min-w-[760px] text-sm">
                 <thead class="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
                     <tr><th class="px-4 py-3">Package</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Built</th><th class="px-4 py-3 text-right">Actions</th></tr>
@@ -947,7 +952,7 @@
             </form>
             <p id="addMemberError" role="alert" class="hidden mt-2 text-xs text-red-600"></p>
         </div>
-        <div class="card bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <div class="relative card bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table class="w-full text-sm text-left min-w-[720px]">
                 <thead class="text-xs text-gray-500 uppercase tracking-wider bg-gray-50 border-b border-gray-100">
                     <tr><th class="px-4 py-3">Member</th><th class="px-4 py-3">Role</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Last sign-in</th><th class="px-4 py-3 text-right">Actions</th></tr>
@@ -983,7 +988,7 @@
                 </button>
             </div>
         </div>
-        <div id="histPanel" class="overflow-x-auto transition-all duration-200">
+        <div id="histPanel" class="relative overflow-x-auto transition-all duration-200">
             <!-- Search and filter controls -->
             <div id="histControls" class="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
                 <div class="relative flex-1 min-w-[200px] max-w-xs">
@@ -1835,6 +1840,8 @@ function showView(view) {
         b.classList.toggle('active', on);
         if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
+    const activeTab = document.querySelector('.nav-tabs .nav-item.active');
+    if (activeTab && activeTab.offsetParent) activeTab.scrollIntoView({ inline: 'nearest', block: 'nearest' });
     if (target === 'history') {
         const panel = document.getElementById('histPanel');
         if (panel && panel.classList.contains('hidden')) toggleHistory();
