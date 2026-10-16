@@ -16,6 +16,7 @@ const auth = require('./auth');
 const AemNames = require('./public/aem-names');
 const mailer = require('./lib/mailer');
 const packages = require('./lib/packages');
+const backup = require('./lib/backup');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
@@ -2239,6 +2240,11 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // ─── Start ───
 (async () => {
     uploadHistory = await loadHistoryFromDisk();
+    backup.scheduleBackups({
+        'users.json': auth.USERS_FILE,
+        'upload-history.json': HISTORY_FILE,
+        'packages.json': nodePath.join(packages.PACKAGES_DIR, 'packages.json'),
+    }, log);
     const tempFree = await getTempFreeBytes();
     const tls = TLS_CERT_FILE && TLS_KEY_FILE
         ? { cert: fs.readFileSync(TLS_CERT_FILE), key: fs.readFileSync(TLS_KEY_FILE) } : null;
