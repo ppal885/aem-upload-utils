@@ -242,9 +242,21 @@ Add `--source server` when the original upload used a server path or the CLI ins
 |---|---|
 | Skip existing assets | Supported for unchanged files (see Skip files already in AEM). |
 | Metadata mapping (title, tags, XMP) | Not supported. AEM auto-extracts basic metadata (dimensions, MIME type). |
-| Duplicate detection | Not supported. No pre-upload hash or AEM API check. |
+| Duplicate detection | Optional: **Skip files already in AEM** leaves out files whose path and content (SHA-1) match an asset already in AEM. Without it, existing assets are replaced. |
 | DAM workflow triggers | Not supported. AEM runs its default DAM Update Asset workflow. |
 | Asset processing profiles | Not configurable. Uses AEM server defaults. |
+
+## Tests
+
+`node test/run.js` starts a mock AEM (port 4620) and the app (port 3930) on a throwaway data folder, then runs every suite: package builder and backups, the account API, and the browser suites (Playwright for Python) for uploads, review, progress, folders, sign-up, packages, skip-unchanged, resume after a hard kill and the per-server queue. Name suites to run only those (`node test/run.js team high`, list them with `--list`). Logs go to `<work folder>/logs`; set `TEST_WORK_DIR` to choose the folder.
+
+```bash
+pip install -r test/requirements.txt
+python -m playwright install chromium
+node test/run.js
+```
+
+GitHub Actions runs the same suites on every pull request and every push to main, in three parallel groups (`.github/workflows/tests.yml`). A failed group keeps its logs as a build artifact for 7 days.
 
 ## Security Notes
 

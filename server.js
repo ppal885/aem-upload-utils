@@ -27,7 +27,7 @@ const TLS_KEY_FILE = process.env.TLS_KEY_FILE || '';
 // HTTPS_PORT equal to PORT serves both on one port (when the network only lets one port through)
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
 const HTTPS_ONLY = /^(1|true|yes)$/i.test(process.env.HTTPS_ONLY || '');
-const HISTORY_FILE = nodePath.join(__dirname, 'upload-history.json');
+const HISTORY_FILE = process.env.HISTORY_FILE ? nodePath.resolve(process.env.HISTORY_FILE) : nodePath.join(__dirname, 'upload-history.json');
 const MAX_HISTORY = parseInt(process.env.MAX_HISTORY, 10) || 5000;
 const MAX_HISTORY_PER_USER = parseInt(process.env.MAX_HISTORY_PER_USER, 10) || 200;
 const SSE_EVENT_CAP = parseInt(process.env.SSE_EVENT_CAP) || 10000;
