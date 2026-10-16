@@ -130,6 +130,15 @@ hashes into `index.html`). Hashed files are cached for a year; `index.html` is r
 Measured on a simulated VPN link (150 ms, 10 Mbit/s): 702 requests / 806 KB / 3.1 s fully loaded before,
 9 requests / 100 KB / 1.7 s after; repeat visits transfer about 2 KB.
 
+### Skip files already in AEM
+
+**Skip files already in AEM** (summary panel) uploads only new or changed files. Before the transfer one
+QueryBuilder search lists the assets under the DAM folder with `dam:sha1` (computed by AEM asset processing);
+a staged file is skipped when its AEM path and SHA-1 match. Assets AEM has not processed yet (no `dam:sha1`,
+e.g. uploaded minutes ago or installed from a package) are sent again, so a changed file is never skipped. If
+the search fails the upload sends everything and says so. History shows "+N skipped". Verified on an AEM Cloud
+stage author: re-uploading 50 files with 2 changed sent 2 and skipped 48.
+
 ### Fair queue per AEM server
 
 At most `MAX_UPLOADS_PER_SERVER` (default 3) uploads run against the same AEM host at a time; each already
@@ -231,7 +240,7 @@ Add `--source server` when the original upload used a server path or the CLI ins
 
 | Feature | Status |
 |---|---|
-| Skip existing assets | Not supported. Existing DAM assets are overwritten. |
+| Skip existing assets | Supported for unchanged files (see Skip files already in AEM). |
 | Metadata mapping (title, tags, XMP) | Not supported. AEM auto-extracts basic metadata (dimensions, MIME type). |
 | Duplicate detection | Not supported. No pre-upload hash or AEM API check. |
 | DAM workflow triggers | Not supported. AEM runs its default DAM Update Asset workflow. |

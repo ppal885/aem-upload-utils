@@ -594,6 +594,7 @@ setInterval(() => {
 }, SESSION_REAPER_INTERVAL_MS);
 
 function addHistoryRow(meta, row) {
+    if (meta && meta.skippedFiles) row.skippedFiles = meta.skippedFiles;
     uploadHistory.unshift({ ...row, owner: (meta && meta.owner) || null, ownerName: (meta && meta.ownerName) || null });
 }
 
@@ -1429,7 +1430,7 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
     const { damPath,
             maxConcurrent, maxUploadFiles,
             httpRetryCount, httpRetryDelay, httpRequestTimeout,
-            totalBytes, fileCount } = req.body;
+            totalBytes, fileCount, skipUnchanged } = req.body;
 
     if (!baseUrl || !damPath) {
         return res.status(400).json({ error: 'Missing baseUrl or damPath' });
@@ -1469,7 +1470,7 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
         tempDir,
         config: { baseUrl: normalizedInitUrl, damPath, username, password,
                   maxConcurrent, maxUploadFiles,
-                  httpRetryCount, httpRetryDelay, httpRequestTimeout },
+                  httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged: skipUnchanged === true },
         receivedFiles: 0,
         totalReceivedBytes: 0,
         relativePaths: [],
@@ -1678,6 +1679,93 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
 });
 
 // ─── API: chunked browser upload — finalize and start AEM upload ───
+// ─── Skip files that are already in AEM and unchanged ───
+// One QueryBuilder search lists the assets under the DAM folder with dam:sha1 (set by AEM asset processing);
+// a staged file whose AEM path and SHA-1 match is removed before the transfer. Assets without dam:sha1
+// (not processed yet, e.g. installed from a package) are uploaded again: a changed file is never skipped.
+const SKIP_QUERY_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function stagedTargets(contentChildren, damPath) {
+    const out = [];
+    const base = '/' + String(damPath).replace(/^\/+|\/+$/g, '');
+    const walk = async (abs, remote) => {
+        let st;
+        try { st = await fsPromises.stat(abs); } catch (_) { return; }
+        if (st.isFile()) { out.push({ local: abs, target: remote, size: st.size }); return; }
+        if (!st.isDirectory()) return;
+        for (const name of await fsPromises.readdir(abs)) {
+            if (AemNames.isSystemName(name) || name === RESUME_JOB_FILE) continue;
+            const child = nodePath.join(abs, name);
+            let cst;
+            try { cst = await fsPromises.stat(child); } catch (_) { continue; }
+            await walk(child, remote + '/' + (cst.isDirectory() ? AemNames.folderNodeName(name) : AemNames.assetNodeName(name)));
+        }
+    };
+    for (const c of contentChildren) {
+        const name = nodePath.basename(c);
+        let st;
+        try { st = await fsPromises.stat(c); } catch (_) { continue; }
+        await walk(c, base + '/' + (st.isDirectory() ? AemNames.folderNodeName(name) : AemNames.assetNodeName(name)));
+    }
+    return out;
+}
+
+function sha1OfFile(file) {
+    return new Promise((resolve, reject) => {
+        const h = crypto.createHash('sha1');
+        fs.createReadStream(file).on('error', reject).on('data', (d) => h.update(d)).on('end', () => resolve(h.digest('hex')));
+    });
+}
+
+async function aemAssetHashes(baseUrl, damPath, username, password) {
+    const q = new URLSearchParams({
+        path: '/' + String(damPath).replace(/^\/+|\/+$/g, ''), type: 'dam:Asset', 'p.limit': '-1', 'p.hits': 'selective',
+        'p.properties': 'jcr:path jcr:content/metadata/dam:sha1',
+    });
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), SKIP_QUERY_TIMEOUT_MS);
+    try {
+        const r = await fetch(`${baseUrl.replace(/\/+$/, '')}/bin/querybuilder.json?${q}`, {
+            headers: { Authorization: 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64') }, signal: ac.signal,
+        });
+        if (!r.ok) throw new Error(`AEM search answered HTTP ${r.status}`);
+        const j = await r.json();
+        const map = new Map();
+        for (const h of j.hits || []) {
+            const sha = h['jcr:content'] && h['jcr:content'].metadata && h['jcr:content'].metadata['dam:sha1'];
+            if (h['jcr:path'] && sha) map.set(h['jcr:path'], String(sha).toLowerCase());
+        }
+        return map;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function removeUnchangedStagedFiles({ baseUrl, damPath, username, password, contentChildren }) {
+    let inAem;
+    try {
+        inAem = await aemAssetHashes(baseUrl, damPath, username, password);
+    } catch (e) {
+        return { skipped: 0, checked: 0, error: e.name === 'AbortError' ? 'AEM search timed out' : e.message };
+    }
+    const files = (await stagedTargets(contentChildren, damPath)).filter((f) => inAem.has(f.target));
+    let skipped = 0;
+    let next = 0;
+    const worker = async () => {
+        while (next < files.length) {
+            const f = files[next++];
+            try {
+                if (await sha1OfFile(f.local) === inAem.get(f.target)) {
+                    await fsPromises.unlink(f.local);
+                    skipped++;
+                }
+            } catch (_) { /* unreadable: upload it */ }
+        }
+    };
+    await Promise.all(Array.from({ length: 8 }, worker));
+    return { skipped, checked: files.length };
+}
+
 // ─── Fair queue per AEM server ───
 // At most MAX_UPLOADS_PER_SERVER uploads run against one AEM host at a time (each already sends 32 files at
 // once); later ones wait in line and see their place. Uploads to other servers are not affected.
@@ -1740,7 +1828,7 @@ function releaseUploadSlot(baseUrl, uploadId) {
  */
 async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, password, settings, tempDir, contentChildren,
     receivedFiles, totalReceivedBytes, totalFilesOverall, sessionId, resumeOf, onStarted }) {
-    const { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout } = settings;
+    const { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged } = settings;
     // Determine target label
     let targetLabel = 'Custom';
     const match = Object.values(TARGETS).find(t => t.baseUrl === baseUrl);
@@ -1810,7 +1898,7 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
     // Everything needed to resume after a restart, except the AEM password (never stored)
     await writeResumeJob(tempDir, {
         jobId: resumeOf || uploadId, owner, ownerName, targetLabel, baseUrl, damPath, username,
-        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout },
+        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged },
         contentChildren, totalFiles: totalFilesOverall || receivedFiles, startedAt: new Date(startTime).toISOString(),
     });
 
@@ -1847,6 +1935,14 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
         if (!shuttingDown) cleanupTempDir(tempDir).catch(() => {});
         log.info(`Upload ${uploadId} cancelled while waiting in the queue`);
         return { uploadId };
+    }
+
+    if (skipUnchanged) {
+        broadcast('skipcheck', { state: 'checking' });
+        const skip = await removeUnchangedStagedFiles({ baseUrl, damPath, username, password, contentChildren });
+        uploadSession.meta.skippedFiles = skip.skipped;
+        broadcast('skipcheck', { state: skip.error ? 'failed' : 'done', skipped: skip.skipped, checked: skip.checked, error: skip.error });
+        log.info(`Upload ${uploadId}: skip-unchanged ${skip.error ? 'check failed (' + skip.error + '), uploading everything' : `skipped ${skip.skipped} of ${skip.checked} files already in AEM`}`);
     }
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
@@ -1987,7 +2083,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 
     const { baseUrl, damPath, username, password,
             maxConcurrent, maxUploadFiles,
-            httpRetryCount, httpRetryDelay, httpRequestTimeout } = session.config;
+            httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged } = session.config;
     const tempDir = session.tempDir;
     const receivedFiles = session.receivedFiles;
     const totalReceivedBytes = session.totalReceivedBytes;
@@ -2038,7 +2134,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 
     const started = await startAemUpload({
         owner: req.user.key, ownerName: req.user.name, baseUrl, damPath, username, password,
-        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout },
+        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged },
         tempDir, contentChildren, receivedFiles, totalReceivedBytes, sessionId,
         onStarted: (uploadId) => res.json({ uploadId }),
     });

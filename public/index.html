@@ -121,6 +121,9 @@
         .pkg-fields p { font-size: 12px; color: #64748b; line-height: 1.45; }
         .dark .pkg-fields input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
         .pkg-progress { margin: 10px 0 4px; }
+        .skip-row { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 4px; padding: 10px 12px; border-radius: 8px;
+            background: #f8fafc; border: 1px solid #e2e8f0; font-size: 13.5px; color: #1e293b; cursor: pointer; }
+        .dark .skip-row { background: #12121c; border-color: #2d2d44; color: #e2e8f0; }
         .queue-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; font-size: 13.5px;
             background: #f5f3ff; color: #4c1d95; border: 1px solid #ddd6fe; }
         .dark .queue-note { background: rgba(124, 58, 237, .12); color: #ddd6fe; border-color: rgba(124, 58, 237, .35); }
@@ -771,10 +774,6 @@
                 </div>
                 <div class="flex flex-col gap-3 mt-4 pt-4 border-t border-gray-100">
                     <div class="flex items-center gap-2">
-                        <input id="overwriteExisting" type="checkbox" checked class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
-                        <label for="overwriteExisting" class="text-sm text-gray-700 cursor-pointer select-none">Overwrite existing assets <span class="text-gray-400" title="When checked, files already in AEM DAM will be replaced. Uncheck to see a reminder before upload. Note: skip-existing requires AEM API integration and is not yet supported.">(replaces files in DAM if they already exist)</span></label>
-                    </div>
-                    <div class="flex items-center gap-2">
                         <input id="dryRun" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-adobe-blue accent-adobe-blue" />
                         <label for="dryRun" class="text-sm text-gray-700 cursor-pointer select-none">Dry run <span class="text-gray-400">(preview files without uploading)</span></label>
                     </div>
@@ -906,6 +905,11 @@
                         </div>
                         <p>A CRX content package (.zip) of the selected files, placed under the DAM folder. Install it in AEM yourself or from the Packages page. AEM sign-in is only needed to install.</p>
                     </div>
+                    <label id="skipUnchangedRow" class="skip-row" for="skipUnchanged">
+                        <input id="skipUnchanged" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 accent-adobe-blue" />
+                        <span><span class="font-semibold">Skip files already in AEM</span>
+                            <span class="block text-xs text-gray-500">Only new or changed files are sent (compared by path and content).</span></span>
+                    </label>
                     <div id="pkgProgress" class="hidden pkg-progress" role="status" aria-live="polite">
                         <div id="pkgProgressText" class="text-sm font-medium text-gray-700"></div>
                         <div class="pkg-bar"><div id="pkgProgressBar"></div></div>
@@ -1977,7 +1981,7 @@ function updateSummaryPanel() {
     if (skipLevels()) opts.push('Skips ' + skipLevels() + ' folder level' + (skipLevels() > 1 ? 's' : ''));
     if (workMode === 'package') opts.unshift('Build package');
     if (document.getElementById('dryRun').checked) opts.push('Dry run');
-    if (!document.getElementById('overwriteExisting').checked) opts.push('Overwrite reminder');
+    if (document.getElementById('skipUnchanged').checked) opts.push('Skip unchanged files');
     document.getElementById('sumOptions').textContent = opts.length ? opts.join(' · ') : 'Default';
 }
 
@@ -2065,7 +2069,8 @@ function showAuthCard(id) {
     if (carry.id && !carry.value && typed) carry.value = typed;
     if (id === 'forgotForm') document.getElementById('forgotDone').classList.add('hidden');
     const first = document.querySelector('#' + id + ' input:not([type=hidden]):not(.hidden)');
-    if (first) setTimeout(() => first.focus(), 30);
+    // Never pull the cursor away from a field the person already clicked into
+    if (first) setTimeout(() => { if (!document.getElementById(id).contains(document.activeElement)) first.focus(); }, 30);
 }
 
 let authOptionsLoaded = null;
@@ -2760,6 +2765,7 @@ function setWorkMode(mode) {
         b.setAttribute('aria-checked', String(on));
     });
     document.getElementById('packageFields').classList.toggle('hidden', !pkg);
+    document.getElementById('skipUnchangedRow').classList.toggle('hidden', pkg);
     document.getElementById('uploadBtnText').textContent = pkg ? 'Build package' : 'Start Upload';
     const name = document.getElementById('pkgName');
     if (pkg && !name.value) name.value = suggestedPackageName();
@@ -2982,10 +2988,9 @@ async function initiateUpload() {
     const largeTip = browserFileEntries.length > 5000
         ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + ') &mdash; each of the 8 pipelines sends at most 4 files at a time.</p>'
         : '';
-    const overwriteChecked = document.getElementById('overwriteExisting').checked;
-    const overwriteNote = !overwriteChecked
-        ? '<p class="mt-2 text-xs text-amber-600 bg-amber-50 rounded p-2">&#9888; Overwrite is disabled. Existing assets in AEM DAM will still be replaced (skip-existing is not yet supported). Uncheck is a reminder only.</p>'
-        : '';
+    const overwriteNote = document.getElementById('skipUnchanged').checked
+        ? '<p class="mt-2 text-xs text-gray-600 bg-gray-50 rounded p-2">Files already in AEM with the same content are skipped; new and changed files are uploaded.</p>'
+        : '<p class="mt-2 text-xs text-gray-500">Files that already exist in AEM are replaced.</p>';
     let maxUploadFiles = readIntField('maxUploadFiles', 100000, 100, 200000);
     if (browserFileEntries.length > maxUploadFiles) {
         maxUploadFiles = Math.max(browserFileEntries.length, maxUploadFiles);
@@ -3003,6 +3008,7 @@ async function initiateUpload() {
         httpRetryCount: readIntField('httpRetryCount', 5, 0, 10),
         httpRetryDelay: readIntField('httpRetryDelay', 8, 1, 30) * 1000,
         httpRequestTimeout: readIntField('httpRequestTimeout', 120, 10, 300) * 1000,
+        skipUnchanged: document.getElementById('skipUnchanged').checked,
     };
     // #20: a previous dialog (e.g. Clear All History) must not leave its handler or labels behind
     window._customConfirmHandler = null;
@@ -3121,6 +3127,7 @@ async function doBrowserUpload(config) {
             httpRetryCount: config.httpRetryCount,
             httpRetryDelay: config.httpRetryDelay,
             httpRequestTimeout: config.httpRequestTimeout,
+            skipUnchanged: config.skipUnchanged === true,
             totalBytes: totalSize,
             fileCount,
         }),
@@ -3591,7 +3598,7 @@ function setUploading(state) {
     // Disable/enable all input controls during upload to prevent accidental changes
     const controlIds = ['aemUrl', 'damPath', 'username', 'password',
         'maxConcurrent', 'maxUploadFiles', 'httpRetryCount', 'httpRetryDelay',
-        'httpRequestTimeout', 'dryRun', 'overwriteExisting', 'fileTypeFilter', 'skipLevels'];
+        'httpRequestTimeout', 'dryRun', 'skipUnchanged', 'fileTypeFilter', 'skipLevels'];
     controlIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = state;
@@ -3872,6 +3879,19 @@ function connectSSE(uploadId, isReconnect = false) {
         document.getElementById('queueNoticeTitle').textContent = 'Waiting for a free slot on ' + d.server + ': #' + d.position + ' in line';
         document.getElementById('queueNotice').classList.remove('hidden');
         document.getElementById('progressLabel').textContent = 'Waiting in queue (#' + d.position + ')';
+    });
+    es.addEventListener('skipcheck', (e) => {
+        const d = JSON.parse(e.data);
+        const label = document.getElementById('progressLabel');
+        if (d.state === 'checking') label.textContent = 'Checking which files are already in AEM…';
+        else if (d.state === 'done') {
+            window._skippedUnchanged = d.skipped;
+            label.textContent = 'Upload Progress';
+            if (d.skipped) showToast(d.skipped.toLocaleString() + ' file(s) skipped: already in AEM and unchanged', 'info');
+        } else {
+            label.textContent = 'Upload Progress';
+            showToast('Could not check AEM for existing files (' + (d.error || 'unknown error') + '); uploading all files', 'warn');
+        }
     });
     es.addEventListener('dequeued', () => {
         document.getElementById('queueNotice').classList.add('hidden');
@@ -4607,7 +4627,7 @@ function renderFilteredHistory() {
             <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs whitespace-nowrap">${esc(hostOf(h.baseUrl))}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
             <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-700 min-w-[180px] max-w-[320px]" title="/${esc(h.damPath)}">${pathWithBreaks('/' + h.damPath)}</td>
             <td data-col="localPath" class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap" title="${esc(h.localPath||'')}">${esc(shortSource(h.localPath))}</td>
-            <td data-col="files" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${Number(h.totalFiles || 0).toLocaleString()}</td>
+            <td data-col="files" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${Number(h.totalFiles || 0).toLocaleString()}${h.skippedFiles ? `<div class="text-gray-400" title="Already in AEM and unchanged">+${Number(h.skippedFiles).toLocaleString()} skipped</div>` : ''}</td>
             <td data-col="size" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${fmtBytes(h.totalBytes||0)}</td>
             <td data-col="duration" class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap tabular-nums">${fmtDuration(h.duration)}</td>
             <td data-col="status" class="px-4 py-3">${h.success
@@ -4898,7 +4918,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initDropZone();
     renderPresets();
     document.getElementById('damPath').addEventListener('input', () => { updateSkipTopFolderHint(); updateSummaryPanel(); });
-    ['dryRun', 'overwriteExisting'].forEach((id) => document.getElementById(id).addEventListener('change', updateSummaryPanel));
+    ['dryRun', 'skipUnchanged'].forEach((id) => document.getElementById(id).addEventListener('change', updateSummaryPanel));
     document.getElementById('damPath').addEventListener('input', updateSkipTopFolderHint);
     document.getElementById('damPath').addEventListener('blur', (e) => {
         const dam = AemNames.normalizeDamPath(e.target.value);
