@@ -121,6 +121,19 @@
         .pkg-fields p { font-size: 12px; color: #64748b; line-height: 1.45; }
         .dark .pkg-fields input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
         .pkg-progress { margin: 10px 0 4px; }
+        .resume-card { padding: 16px 18px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #1473E6; }
+        .resume-title { font-size: 15px; font-weight: 700; color: #1e3a8a; }
+        .resume-text { font-size: 13.5px; line-height: 1.5; color: #1e40af; margin-top: 2px; }
+        .resume-item { background: #fff; border: 1px solid #dbeafe; border-radius: 8px; padding: 10px 12px; }
+        .resume-item .meta { font-size: 13px; color: #334155; }
+        .resume-item .path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; color: #0f172a; overflow-wrap: anywhere; }
+        .resume-item input { height: 32px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-width: 0; flex: 1 1 180px; }
+        .resume-item .err { font-size: 12.5px; color: #b91c1c; }
+        .dark .resume-card { background: rgba(20, 115, 230, .10); border-color: rgba(20, 115, 230, .35); border-left-color: #1473E6; }
+        .dark .resume-title { color: #bfdbfe; } .dark .resume-text { color: #93c5fd; }
+        .dark .resume-item { background: #12121c; border-color: #2d2d44; }
+        .dark .resume-item .meta { color: #cbd5e1; } .dark .resume-item .path { color: #e2e8f0; }
+        .dark .resume-item input { background: #0b0b14; border-color: #3a3a55; color: #e2e8f0; }
         .cloud-note { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: 10px; background: #fffbeb;
             border: 1px solid #fde68a; border-left: 4px solid #e68619; color: #451a03; }
         .cloud-note-icon { width: 22px; height: 22px; flex-shrink: 0; color: #e68619; margin-top: 1px; }
@@ -553,6 +566,16 @@
         <div class="page-head">
             <h2>New upload</h2>
             <p>Send a folder from your computer to AEM Assets. Large uploads keep running on the server if you close this tab.</p>
+        </div>
+        <div id="interruptedBox" class="hidden resume-card mb-6" role="region" aria-labelledby="interruptedTitle">
+            <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 shrink-0 mt-0.5 text-adobe-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                <div class="min-w-0 flex-1">
+                    <h3 id="interruptedTitle" class="resume-title">Interrupted by a server restart</h3>
+                    <p class="resume-text">The files that had not reached AEM yet are still on the server. Enter the AEM password to continue where it stopped; nothing is sent again from your computer.</p>
+                    <div id="interruptedList" class="mt-3 flex flex-col gap-3"></div>
+                </div>
+            </div>
         </div>
         <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
             <div id="uploadColumn" class="flex flex-col gap-6 min-w-0">
@@ -1690,6 +1713,68 @@ function clearBrowserFiles() {
 }
 
 // ═══ Background Upload Recovery ═══
+// ═══ Uploads interrupted by a server restart ═══
+async function loadInterrupted() {
+    const box = document.getElementById('interruptedBox');
+    let jobs = [];
+    try {
+        const r = await fetch('/api/upload/interrupted');
+        if (r.ok) jobs = (await r.json()).jobs || [];
+    } catch (_) { /* shown next time */ }
+    box.classList.toggle('hidden', !jobs.length);
+    document.getElementById('interruptedList').innerHTML = jobs.map((j) => {
+        const done = Math.max(0, j.totalFiles - j.remaining);
+        const who = currentUser && j.owner !== currentUser.key ? ' &middot; ' + esc(j.ownerName || j.owner) : '';
+        const id = esc(j.id);
+        return '<div class="resume-item" data-job="' + id + '">'
+            + '<div class="path">' + esc(j.damPath) + ' <span class="meta">on ' + esc(hostOf(j.baseUrl)) + '</span></div>'
+            + '<div class="meta mt-1">' + done.toLocaleString() + ' of ' + j.totalFiles.toLocaleString() + ' files reached AEM; '
+            + '<strong>' + j.remaining.toLocaleString() + ' left</strong> &middot; started ' + esc(timeAgo(j.startedAt)) + who + '</div>'
+            + '<form class="mt-2 flex flex-wrap items-center gap-2" onsubmit="event.preventDefault(); resumeInterrupted(' + esc(JSON.stringify(j.id)) + ', this)">'
+            + '<input type="password" autocomplete="current-password" placeholder="AEM password for ' + esc(j.username) + '" aria-label="AEM password for ' + esc(j.username) + '" />'
+            + '<button type="submit" class="btn btn-accent btn-s">Resume</button>'
+            + '<button type="button" class="btn btn-secondary btn-outline btn-s" onclick="discardInterrupted(' + esc(JSON.stringify(j.id)) + ')">Discard</button>'
+            + '</form><div class="err hidden mt-1" role="alert"></div></div>';
+    }).join('');
+}
+
+async function resumeInterrupted(id, form) {
+    if (uploading) { showToast('Finish or cancel the running upload first', 'warn'); return; }
+    const input = form.querySelector('input');
+    const err = form.parentElement.querySelector('.err');
+    err.classList.add('hidden');
+    if (!input.value) { err.textContent = 'Enter the AEM password.'; err.classList.remove('hidden'); input.focus(); return; }
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    try {
+        const r = await fetch('/api/upload/interrupted/' + encodeURIComponent(id) + '/resume', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: input.value }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { err.textContent = toErrorMessage(j.error || 'HTTP ' + r.status); err.classList.remove('hidden'); return; }
+        input.value = '';
+        showToast('Resumed: ' + j.remaining.toLocaleString() + ' files left', 'success');
+        sessionStorage.setItem('activeUploadId', j.uploadId);
+        window._noAutoReconnectId = null;
+        await loadInterrupted();
+        checkForActiveUploads();
+    } catch (e) {
+        err.textContent = 'Could not reach the server. Try again.';
+        err.classList.remove('hidden');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Resume';
+    }
+}
+
+function discardInterrupted(id) {
+    showCustomConfirm('Discard interrupted upload', 'The files that did not reach AEM are deleted from the upload server. Files already in AEM stay. Continue?', async () => {
+        try { await fetch('/api/upload/interrupted/' + encodeURIComponent(id) + '/discard', { method: 'POST' }); } catch (_) { /* refresh shows the state */ }
+        loadInterrupted();
+    });
+}
+
 async function checkForActiveUploads() {
     const savedId = sessionStorage.getItem('activeUploadId');
     try {
@@ -2212,6 +2297,8 @@ function resetWorkspace() {
     hideTempPassword();
     document.getElementById('teamBody').innerHTML = '';
     document.getElementById('pkgBody').innerHTML = '';
+    document.getElementById('interruptedList').innerHTML = '';
+    document.getElementById('interruptedBox').classList.add('hidden');
     setPackageProgress(null);
     if (uploading) return;
     if (browserFileEntries && browserFileEntries.length) clearBrowserFiles();
@@ -2245,6 +2332,7 @@ function applySignedIn(user) {
     updateSummaryPanel();
     loadHistory();
     checkForActiveUploads();
+    loadInterrupted();
     // Re-evaluate the view for this account: a member must never stay on an admin page
     showView((location.hash || '').replace('#', '') || 'upload');
 }

@@ -228,8 +228,60 @@ async function sweepStaleTempDirs() {
     await fsPromises.mkdir(tmpBase, { recursive: true });
     const entries = await fsPromises.readdir(tmpBase, { withFileTypes: true });
     const stale = entries.filter((e) => e.isDirectory() && e.name.startsWith(TEMP_DIR_PREFIX));
-    for (const entry of stale) await cleanupTempDir(nodePath.join(tmpBase, entry.name));
-    if (stale.length > 0) log.info(`Removed ${stale.length} leftover temp dir(s) from ${tmpBase}`);
+    let removed = 0;
+    for (const entry of stale) {
+        const dir = nodePath.join(tmpBase, entry.name);
+        if (await registerInterruptedJob(dir)) continue;
+        await cleanupTempDir(dir);
+        removed++;
+    }
+    if (removed > 0) log.info(`Removed ${removed} leftover temp dir(s) from ${tmpBase}`);
+    if (interruptedJobs.size > 0) log.info(`${interruptedJobs.size} interrupted upload(s) can be resumed`);
+}
+
+// ─── Resume after a restart ───
+// Each running upload keeps job.json in its staging dir and deletes every staged file once AEM has it,
+// so after a restart the dir holds exactly the unfinished files. Resume needs the AEM password again.
+const RESUME_JOB_FILE = 'job.json';
+const RESUME_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
+const interruptedJobs = new Map();
+
+async function writeResumeJob(tempDir, job) {
+    const file = nodePath.join(tempDir, RESUME_JOB_FILE);
+    await fsPromises.writeFile(file + '.tmp', JSON.stringify(job));
+    await fsPromises.rename(file + '.tmp', file);
+}
+
+async function countFiles(paths) {
+    let n = 0;
+    const walk = async (p) => {
+        let st;
+        try { st = await fsPromises.stat(p); } catch (_) { return; }
+        if (st.isFile()) { n++; return; }
+        if (!st.isDirectory()) return;
+        for (const name of await fsPromises.readdir(p)) await walk(nodePath.join(p, name));
+    };
+    for (const p of paths) await walk(p);
+    return n;
+}
+
+/** True when dir held a resumable job (now listed in interruptedJobs); old or empty jobs are not kept. */
+async function registerInterruptedJob(dir) {
+    let job;
+    try { job = JSON.parse(await fsPromises.readFile(nodePath.join(dir, RESUME_JOB_FILE), 'utf8')); } catch (_) { return false; }
+    let mtime = 0;
+    try { mtime = (await fsPromises.stat(nodePath.join(dir, RESUME_JOB_FILE))).mtimeMs; } catch (_) { /* gone */ }
+    if (Date.now() - mtime > RESUME_KEEP_MS) return false;
+    const remaining = await countFiles(job.contentChildren || []);
+    if (remaining === 0) return false;
+    interruptedJobs.set(job.jobId, { ...job, tempDir: dir, remaining, interruptedAt: new Date(mtime).toISOString() });
+    log.info(`Interrupted upload ${job.jobId} (${job.owner}): ${remaining} of ${job.totalFiles} files left -> ${job.damPath}`);
+    return true;
+}
+
+function publicInterruptedJob(j) {
+    return { id: j.jobId, ownerName: j.ownerName, owner: j.owner, baseUrl: j.baseUrl, damPath: j.damPath, username: j.username,
+        totalFiles: j.totalFiles, remaining: j.remaining, startedAt: j.startedAt, interruptedAt: j.interruptedAt };
 }
 
 // Staging dirs that no live session owns and that are over a day old (a crash mid-upload, a killed
@@ -247,6 +299,7 @@ async function sweepOrphanTempDirs() {
         if (!e.isDirectory() || !e.name.startsWith(TEMP_DIR_PREFIX)) continue;
         const full = nodePath.resolve(tmpBase, e.name);
         if (owned.has(full)) continue;
+        if ([...interruptedJobs.values()].some((j) => nodePath.resolve(j.tempDir) === full)) continue;
         try {
             const st = await fsPromises.stat(full);
             if (Date.now() - st.mtimeMs < ORPHAN_TEMP_MAX_AGE_MS) continue;
@@ -1622,76 +1675,27 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
 });
 
 // ─── API: chunked browser upload — finalize and start AEM upload ───
-app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
-    // Extend request timeout — rearranging 50K files can take many minutes
-    req.setTimeout(30 * 60 * 1000);
-    if (res.req && res.req.socket) res.req.socket.setTimeout(30 * 60 * 1000);
-
-    const { sessionId } = req.body;
-    const ownedSession = browserUploadSessions.get(sessionId);
-    const session = ownedSession && auth.canAccess(req, ownedSession.owner) ? ownedSession : null;
-    if (!session) {
-        return res.status(404).json({ error: 'Upload session not found or expired' });
-    }
-    session.finalized = true;
-
-    if (session.receivedFiles === 0) {
-        cleanupTempDir(session.tempDir);
-        browserUploadSessions.delete(sessionId);
-        return res.status(400).json({ error: 'No files were uploaded in this session' });
-    }
-
-    const { baseUrl, damPath, username, password,
-            maxConcurrent, maxUploadFiles,
-            httpRetryCount, httpRetryDelay, httpRequestTimeout } = session.config;
-    const tempDir = session.tempDir;
-    const receivedFiles = session.receivedFiles;
-    const totalReceivedBytes = session.totalReceivedBytes;
-
-    log.info(`[finalize] Session ${sessionId}: ${receivedFiles} files, ${(totalReceivedBytes / 1048576).toFixed(1)} MB — starting rearrange`);
-    const rearrangeStart = Date.now();
-
-    // Rearrange files from flat staging into proper folder structure
-    let contentDir;
-    try {
-        contentDir = await rearrangeUploadedFiles(tempDir, session.files, session.relativePaths);
-        const rearrangeMs = Date.now() - rearrangeStart;
-        log.info(`[finalize] Session ${sessionId}: rearrange completed in ${(rearrangeMs / 1000).toFixed(1)}s at ${contentDir}`);
-    } catch (e) {
-        const rearrangeMs = Date.now() - rearrangeStart;
-        log.error(`[finalize] Session ${sessionId}: rearrange FAILED after ${(rearrangeMs / 1000).toFixed(1)}s — ${e.message}`);
-        cleanupTempDir(tempDir);
-        browserUploadSessions.delete(sessionId);
-        return res.status(500).json({ error: 'Failed to process uploaded files: ' + e.message });
-    }
-
-    // Free large arrays before deleting the session to help GC
-    session.files = [];
-    session.relativePaths = [];
-    session.config = null;
-    browserUploadSessions.delete(sessionId);
-
-    if (session.cancelRequested) {
-        log.info(`[finalize] Session ${sessionId}: cancelled while finalizing; AEM upload not started`);
-        cleanupTempDir(tempDir).catch(() => {});
-        return res.status(409).json({ error: 'Upload cancelled', code: 'CANCELLED' });
-    }
-
+/**
+ * Starts the AEM upload of files staged in tempDir (fresh from finalize, or what is left after a restart).
+ * Returns { uploadId } or { status, error }; onStarted(uploadId) runs as soon as the upload exists.
+ */
+async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, password, settings, tempDir, contentChildren,
+    receivedFiles, totalReceivedBytes, totalFilesOverall, sessionId, resumeOf, onStarted }) {
+    const { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout } = settings;
     // Determine target label
     let targetLabel = 'Custom';
     const match = Object.values(TARGETS).find(t => t.baseUrl === baseUrl);
     if (match) targetLabel = match.label;
 
     // Duplicate prevention
-    const uploadKey = getUploadKey(baseUrl, damPath, 'browser-chunk-' + sessionId);
+    const uploadKey = getUploadKey(baseUrl, damPath, 'browser-chunk-' + (sessionId || resumeOf));
     if (activeUploads.has(uploadKey)) {
-        cleanupTempDir(tempDir);
-        return res.status(409).json({ error: 'An upload to this target is already running' });
+        return { status: 409, error: 'An upload to this target is already running' };
     }
 
     const uploadId = crypto.randomUUID();
     const startTime = Date.now();
-    finalizedBrowserSessions.set(sessionId, uploadId);
+    if (sessionId) finalizedBrowserSessions.set(sessionId, uploadId);
 
     const uploadSession = {
         listeners: new Set(),
@@ -1706,12 +1710,13 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
         fileErrors: {},
         tempDir,
         meta: {
-            owner: req.user.key,
-            ownerName: req.user.name,
+            owner,
+            ownerName,
             target: targetLabel,
             baseUrl,
             damPath,
-            localPath: 'Browser upload (' + receivedFiles + ' files, ' + Math.round(totalReceivedBytes / 1048576) + ' MB)',
+            localPath: resumeOf ? `Resumed upload (${receivedFiles} files left)`
+                : 'Browser upload (' + receivedFiles + ' files, ' + Math.round(totalReceivedBytes / 1048576) + ' MB)',
             expectedFiles: receivedFiles,
             expectedBytes: totalReceivedBytes,
             startTime,
@@ -1721,7 +1726,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     uploadSessions.set(uploadId, uploadSession);
     activeUploads.set(uploadKey, uploadId);
 
-    res.json({ uploadId });
+    onStarted(uploadId);
 
     const broadcast = createBroadcast(uploadSession);
 
@@ -1733,33 +1738,24 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
         clamped.maxConcurrent = 4;
     }
 
-    // List children of contentDir so the library uploads contents directly
-    // into the DAM path without creating an extra wrapper folder.
-    let contentChildren = (await fsPromises.readdir(contentDir)).map(name => nodePath.join(contentDir, name));
-
-    // Prevent duplicate folder nesting: if contentChildren is a single directory
-    // whose name matches the last segment of damPath, unwrap it so the library
-    // uploads its contents directly into damPath rather than creating a duplicate subfolder.
-    if (contentChildren.length === 1) {
-        const childName = nodePath.basename(contentChildren[0]);
-        const damLastSeg = damPath.replace(/\/+$/, '').split('/').pop();
-        const childStat = await fsPromises.stat(contentChildren[0]);
-        if (childStat.isDirectory() && childName === damLastSeg) {
-            log.info(`[finalize] Unwrapping duplicate root folder "${childName}" (matches damPath tail)`);
-            contentChildren = (await fsPromises.readdir(contentChildren[0])).map(name => nodePath.join(contentChildren[0], name));
-        }
-    }
-
     const uploadConfig = {
         baseUrl,
         damPath,
         localPaths: contentChildren,
         username,
         password,
+        deleteStagedOnSuccess: true,
         ...clamped,
     };
 
-    log.info(`[finalize] Session ${sessionId}: rearrange done, starting AEM upload ${uploadId} (${contentChildren.length} top-level paths) → ${baseUrl}/${damPath}`);
+    // Everything needed to resume after a restart, except the AEM password (never stored)
+    await writeResumeJob(tempDir, {
+        jobId: resumeOf || uploadId, owner, ownerName, targetLabel, baseUrl, damPath, username,
+        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout },
+        contentChildren, totalFiles: totalFilesOverall || receivedFiles, startedAt: new Date(startTime).toISOString(),
+    });
+
+    log.info(`[${resumeOf ? 'resume' : 'finalize'}] ${resumeOf || sessionId}: starting AEM upload ${uploadId} (${contentChildren.length} top-level paths) → ${baseUrl}/${damPath}`);
 
     // Batch per-file events to avoid overwhelming SSE/client with 17K+ individual messages
     let fileBatchQueue = [];
@@ -1882,15 +1878,145 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     }).finally(() => {
         uploadSession.done = true;
         uploadSession.runSettled = true;
-        finalizedBrowserSessions.delete(sessionId);
+        if (sessionId) finalizedBrowserSessions.delete(sessionId);
         uploadSession.doneTime = Date.now();
         if (activeUploads.get(uploadKey) === uploadId) activeUploads.delete(uploadKey);
-        setTimeout(() => cleanupTempDir(tempDir).catch(() => {}), 30000);
+        // A shutdown leaves the staged files for Resume; a finished, failed or cancelled run removes them
+        if (!shuttingDown) setTimeout(() => cleanupTempDir(tempDir).catch(() => {}), 30000);
         setTimeout(() => {
             uploadSession.events = [];
             uploadSession.fileErrors = {};
         }, 60000);
     });
+    return { uploadId };
+}
+
+app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
+    // Extend request timeout — rearranging 50K files can take many minutes
+    req.setTimeout(30 * 60 * 1000);
+    if (res.req && res.req.socket) res.req.socket.setTimeout(30 * 60 * 1000);
+
+    const { sessionId } = req.body;
+    const ownedSession = browserUploadSessions.get(sessionId);
+    const session = ownedSession && auth.canAccess(req, ownedSession.owner) ? ownedSession : null;
+    if (!session) {
+        return res.status(404).json({ error: 'Upload session not found or expired' });
+    }
+    session.finalized = true;
+
+    if (session.receivedFiles === 0) {
+        cleanupTempDir(session.tempDir);
+        browserUploadSessions.delete(sessionId);
+        return res.status(400).json({ error: 'No files were uploaded in this session' });
+    }
+
+    const { baseUrl, damPath, username, password,
+            maxConcurrent, maxUploadFiles,
+            httpRetryCount, httpRetryDelay, httpRequestTimeout } = session.config;
+    const tempDir = session.tempDir;
+    const receivedFiles = session.receivedFiles;
+    const totalReceivedBytes = session.totalReceivedBytes;
+
+    log.info(`[finalize] Session ${sessionId}: ${receivedFiles} files, ${(totalReceivedBytes / 1048576).toFixed(1)} MB — starting rearrange`);
+    const rearrangeStart = Date.now();
+
+    // Rearrange files from flat staging into proper folder structure
+    let contentDir;
+    try {
+        contentDir = await rearrangeUploadedFiles(tempDir, session.files, session.relativePaths);
+        const rearrangeMs = Date.now() - rearrangeStart;
+        log.info(`[finalize] Session ${sessionId}: rearrange completed in ${(rearrangeMs / 1000).toFixed(1)}s at ${contentDir}`);
+    } catch (e) {
+        const rearrangeMs = Date.now() - rearrangeStart;
+        log.error(`[finalize] Session ${sessionId}: rearrange FAILED after ${(rearrangeMs / 1000).toFixed(1)}s — ${e.message}`);
+        cleanupTempDir(tempDir);
+        browserUploadSessions.delete(sessionId);
+        return res.status(500).json({ error: 'Failed to process uploaded files: ' + e.message });
+    }
+
+    // Free large arrays before deleting the session to help GC
+    session.files = [];
+    session.relativePaths = [];
+    session.config = null;
+    browserUploadSessions.delete(sessionId);
+
+    if (session.cancelRequested) {
+        log.info(`[finalize] Session ${sessionId}: cancelled while finalizing; AEM upload not started`);
+        cleanupTempDir(tempDir).catch(() => {});
+        return res.status(409).json({ error: 'Upload cancelled', code: 'CANCELLED' });
+    }
+
+    let contentChildren = (await fsPromises.readdir(contentDir)).map(name => nodePath.join(contentDir, name));
+
+    // Prevent duplicate folder nesting: if contentChildren is a single directory
+    // whose name matches the last segment of damPath, unwrap it so the library
+    // uploads its contents directly into damPath rather than creating a duplicate subfolder.
+    if (contentChildren.length === 1) {
+        const childName = nodePath.basename(contentChildren[0]);
+        const damLastSeg = damPath.replace(/\/+$/, '').split('/').pop();
+        const childStat = await fsPromises.stat(contentChildren[0]);
+        if (childStat.isDirectory() && childName === damLastSeg) {
+            log.info(`[finalize] Unwrapping duplicate root folder "${childName}" (matches damPath tail)`);
+            contentChildren = (await fsPromises.readdir(contentChildren[0])).map(name => nodePath.join(contentChildren[0], name));
+        }
+    }
+
+    const started = await startAemUpload({
+        owner: req.user.key, ownerName: req.user.name, baseUrl, damPath, username, password,
+        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout },
+        tempDir, contentChildren, receivedFiles, totalReceivedBytes, sessionId,
+        onStarted: (uploadId) => res.json({ uploadId }),
+    });
+    if (started.error) {
+        cleanupTempDir(tempDir);
+        res.status(started.status || 500).json({ error: started.error });
+    }
+});
+
+// ─── API: uploads interrupted by a server restart ───
+app.get('/api/upload/interrupted', (req, res) => {
+    res.json({ jobs: [...interruptedJobs.values()].filter((j) => auth.canAccess(req, j.owner)).map(publicInterruptedJob) });
+});
+
+app.post('/api/upload/interrupted/:id/resume', uploadLimiter, async (req, res) => {
+    const job = interruptedJobs.get(req.params.id);
+    if (!job || !auth.canAccess(req, job.owner)) return res.status(404).json({ error: 'Interrupted upload not found' });
+    const password = (req.body || {}).password;
+    const username = ((req.body || {}).username || job.username || '').trim();
+    if (!password) return res.status(400).json({ error: 'Enter the AEM password to resume' });
+    const cred = await checkAemCredentials(job.baseUrl, username, password);
+    if (!cred.ok) return res.status(400).json({ error: cred.error, code: cred.code });
+    const contentChildren = [];
+    for (const p of job.contentChildren || []) { try { await fsPromises.stat(p); contentChildren.push(p); } catch (_) { /* finished */ } }
+    const remaining = await countFiles(contentChildren);
+    if (!remaining) {
+        interruptedJobs.delete(job.jobId);
+        cleanupTempDir(job.tempDir).catch(() => {});
+        return res.status(409).json({ error: 'Nothing left to upload: all files reached AEM before the restart.' });
+    }
+    interruptedJobs.delete(job.jobId);
+    let answered = false;
+    const started = await startAemUpload({
+        owner: job.owner, ownerName: job.ownerName, baseUrl: job.baseUrl, damPath: job.damPath, username, password,
+        settings: job.settings || {}, tempDir: job.tempDir, contentChildren, receivedFiles: remaining, totalReceivedBytes: 0,
+        totalFilesOverall: job.totalFiles, resumeOf: job.jobId,
+        onStarted: (uploadId) => { answered = true; res.json({ uploadId, remaining }); },
+    });
+    if (started.error) {
+        interruptedJobs.set(job.jobId, job);
+        if (!answered) res.status(started.status || 500).json({ error: started.error });
+        return;
+    }
+    log.info(`Resumed interrupted upload ${job.jobId}: ${remaining} files left (by ${req.user.key})`);
+});
+
+app.post('/api/upload/interrupted/:id/discard', (req, res) => {
+    const job = interruptedJobs.get(req.params.id);
+    if (!job || !auth.canAccess(req, job.owner)) return res.status(404).json({ error: 'Interrupted upload not found' });
+    interruptedJobs.delete(job.jobId);
+    cleanupTempDir(job.tempDir).catch(() => {});
+    log.info(`Interrupted upload ${job.jobId} discarded by ${req.user.key}`);
+    res.json({ message: 'Discarded' });
 });
 
 // ─── API: cancel upload ───
@@ -2173,7 +2299,10 @@ app.use((err, req, res, _next) => {
 let server;
 let httpsServer;
 
+let shuttingDown = false;
+
 async function shutdown(signal) {
+    shuttingDown = true;
     log.info(`${signal} received. Shutting down gracefully...`);
     uploadSessions.forEach((session, uploadId) => {
         if (session.done) return;
@@ -2190,7 +2319,7 @@ async function shutdown(signal) {
             success: false,
             partial: false,
             errorCount: session.failedFiles || 0,
-            errors: ['Interrupted: the upload server was stopped or restarted during this upload'],
+            errors: ['Interrupted: the upload server was stopped or restarted during this upload. Resume it from New upload.'],
             interrupted: true,
             cancelled: false,
             duration: Date.now() - meta.startTime,
@@ -2205,7 +2334,8 @@ async function shutdown(signal) {
     // Clean up temp directories from in-progress browser uploads
     const cleanupPromises = [];
     uploadSessions.forEach((session) => {
-        if (session.tempDir) cleanupPromises.push(cleanupTempDir(session.tempDir));
+        // A running upload's staged files stay for Resume (see writeResumeJob)
+        if (session.tempDir && session.done) cleanupPromises.push(cleanupTempDir(session.tempDir));
         session.listeners.forEach((sseRes) => {
             try { sseRes.end(); } catch (_) {}
         });

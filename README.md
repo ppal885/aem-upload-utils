@@ -125,16 +125,29 @@ hashes into `index.html`). Hashed files are cached for a year; `index.html` is r
 Measured on a simulated VPN link (150 ms, 10 Mbit/s): 702 requests / 806 KB / 3.1 s fully loaded before,
 9 requests / 100 KB / 1.7 s after; repeat visits transfer about 2 KB.
 
+### Resume after a restart
+
+Every running upload keeps a `job.json` (AEM server, DAM folder, AEM user, options; never the AEM password) in
+its staging folder and deletes each staged file as soon as AEM confirms it. If the server stops, crashes or is
+redeployed, the staging folder therefore holds exactly the unfinished files. After the restart the person who
+started it (and admins) see **Interrupted by a server restart** on New upload with *N of M files reached AEM*;
+**Resume** asks only for the AEM password and uploads the rest from the server, nothing is sent again from the
+browser. **Discard** deletes the leftover files. Interrupted uploads are kept 3 days.
+
+Tested by hard-killing the server at 909 of 3,000 files: after Resume all 3,000 were in AEM, 8 sent twice
+(those in flight at the kill).
+
 ### Deploying a new version with PM2
 
-Check that nothing is uploading (`curl -s http://<host>:3000/api/upload/active` prints `[]`), then:
+Prefer a moment with nothing uploading (`/api/health` shows `"activeUploads":0`). A restart during an upload
+is no longer fatal (see Resume after a restart), but the person then has to click Resume.
 
 ```bash
 git pull && pm2 delete aem-upload-utils && pm2 start ecosystem.config.cjs && pm2 save
 ```
 
 `pm2 restart` keeps the old process settings, so changes to `ecosystem.config.cjs` (staging folder, fork mode)
-only take effect with `delete` + `start`. A restart during an upload stops it; it is recorded in history as interrupted.
+only take effect with `delete` + `start`. An upload running during the restart is recorded as interrupted and can be resumed.
 
 ## CLI Usage
 
