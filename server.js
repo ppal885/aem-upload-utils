@@ -16,6 +16,7 @@ const auth = require('./auth');
 const AemNames = require('./public/aem-names');
 const mailer = require('./lib/mailer');
 const packages = require('./lib/packages');
+const backup = require('./lib/backup');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
@@ -245,6 +246,8 @@ async function sweepStaleTempDirs() {
 const RESUME_JOB_FILE = 'job.json';
 const RESUME_KEEP_MS = 3 * 24 * 60 * 60 * 1000;
 const interruptedJobs = new Map();
+// Finding interrupted jobs counts their files, which takes a moment; requests wait for it
+let startupScan = Promise.resolve();
 
 async function writeResumeJob(tempDir, job) {
     const file = nodePath.join(tempDir, RESUME_JOB_FILE);
@@ -1974,11 +1977,13 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 });
 
 // ─── API: uploads interrupted by a server restart ───
-app.get('/api/upload/interrupted', (req, res) => {
+app.get('/api/upload/interrupted', async (req, res) => {
+    await startupScan;
     res.json({ jobs: [...interruptedJobs.values()].filter((j) => auth.canAccess(req, j.owner)).map(publicInterruptedJob) });
 });
 
 app.post('/api/upload/interrupted/:id/resume', uploadLimiter, async (req, res) => {
+    await startupScan;
     const job = interruptedJobs.get(req.params.id);
     if (!job || !auth.canAccess(req, job.owner)) return res.status(404).json({ error: 'Interrupted upload not found' });
     const password = (req.body || {}).password;
@@ -2369,6 +2374,11 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // ─── Start ───
 (async () => {
     uploadHistory = await loadHistoryFromDisk();
+    backup.scheduleBackups({
+        'users.json': auth.USERS_FILE,
+        'upload-history.json': HISTORY_FILE,
+        'packages.json': nodePath.join(packages.PACKAGES_DIR, 'packages.json'),
+    }, log);
     const tempFree = await getTempFreeBytes();
     const tls = TLS_CERT_FILE && TLS_KEY_FILE
         ? { cert: fs.readFileSync(TLS_CERT_FILE), key: fs.readFileSync(TLS_KEY_FILE) } : null;
@@ -2408,7 +2418,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
     }
     server = listener.listen(PORT, () => {
         // Only after the port is ours: a second instance must not delete the running one's temp dirs
-        sweepStaleTempDirs().catch((e) => log.warn('Temp dir sweep failed:', e.message));
+        startupScan = sweepStaleTempDirs().catch((e) => log.warn('Temp dir sweep failed:', e.message));
         log.info(`GUIdes Upload Utility running at http://localhost:${PORT}`);
         log.info(`Platform: ${process.platform}, Node: ${process.version}, PID: ${process.pid}`);
         log.info(`Heap limit: ${(require('v8').getHeapStatistics().heap_size_limit / 1048576).toFixed(0)} MB`);

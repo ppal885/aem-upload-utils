@@ -97,6 +97,11 @@ content that arrives in a package (no renditions, no Guides post-processing). Af
 
 ### Housekeeping
 
+- **Backups:** once a day the server copies `users.json`, `upload-history.json` and the package list into
+  `BACKUP_DIR/<date>/` (default `<app>/backups`, git-ignored) and keeps `BACKUP_KEEP_DAYS` (default 14) days.
+  To restore, stop the app and copy the files back. The copies are on the same disk; copy the folder elsewhere
+  as well if the VM itself could be lost.
+
 - Staging folders are removed after every upload; abandoned sessions are reaped, and orphaned staging folders
   older than a day are swept every hour (and at start-up).
 - An upload or package build that would not fit on the staging disk is refused up front.
