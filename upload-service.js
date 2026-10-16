@@ -347,6 +347,9 @@ function runUpload(config, eventCallback) {
     let filesDone = 0;
     let plannedFiles = 0;
     let lastSummaryLog = Date.now();
+    // AEM path -> staged local file, so a finished file can be removed (what is left after a restart is
+    // exactly the unfinished work; see the resume job in server.js)
+    const stagedByTarget = new Map();
 
     let lastProgressBroadcast = 0;
     let pendingProgressData = null;
@@ -429,6 +432,11 @@ function runUpload(config, eventCallback) {
                 delete fileBytes[data.fileName];
                 svcLog.debug(`fileend: ${data.fileName} (${((fileSize) / 1024).toFixed(1)} KB)`);
                 filesDone++;
+                const staged = data.targetFile && stagedByTarget.get(data.targetFile);
+                if (staged) {
+                    stagedByTarget.delete(data.targetFile);
+                    fsPromises.unlink(staged).catch(() => {});
+                }
                 if (Date.now() - lastSummaryLog >= 60000) {
                     lastSummaryLog = Date.now();
                     const secs = (Date.now() - uploadStartTime) / 1000;
@@ -564,6 +572,11 @@ function runUpload(config, eventCallback) {
         });
         const uploadFiles = fsUpload.convertToUploadFilesWithUrl(options, files);
         plannedFiles = uploadFiles.length;
+        if (config.deleteStagedOnSuccess) {
+            uploadFiles.forEach((info) => {
+                try { stagedByTarget.set(decodeURIComponent(new URL(info.fileUrl).pathname), info.filePath); } catch (_) {}
+            });
+        }
         // The library skips temp/hidden files (".*", "~*", "*.tmp", Thumbs.db, ...), so tell the caller the real totals
         if (eventCallback) {
             try {
