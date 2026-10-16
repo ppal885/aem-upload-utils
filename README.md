@@ -130,6 +130,14 @@ hashes into `index.html`). Hashed files are cached for a year; `index.html` is r
 Measured on a simulated VPN link (150 ms, 10 Mbit/s): 702 requests / 806 KB / 3.1 s fully loaded before,
 9 requests / 100 KB / 1.7 s after; repeat visits transfer about 2 KB.
 
+### Fair queue per AEM server
+
+At most `MAX_UPLOADS_PER_SERVER` (default 3) uploads run against the same AEM host at a time; each already
+sends 32 files at once (8 pipelines x 4). Further uploads to that host wait in line: the progress panel shows
+*Waiting for a free slot on <host>: #2 in line*, the background banner shows the place too, and the upload
+starts by itself when a slot frees up. Waiting uploads send nothing to AEM; Cancel just leaves the line.
+Uploads to other AEM servers are not held up. Resumed uploads join the same line.
+
 ### Resume after a restart
 
 Every running upload keeps a `job.json` (AEM server, DAM folder, AEM user, options; never the AEM password) in

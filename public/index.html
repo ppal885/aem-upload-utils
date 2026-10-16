@@ -121,6 +121,9 @@
         .pkg-fields p { font-size: 12px; color: #64748b; line-height: 1.45; }
         .dark .pkg-fields input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
         .pkg-progress { margin: 10px 0 4px; }
+        .queue-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; font-size: 13.5px;
+            background: #f5f3ff; color: #4c1d95; border: 1px solid #ddd6fe; }
+        .dark .queue-note { background: rgba(124, 58, 237, .12); color: #ddd6fe; border-color: rgba(124, 58, 237, .35); }
         .resume-card { padding: 16px 18px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #1473E6; }
         .resume-title { font-size: 15px; font-weight: 700; color: #1e3a8a; }
         .resume-text { font-size: 13.5px; line-height: 1.5; color: #1e40af; margin-top: 2px; }
@@ -278,7 +281,7 @@
         }
     </style>
     <!-- after the page styles, so utilities such as "hidden" win, as with the old in-browser Tailwind -->
-    <link rel="stylesheet" href="app.css?v=2cdab3c5bd" />
+    <link rel="stylesheet" href="app.css?v=933be963ab" />
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
 <div id="appRoot">
@@ -860,6 +863,11 @@
                 </div>
             </div>
             <div class="px-6 py-4">
+                <div id="queueNotice" class="hidden queue-note mb-4" role="status" aria-live="polite">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <div><div id="queueNoticeTitle" class="font-semibold"></div>
+                        <div class="text-xs mt-0.5 opacity-90">Several uploads are already running on this AEM server. Yours starts by itself when a slot frees up; your files are safe on the upload server, and you can close this tab.</div></div>
+                </div>
                 <!-- Progress bar -->
                 <div class="mb-4">
                     <div class="flex justify-between text-xs text-gray-500 mb-1">
@@ -1801,7 +1809,9 @@ function showActiveBanner(upload) {
     if (bannerDismissed && upload.uploadId === window._dismissedBannerUploadId) return;
     const fileTotal = Math.max(upload.totalFiles || 0, upload.expectedFiles || 0);
     const pct = fileTotal > 0 ? Math.min(99, Math.round((upload.completedFiles / fileTotal) * 100)) : 0;
-    const text = upload.target + ' — ' + upload.completedFiles + '/' + fileTotal + ' files (' + pct + '%) — ' + fmtDuration(upload.elapsedMs);
+    const text = upload.queuePosition
+        ? upload.target + ' — waiting in queue (#' + upload.queuePosition + ') — ' + fmtDuration(upload.elapsedMs)
+        : upload.target + ' — ' + upload.completedFiles + '/' + fileTotal + ' files (' + pct + '%) — ' + fmtDuration(upload.elapsedMs);
     document.getElementById('activeBannerText').textContent = 'Background upload: ' + text;
     document.getElementById('activeUploadsBanner').classList.remove('hidden');
     window._activeBannerUploadId = upload.uploadId;
@@ -3635,6 +3645,7 @@ function resetProgress() {
     progBar.classList.remove('bg-green-500');
     progBar.classList.add('bg-adobe-blue');
     document.getElementById('progressLabel').textContent = 'Upload Progress';
+    document.getElementById('queueNotice').classList.add('hidden');
     document.getElementById('progressPct').textContent = '0%';
     document.getElementById('statUploaded').textContent = '0';
     document.getElementById('statRemaining').textContent = '0';
@@ -3855,6 +3866,17 @@ function connectSSE(uploadId, isReconnect = false) {
     activeUploadEventSource = es;
     let reconnects = 0;
     let _doneReceived = false;
+
+    es.addEventListener('queued', (e) => {
+        const d = JSON.parse(e.data);
+        document.getElementById('queueNoticeTitle').textContent = 'Waiting for a free slot on ' + d.server + ': #' + d.position + ' in line';
+        document.getElementById('queueNotice').classList.remove('hidden');
+        document.getElementById('progressLabel').textContent = 'Waiting in queue (#' + d.position + ')';
+    });
+    es.addEventListener('dequeued', () => {
+        document.getElementById('queueNotice').classList.add('hidden');
+        document.getElementById('progressLabel').textContent = 'Upload Progress';
+    });
 
     es.addEventListener('uploadplan', (e) => {
         const d = JSON.parse(e.data);
@@ -4080,6 +4102,7 @@ function showSummary(success, totalFiles, errorCount, duration, errors, cancelle
         : partialDone ? finalPct + '% — Partially Uploaded'
         : finalPct + '% — Upload Failed';
     document.getElementById('progressLabel').textContent = doneLabel;
+    document.getElementById('queueNotice').classList.add('hidden');
     document.getElementById('progressPct').textContent = finalPct + '%';
     if (success) progBar.classList.replace('bg-adobe-blue', 'bg-green-500');
 
