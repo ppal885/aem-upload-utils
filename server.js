@@ -1678,6 +1678,62 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
 });
 
 // ─── API: chunked browser upload — finalize and start AEM upload ───
+// ─── Fair queue per AEM server ───
+// At most MAX_UPLOADS_PER_SERVER uploads run against one AEM host at a time (each already sends 32 files at
+// once); later ones wait in line and see their place. Uploads to other servers are not affected.
+const MAX_UPLOADS_PER_SERVER = Math.max(1, parseInt(process.env.MAX_UPLOADS_PER_SERVER, 10) || 3);
+const serverSlots = new Map();
+
+function slotKey(baseUrl) {
+    try { return new URL(baseUrl).host.toLowerCase(); } catch (_) { return String(baseUrl).toLowerCase(); }
+}
+
+function slotsFor(key) {
+    if (!serverSlots.has(key)) serverSlots.set(key, { running: new Set(), waiting: [] });
+    return serverSlots.get(key);
+}
+
+function announceQueue(key) {
+    const s = slotsFor(key);
+    s.waiting.forEach((w, i) => {
+        w.session.queuePosition = i + 1;
+        w.broadcast('queued', { position: i + 1, running: s.running.size, server: key });
+    });
+}
+
+/** Resolves true when the upload may start, false when it was cancelled while waiting. */
+function acquireUploadSlot(baseUrl, uploadId, session, broadcast) {
+    const key = slotKey(baseUrl);
+    const s = slotsFor(key);
+    if (s.running.size < MAX_UPLOADS_PER_SERVER) {
+        s.running.add(uploadId);
+        return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+        s.waiting.push({ uploadId, session, broadcast, resolve });
+        log.info(`Upload ${uploadId} waiting for ${key}: #${s.waiting.length} in line (${s.running.size} running)`);
+        announceQueue(key);
+    });
+}
+
+function releaseUploadSlot(baseUrl, uploadId) {
+    const key = slotKey(baseUrl);
+    const s = slotsFor(key);
+    s.running.delete(uploadId);
+    const i = s.waiting.findIndex((w) => w.uploadId === uploadId);
+    if (i >= 0) s.waiting.splice(i, 1)[0].resolve(false);
+    while (s.running.size < MAX_UPLOADS_PER_SERVER && s.waiting.length) {
+        const next = s.waiting.shift();
+        s.running.add(next.uploadId);
+        next.session.queuePosition = 0;
+        next.broadcast('dequeued', { server: key });
+        log.info(`Upload ${next.uploadId} leaves the queue for ${key}`);
+        next.resolve(true);
+    }
+    announceQueue(key);
+    if (!s.running.size && !s.waiting.length) serverSlots.delete(key);
+}
+
 /**
  * Starts the AEM upload of files staged in tempDir (fresh from finalize, or what is left after a restart).
  * Returns { uploadId } or { status, error }; onStarted(uploadId) runs as soon as the upload exists.
@@ -1776,6 +1832,21 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
             completedFiles: uploadSession.completedFiles,
             failedFiles: uploadSession.failedFiles,
         });
+    }
+
+    // Wait for a free slot on this AEM server; Cancel while waiting just leaves the line
+    uploadSession.cancelFn = () => releaseUploadSlot(baseUrl, uploadId);
+    const gotSlot = await acquireUploadSlot(baseUrl, uploadId, uploadSession, broadcast);
+    if (!gotSlot || uploadSession.userCancelled || shuttingDown) {
+        if (gotSlot) releaseUploadSlot(baseUrl, uploadId);
+        uploadSession.done = true;
+        uploadSession.runSettled = true;
+        uploadSession.doneTime = Date.now();
+        if (sessionId) finalizedBrowserSessions.delete(sessionId);
+        if (activeUploads.get(uploadKey) === uploadId) activeUploads.delete(uploadKey);
+        if (!shuttingDown) cleanupTempDir(tempDir).catch(() => {});
+        log.info(`Upload ${uploadId} cancelled while waiting in the queue`);
+        return { uploadId };
     }
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
@@ -1879,6 +1950,7 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
             });
         } catch (e) { log.error('broadcast error in chunked browser .catch:', e.message); }
     }).finally(() => {
+        releaseUploadSlot(baseUrl, uploadId);
         uploadSession.done = true;
         uploadSession.runSettled = true;
         if (sessionId) finalizedBrowserSessions.delete(sessionId);
@@ -2117,6 +2189,7 @@ app.get('/api/upload/active', (req, res) => {
                 expectedBytes: session.meta.expectedBytes,
                 completedFiles: session.completedFiles,
                 failedFiles: session.failedFiles,
+                queuePosition: session.queuePosition || 0,
                 elapsedMs: Date.now() - session.meta.startTime,
             });
         }
