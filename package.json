@@ -7,7 +7,8 @@
     "start": "node --max-old-space-size=4096 server.js",
     "start:low": "node --max-old-space-size=2048 server.js",
     "test": "node tools/test-package-builder.js && node tools/test-backup.js",
-    "build:css": "node tools/build-css.js"
+    "build:css": "node tools/build-css.js",
+    "test:all": "node test/run.js"
   },
   "dependencies": {
     "@adobe/aem-upload": "2.0.3",
