@@ -935,9 +935,15 @@ app.post('/api/admin/users/:email', auth.requireAdmin, (req, res) => {
 });
 
 // ─── API: health check ───
+// Changes when a new version of the page is deployed: open tabs offer to refresh (see checkConnection in the page)
+const BUILD_ID = (() => {
+    try { return crypto.createHash('sha1').update(fs.readFileSync(nodePath.join(__dirname, 'public', 'index.html'))).digest('hex').slice(0, 12); } catch (_) { return String(Date.now()); }
+})();
+
 app.get('/api/health', (_req, res) => {
     res.json({
         status: 'ok',
+        version: BUILD_ID,
         uptime: Math.floor(process.uptime()),
         activeUploads: uploadSessions.size,
         historyCount: uploadHistory.length,
