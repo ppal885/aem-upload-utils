@@ -32,6 +32,11 @@
         return String(name).normalize('NFC').replace(INVALID_FOLDER, '-').replace(INVALID_ANY, '-');
     }
 
+    // "Keep names exactly" (and copies from another AEM): only what JCR can never store is replaced
+    function keepNodeName(name) {
+        return String(name).normalize('NFC').replace(INVALID_ANY, '-');
+    }
+
     // Same split as Node's path.parse: the extension is kept as it is, only the base name is cleaned
     function assetNodeName(name) {
         const n = String(name).normalize('NFC');
@@ -83,7 +88,7 @@
     }
 
     // Where each file lands in AEM, which names change, which clash and which are too long
-    function planUpload(relPaths, damPath, levels) {
+    function planUpload(relPaths, damPath, levels, keepNames) {
         const dam = '/' + String(damPath || '').replace(/^\/+|\/+$/g, '');
         const damTail = dam.split('/').pop();
         let paths = relPaths.map((p) => stripLevels(String(p).normalize('NFC'), levels || 0));
@@ -105,7 +110,7 @@
             const segs = p.split('/');
             const out = segs.map((s, j) => {
                 const isFile = j === segs.length - 1;
-                const node = isFile ? assetNodeName(s) : folderNodeName(s);
+                const node = keepNames ? keepNodeName(s) : isFile ? assetNodeName(s) : folderNodeName(s);
                 if (node !== s) {
                     const key = segs.slice(0, j + 1).join('/');
                     if (!renamed.has(key)) renamed.set(key, { from: s, to: node, folder: !isFile });
@@ -124,8 +129,64 @@
         return { landed, renamed: [...renamed.values()], clashes, tooLong, unwrapped };
     }
 
+    // ─── DTD catalogs in the selection ───
+    // A catalog.xml points at DTD files by relative path; if a folder or file named in that path is renamed on
+    // upload, AEM Guides cannot find the DTD and the topics using it do not open.
+    const CATALOG_NS = 'urn:oasis:names:tc:entity:xmlns:xml:catalog';
+    const CATALOG_REF = /<(?:\w+:)?(public|system|uri|nextCatalog|delegatePublic|delegateSystem|delegateURI|rewriteSystem|rewriteURI|systemSuffix|uriSuffix)\b[^>]*?\s(uri|catalog|rewritePrefix)\s*=\s*["']([^"']+)["']/g;
+
+    function isCatalogFile(name, text) {
+        return /\.xml$/i.test(name) && /<(?:\w+:)?catalog\b/.test(text) && text.includes(CATALOG_NS);
+    }
+
+    /**
+     * catalogs: [{ relPath, text }] (relPath as in the selection). Returns the references that break:
+     * { catalog, ref, name, to } when a name in the reference would be renamed, { catalog, ref, missing: true }
+     * when the referenced file is not in the selection.
+     */
+    function catalogProblems(catalogs, relPaths, keepNames) {
+        const have = new Set((relPaths || []).map((p) => String(p).normalize('NFC')));
+        const out = [];
+        const seen = new Set();
+        for (const c of catalogs || []) {
+            const dir = String(c.relPath).normalize('NFC').split('/').slice(0, -1);
+            for (const m of String(c.text).matchAll(CATALOG_REF)) {
+                const ref = m[3].trim();
+                if (!ref || /^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('/') || ref.startsWith('#')) continue;
+                let decoded = ref.split('#')[0];
+                try { decoded = decodeURIComponent(decoded); } catch (_) { /* keep as written */ }
+                const own = decoded.split('/').filter((s) => s && s !== '.');
+                const folderRef = m[2] === 'rewritePrefix' || decoded.endsWith('/');
+                for (let j = 0; j < own.length; j++) {
+                    const s = own[j].normalize('NFC');
+                    if (s === '..') continue;
+                    const isFile = !folderRef && j === own.length - 1;
+                    const node = keepNames ? keepNodeName(s) : isFile ? assetNodeName(s) : folderNodeName(s);
+                    const key = `${c.relPath}|${ref}|r`;
+                    if (node !== s && !seen.has(key)) {
+                        seen.add(key);
+                        out.push({ catalog: c.relPath, ref, name: s, to: node, folder: !isFile });
+                    }
+                }
+                if (!folderRef) {
+                    const parts = [...dir];
+                    for (const s of decoded.split('/')) {
+                        if (!s || s === '.') continue;
+                        if (s === '..') parts.pop(); else parts.push(s.normalize('NFC'));
+                    }
+                    const key = `${c.relPath}|${ref}|m`;
+                    if (!have.has(parts.join('/')) && !seen.has(key)) {
+                        seen.add(key);
+                        out.push({ catalog: c.relPath, ref, missing: true });
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
     return {
-        isSystemName, isSystemPath, folderNodeName, assetNodeName, normalizeDamPath,
-        commonFolders, stripLevels, planUpload, MAX_NAME_BYTES,
+        isSystemName, isSystemPath, folderNodeName, assetNodeName, keepNodeName, normalizeDamPath,
+        commonFolders, stripLevels, planUpload, isCatalogFile, catalogProblems, MAX_NAME_BYTES,
     };
 }));

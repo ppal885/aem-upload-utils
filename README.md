@@ -139,6 +139,12 @@ e.g. uploaded minutes ago or installed from a package) are sent again, so a chan
 the search fails the upload sends everything and says so. History shows "+N skipped". Verified on an AEM Cloud
 stage author: re-uploading 50 files with 2 changed sent 2 and skipped 48.
 
+### DTD and DITA-OT folders: keep names exactly
+
+AEM does not allow some characters in folder names, so an upload normally cleans them (`wd-1.3` becomes `wd-1-3`, spaces become `-`). For a DTD or DITA-OT folder that breaks the paths in `catalog.xml`, and AEM Guides cannot find the DTDs. Turn on **Keep folder and file names exactly** (Summary panel, for upload and package): only the characters JCR can never store (`/ : [ ] | * \`) are replaced.
+
+When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog namespace), the page reads it and warns before uploading: references (`uri`, `nextCatalog`, `rewritePrefix`, …) whose folder or file name would change, with a button to keep names exactly, and referenced files missing from the selection. After the upload, add the uploaded `catalog.xml` to a DITA profile (Tools > Guides > DITA Profiles) whose paths cover the content, save it, and only then upload the topics.
+
 ### Copy from AEM
 
 **Copy from AEM** copies a folder from another AEM Guides server (for example a customer's stage) to one of our servers, by upload or as a package. The source is only read: one QueryBuilder search, then the original renditions (8 at a time by default; Gentle 4 or Fast 16). Nothing is created, changed or locked there, and its password is used only during the copy.
