@@ -38,6 +38,7 @@ const SUITES = {
     'skip-unchanged': ui('skip_unchanged_test.py', APP, AEM),
     copy: ui('copy_test.py', APP, AEM),
     'keep-names': ui('keep_names_test.py', APP, AEM),
+    readiness: ui('readiness_test.py', APP, AEM),
     resume: ui('resume_test.py', AEM),
     queue: ui('queue_test.py'),
     // last: they try wrong passwords on purpose, and the sign-in limit (10 failures a minute) would block the next suites

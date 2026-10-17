@@ -124,6 +124,23 @@
         .catalog-note { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
         .catalog-note.bad { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
         .catalog-note.info { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+        .aem-dialog { background: #fff; border-radius: 14px; box-shadow: 0 20px 50px rgba(15, 23, 42, .3); width: 100%; max-width: 640px; margin: 0 16px; max-height: 90vh; display: flex; flex-direction: column; }
+        .aem-dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 8px; }
+        .aem-dialog-head h3 { font-size: 18px; font-weight: 700; color: #111827; }
+        .aem-dialog-body { padding: 6px 22px 12px; overflow-y: auto; font-size: 14px; color: #1f2937; }
+        .aem-dialog-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding: 12px 22px 18px; border-top: 1px solid #f1f5f9; }
+        .aem-dialog-body .cp-field { margin-bottom: 10px; }
+        .rd-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+        .rd-row .k { color: #4b5563; }
+        .rd-row .v { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+        .rd-bar { height: 6px; border-radius: 9999px; background: #e5e7eb; overflow: hidden; margin-top: 4px; }
+        .rd-bar > div { height: 100%; background: #268E6C; }
+        .rd-list { margin: 6px 0 0 18px; list-style: disc; font-size: 13px; }
+        .rd-list li { overflow-wrap: anywhere; }
+        .dark .aem-dialog { background: #1e1e2e; }
+        .dark .aem-dialog-head h3, .dark .aem-dialog-body { color: #e2e8f0; }
+        .dark .aem-dialog-foot, .dark .rd-row { border-color: #2d2d44; }
+        .dark .rd-row .k { color: #94a3b8; }
         .dtd-help summary { cursor: pointer; font-weight: 600; color: #1473E6; margin-top: 8px; }
         .dtd-help ol { margin: 6px 0 0 20px; list-style: decimal; }
         .dtd-help li { margin-bottom: 4px; overflow-wrap: anywhere; }
@@ -371,6 +388,18 @@
 </div>
 
 <!-- Confirm Dialog (custom overlay with sp-button) -->
+<div id="aemDialog" class="hidden fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="aemDialogTitle" style="background:rgba(0,0,0,0.4);backdrop-filter:blur(2px);">
+    <div class="aem-dialog">
+        <div class="aem-dialog-head">
+            <h3 id="aemDialogTitle"></h3>
+            <button type="button" onclick="closeAemDialog()" class="text-gray-400 hover:text-gray-600 p-1" aria-label="Close">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div id="aemDialogBody" class="aem-dialog-body"></div>
+        <div id="aemDialogFoot" class="aem-dialog-foot"></div>
+    </div>
+</div>
 <div id="confirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="confirmHeadline" style="background:rgba(0,0,0,0.4);backdrop-filter:blur(2px);">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" style="animation:slide-down-in 0.2s ease-out;">
         <div class="flex items-center justify-between px-6 pt-5 pb-3">
@@ -1071,6 +1100,7 @@
             <div id="cpResult"></div>
             <div class="cp-actions">
                 <button type="button" class="btn btn-accent btn-l hidden" id="cpGoBtn" onclick="cpGo()"></button>
+                <button type="button" class="btn btn-secondary btn-m btn-outline hidden" id="cpProfileBtn" onclick="createProfileForCopy()">Create DITA profile</button>
                 <button type="button" class="btn btn-secondary btn-m btn-outline hidden" id="cpRecheckBtn" onclick="cpRecheck()">Check again</button>
                 <button type="button" class="btn btn-secondary btn-m btn-outline" id="cpCancelBtn" onclick="cpCancel()">Cancel</button>
             </div>
@@ -1881,7 +1911,8 @@ function renderCatalogNote() {
     if (!issues.length) {
         const where = selectionCatalogTargets();
         box.innerHTML = '<strong>DTD catalog found.</strong> ' + (where.length ? 'It lands at <code>' + esc(where[0]) + '</code>. ' : '')
-            + 'After uploading, set it up in a DITA profile so the topics using it open in the editor.' + help;
+            + 'After uploading, set it up in a DITA profile so the topics using it open in the editor.' + help
+            + '<button type="button" class="btn btn-secondary btn-outline btn-s" onclick="createProfileForSelection()">Create DITA profile after uploading…</button>';
         return;
     }
     const li = (p) => '<li><code>' + esc(p.catalog.split('/').pop()) + '</code> &rarr; <code>' + esc(p.ref) + '</code>'
@@ -3184,7 +3215,7 @@ function cpShowRun() {
     run.classList.remove('hidden');
     document.getElementById('cpResult').innerHTML = '';
     document.getElementById('cpProgress').classList.remove('hidden');
-    ['cpGoBtn', 'cpRecheckBtn'].forEach((id) => document.getElementById(id).classList.add('hidden'));
+    ['cpGoBtn', 'cpRecheckBtn', 'cpProfileBtn'].forEach((id) => document.getElementById(id).classList.add('hidden'));
     document.getElementById('cpCancelBtn').textContent = 'Cancel';
     run.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -3227,7 +3258,7 @@ async function cpRefresh() {
 function cpEnd(message) {
     document.getElementById('cpRunTitle').textContent = message;
     document.getElementById('cpProgress').classList.add('hidden');
-    ['cpGoBtn', 'cpRecheckBtn'].forEach((id) => document.getElementById(id).classList.add('hidden'));
+    ['cpGoBtn', 'cpRecheckBtn', 'cpProfileBtn'].forEach((id) => document.getElementById(id).classList.add('hidden'));
     document.getElementById('cpCancelBtn').textContent = 'Close';
     cpSessionId = null;
     cpLock(false);
@@ -3287,6 +3318,7 @@ function cpRenderResult(copy) {
     go.textContent = cpMode === 'package' ? 'Build package' : (setup.ready === false ? 'Upload anyway' : 'Upload to ' + hostOf(document.getElementById('cpTgtUrl').value));
     go.className = 'btn btn-l ' + (setup.ready === false ? 'btn-negative' : 'btn-accent');
     document.getElementById('cpRecheckBtn').classList.toggle('hidden', cpMode === 'package' || !setup.source);
+    document.getElementById('cpProfileBtn').classList.toggle('hidden', cpMode === 'package' || setup.ready !== false);
 }
 
 async function cpRecheck() {
@@ -3362,6 +3394,217 @@ function cpReset() {
     document.getElementById('cpRunStep').classList.add('hidden');
     document.getElementById('cpGoBtn').disabled = false;
     cpLock(false);
+}
+
+// ═══ AEM dialog: "Check in AEM" and "Create DITA profile" (server: lib/guides-status.js, lib/guides-profile.js) ═══
+let aemDialogTimer = null;
+
+function openAemDialog(title, bodyHtml, buttons) {
+    document.getElementById('aemDialogTitle').textContent = title;
+    document.getElementById('aemDialogBody').innerHTML = bodyHtml;
+    setAemDialogButtons(buttons);
+    document.getElementById('aemDialog').classList.remove('hidden');
+}
+
+function setAemDialogButtons(buttons) {
+    const foot = document.getElementById('aemDialogFoot');
+    foot.innerHTML = '';
+    (buttons || []).forEach((b) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'btn btn-m ' + (b.primary ? 'btn-accent' : 'btn-secondary btn-outline');
+        el.textContent = b.label;
+        if (b.id) el.id = b.id;
+        el.onclick = b.onClick;
+        foot.appendChild(el);
+    });
+}
+
+function closeAemDialog() {
+    clearInterval(aemDialogTimer);
+    aemDialogTimer = null;
+    document.getElementById('aemDialog').classList.add('hidden');
+}
+
+// Credentials for a server: the ones on New upload when it is the same server, else typed in the dialog
+function knownCredentials(baseUrl) {
+    const form = normalizeAemBaseUrl((document.getElementById('aemUrl').value || '').trim());
+    const same = form && hostOf(form) === hostOf(baseUrl);
+    return same && val('username') && val('password') ? { username: val('username'), password: val('password') } : null;
+}
+
+const credFields = (baseUrl, creds) => creds ? '' : '<p class="text-xs text-gray-500 mb-2">Sign in to ' + esc(hostOf(baseUrl)) + ' (used for this check only, not stored).</p>'
+    + '<div class="cp-grid"><div class="cp-field"><label for="adUser">Username</label><input id="adUser" type="text" autocomplete="off" /></div>'
+    + '<div class="cp-field"><label for="adPass">Password</label><input id="adPass" type="password" autocomplete="new-password" /></div></div>';
+
+function dialogCredentials(target) {
+    if (target.sessionId) return { sessionId: target.sessionId };
+    const creds = target.creds || (document.getElementById('adUser') ? { username: document.getElementById('adUser').value.trim(), password: document.getElementById('adPass').value } : null);
+    return creds && creds.username && creds.password ? { baseUrl: target.baseUrl, ...creds } : null;
+}
+
+// ── Check in AEM ──
+function openAemStatus(target) {
+    target.creds = target.creds || (target.sessionId ? null : knownCredentials(target.baseUrl));
+    openAemDialog('Check in AEM', '<p class="text-sm text-gray-600 mb-3">How far AEM and AEM Guides got with the files on <strong>' + esc(hostOf(target.baseUrl)) + '</strong>.</p>'
+        + '<div class="cp-field"><label for="adFolder">Folder</label><input id="adFolder" type="text" value="' + esc(target.folder || '') + '" /></div>'
+        + credFields(target.baseUrl, target.creds || target.sessionId) + '<div id="adResult"></div>',
+    [{ label: 'Close', onClick: closeAemDialog }, { label: 'Check', primary: true, id: 'adCheckBtn', onClick: () => runAemStatus(target) }]);
+    if (target.creds || target.sessionId) runAemStatus(target);
+}
+
+async function runAemStatus(target, quiet) {
+    const auth = dialogCredentials(target);
+    const out = document.getElementById('adResult');
+    if (!out) return;
+    if (!auth) { out.innerHTML = '<p class="text-sm text-red-600">Enter the username and password.</p>'; return; }
+    const folder = document.getElementById('adFolder').value.trim();
+    if (!quiet) out.innerHTML = '<p class="text-sm text-gray-500 mt-2">Checking… (large folders take up to a minute)</p>';
+    try {
+        const { status } = await apiJson('/api/guides/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...auth, folder }) });
+        target.creds = target.creds || (auth.username ? { username: auth.username, password: auth.password } : null);
+        out.innerHTML = renderAemStatus(status, target);
+        clearInterval(aemDialogTimer);
+        if (!status.finished && !document.getElementById('aemDialog').classList.contains('hidden')) {
+            aemDialogTimer = setInterval(() => runAemStatus(target, true), 30000);
+        }
+    } catch (e) {
+        out.innerHTML = '<p class="text-sm text-red-600 mt-2">' + esc(toErrorMessage(e)) + '</p>';
+    }
+}
+
+function renderAemStatus(st, target) {
+    const pct = (a, b) => (b ? Math.round((a * 100) / b) : 0);
+    const bar = (a, b) => '<div class="rd-bar"><div style="width:' + pct(a, b) + '%"></div></div>';
+    const g = st.guides;
+    const cloud = /\.adobeaemcloud\.com$/i.test(hostOf(target.baseUrl).split(':')[0]);
+    const verdict = st.total === 0 ? ['warn', 'No files found in this folder.']
+        : g.failed ? ['bad', g.failed + ' file(s) failed in AEM Guides: they will not open properly (often a DTD the DITA profile cannot resolve).']
+            : !st.finished ? ['warn', 'Still processing: ' + (g.waiting + g.processing).toLocaleString() + ' file(s) to go. This refreshes every 30 seconds.']
+                : st.dtd.some((d) => !d.ok) ? ['bad', 'The editor cannot load the DTD of some topics: set up the DITA profile for this folder.']
+                    : ['ok', 'Ready: AEM Guides processed every file' + (st.links.notInFolder ? '.' : ' and the links checked point at files in this folder.')];
+    let html = '<div class="cp-verdict ' + verdict[0] + '"><div><strong>' + esc(verdict[1]) + '</strong></div></div>'
+        + '<div class="rd-row"><span class="k">AEM Guides processed (DITA)</span><span class="v">' + g.done.toLocaleString() + ' / ' + st.dita.toLocaleString() + '</span></div>' + bar(g.done, st.dita)
+        + (g.failed ? '<div class="rd-row"><span class="k">Failed in AEM Guides</span><span class="v" style="color:#D7373F">' + g.failed + '</span></div><ul class="rd-list">'
+            + g.failedSamples.map((f) => '<li class="cp-mono">' + esc(f.path) + ' (' + esc(f.state) + ')</li>').join('') + '</ul>' : '')
+        + '<div class="rd-row"><span class="k">AEM processing (renditions, SHA-1)</span><span class="v">' + st.dam.processed.toLocaleString() + ' / ' + st.total.toLocaleString() + '</span></div>' + bar(st.dam.processed, st.total)
+        + '<div class="rd-row"><span class="k">Links in ' + st.links.maps + (st.links.mapsTotal > st.links.maps ? ' of ' + st.links.mapsTotal : '') + ' processed map(s)</span><span class="v">'
+        + st.links.ok.toLocaleString() + ' ok' + (st.links.notInFolder ? ', ' + st.links.notInFolder + ' outside the folder' : '') + '</span></div>'
+        + (st.links.notInFolder ? '<p class="text-xs text-gray-500 mt-1">Links outside the folder are fine when that content is elsewhere on the server; otherwise copy it too. Example: <span class="cp-mono">'
+            + esc(st.links.samples[0].href) + '</span> in ' + esc(st.links.samples[0].map.split('/').pop()) + '</p>' : '')
+        + '<div class="rd-row"><span class="k">Editor can load the DTD</span><span class="v">' + (st.dtd.length ? st.dtd.filter((d) => d.ok).length + ' / ' + st.dtd.length + ' topics checked' : 'not checked yet') + '</span></div>'
+        + (st.dtd.length ? '<p class="text-xs text-gray-500 mt-1">' + esc(st.dtd[0].publicId) + '</p>' : '')
+        + '<p class="text-xs text-gray-400 mt-2">Checked ' + esc(new Date(st.checkedAt).toLocaleTimeString()) + '</p>';
+    const needsReprocess = cloud && st.total > 0 && st.dam.processed < st.total && st.finished;
+    if (needsReprocess) {
+        html += '<div class="cp-verdict warn"><div><strong>' + (st.total - st.dam.processed).toLocaleString() + ' file(s) have no AEM processing</strong> (usually installed from a package on AEM as a Cloud Service): '
+            + 'no renditions or fingerprints, so search and "skip unchanged" do not work for them. <button type="button" class="btn btn-accent btn-s" style="margin-left:6px" onclick="reprocessFromDialog()">Reprocess Assets</button></div></div>';
+        window._adTarget = target;
+    }
+    return html;
+}
+
+async function reprocessFromDialog() {
+    const target = window._adTarget;
+    const folder = document.getElementById('adFolder').value.trim();
+    if (!confirm('Run Reprocess Assets (Full Process) on ' + folder + ' on ' + hostOf(target.baseUrl) + '? AEM processes every file again; this can take a while for large folders.')) return;
+    try {
+        const r = await apiJson('/api/guides/reprocess', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dialogCredentials(target), folder }) });
+        showToast('Reprocess started: ' + (r.message || ''), 'success');
+        clearInterval(aemDialogTimer);
+        aemDialogTimer = setInterval(() => runAemStatus(target, true), 30000);
+    } catch (e) {
+        showToast('Reprocess not started: ' + toErrorMessage(e), 'error');
+    }
+}
+
+// ── Create DITA profile ──
+function openProfileDialog(target) {
+    target.creds = target.creds || (target.sessionId ? null : knownCredentials(target.baseUrl));
+    const v = target.values || {};
+    openAemDialog('Create DITA profile', '<p class="text-sm text-gray-600 mb-3">Creates a new profile on <strong>' + esc(hostOf(target.baseUrl))
+        + '</strong> from its Global Profile, like Tools &rarr; Guides &rarr; DITA Profiles &rarr; Create Profile. Existing profiles are not changed.</p>'
+        + '<div class="cp-field"><label for="pfName">Profile Name</label><input id="pfName" type="text" maxlength="80" value="' + esc(v.name || '') + '" /></div>'
+        + '<div class="cp-field"><label for="pfPath">Assigned Path (the folder the topics go to)</label><input id="pfPath" type="text" placeholder="/content/dam/customer" value="' + esc(v.path || '') + '" /></div>'
+        + '<div class="cp-field"><label for="pfCatalogs">DTD catalogs (one per line, uploaded already)</label><textarea id="pfCatalogs" rows="2" class="w-full" style="border:1px solid #cbd5e1;border-radius:7px;padding:6px 10px;font-size:13px">'
+        + esc((v.catalogs || []).join('\n')) + '</textarea></div>'
+        + '<div class="cp-field"><label for="pfZip">Customer DITA-OT zip (optional)</label><input id="pfZip" type="text" placeholder="/content/dam/customer-ot/dita-ot.zip" value="' + esc(v.ditaotZip || '') + '" /></div>'
+        + credFields(target.baseUrl, target.creds || target.sessionId) + '<div id="pfResult"></div>',
+    [{ label: 'Cancel', onClick: closeAemDialog }, { label: 'Check', primary: true, id: 'pfCheckBtn', onClick: () => planProfileFromDialog(target) }]);
+}
+
+function profileForm() {
+    return {
+        name: document.getElementById('pfName').value.trim(),
+        paths: [document.getElementById('pfPath').value.trim()].filter(Boolean),
+        catalogs: document.getElementById('pfCatalogs').value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean),
+        ditaotZip: document.getElementById('pfZip').value.trim(),
+    };
+}
+
+async function planProfileFromDialog(target) {
+    const auth = dialogCredentials(target);
+    const out = document.getElementById('pfResult');
+    if (!auth) { out.innerHTML = '<p class="text-sm text-red-600">Enter the username and password.</p>'; return; }
+    out.innerHTML = '<p class="text-sm text-gray-500">Checking…</p>';
+    try {
+        const plan = await apiJson('/api/guides/profile/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...auth, ...profileForm() }) });
+        const list = (xs) => '<ul class="rd-list">' + xs.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+        out.innerHTML = plan.ok
+            ? '<div class="cp-verdict ok"><div><strong>Ready to create.</strong>' + list(plan.notes) + '<p class="mt-1 text-xs">Catalogs: ' + esc(plan.profile.catalogs.join(', '))
+                + '</p><p class="text-xs">DITA-OT: ' + esc(plan.profile.ditaotZip || '') + '</p></div></div>'
+            : '<div class="cp-verdict bad"><div><strong>Not possible yet:</strong>' + list(plan.problems) + (plan.notes.length ? list(plan.notes) : '') + '</div></div>';
+        setAemDialogButtons([{ label: 'Cancel', onClick: closeAemDialog }, { label: 'Check', id: 'pfCheckBtn', primary: !plan.ok, onClick: () => planProfileFromDialog(target) }]
+            .concat(plan.ok ? [{ label: 'Create profile', primary: true, id: 'pfCreateBtn', onClick: () => createProfileFromDialog(target) }] : []));
+    } catch (e) {
+        out.innerHTML = '<p class="text-sm text-red-600">' + esc(toErrorMessage(e)) + '</p>';
+    }
+}
+
+async function createProfileFromDialog(target) {
+    const btn = document.getElementById('pfCreateBtn');
+    btn.disabled = true;
+    btn.textContent = 'Creating… (AEM prepares the DTDs)';
+    const out = document.getElementById('pfResult');
+    try {
+        const r = await fetch('/api/guides/profile/create', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...dialogCredentials(target), ...profileForm() }) });
+        const j = await r.json().catch(() => ({}));
+        if (j.ok) {
+            closeAemDialog();
+            showToast('DITA profile "' + j.profile.name + '" created on ' + hostOf(target.baseUrl), 'success');
+            if (target.onCreated) target.onCreated(j);
+            return;
+        }
+        out.innerHTML = '<div class="cp-verdict bad"><div><strong>' + (j.errors && j.errors.length ? 'Created, but AEM reports a problem:' : 'Not created:') + '</strong><ul class="rd-list">'
+            + [].concat(j.problems || [], j.errors || [], j.error ? [j.error] : []).map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul></div></div>';
+        btn.disabled = false;
+        btn.textContent = 'Create profile';
+    } catch (e) {
+        out.innerHTML = '<p class="text-sm text-red-600">' + esc(toErrorMessage(e)) + '</p>';
+        btn.disabled = false;
+        btn.textContent = 'Create profile';
+    }
+}
+
+function createProfileForSelection() {
+    const baseUrl = normalizeAemBaseUrl((document.getElementById('aemUrl').value || '').trim());
+    if (!/^https?:\/\//i.test(baseUrl)) { showToast('Enter the AEM server on New upload first', 'warn'); return; }
+    const cats = selectionCatalogTargets();
+    const name = (cats[0] || '').split('/').slice(-2, -1)[0] || '';
+    openProfileDialog({ baseUrl, values: { name, path: '', catalogs: cats } });
+}
+
+function createProfileForCopy() {
+    const setup = (cpLast && cpLast.setup) || {};
+    const src = setup.source || {};
+    const zip = src.ditaotZip && !src.ditaotZip.startsWith('/libs/') ? src.ditaotZip : '';
+    openProfileDialog({
+        baseUrl: document.getElementById('cpTgtUrl').value, sessionId: cpSessionId,
+        values: { name: src.name ? src.name + ' (copy)' : '', path: setup.targetFolder || '', ditaotZip: zip,
+            catalogs: (src.items || []).filter((i) => i.kind === 'DTD catalog' && i.where !== 'built-in').map((i) => i.path) },
+        onCreated: () => cpRecheck(),
+    });
 }
 
 async function buildPackageFromSelection() {
@@ -3460,7 +3703,9 @@ function renderPackages(list) {
             : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700" title="' + esc(p.error || '') + '">Failed</span>';
         const last = (p.installs || [])[0];
         const cloudInstall = last && last.ok && /\.adobeaemcloud\.com/i.test(last.server || '');
+        const checkFolder = (p.filterRoots && p.filterRoots.length === 1) ? p.filterRoots[0] : p.damPath;
         const installed = last ? '<div class="text-xs mt-1 ' + (last.ok ? 'text-green-700' : 'text-red-600') + '">' + (last.ok ? 'Installed on ' : 'Install failed on ') + esc(hostOf(last.server)) + ' ' + esc(timeAgo(last.at))
+            + (last.ok ? ' <button type="button" class="text-adobe-blue hover:underline font-semibold" onclick="openAemStatus({ baseUrl: ' + esc(JSON.stringify(last.server)) + ', folder: ' + esc(JSON.stringify(checkFolder)) + ' })">Check in AEM</button>' : '')
             + (cloudInstall ? '<span class="pkg-reprocess" title="AEM as a Cloud Service does not process package content: run Reprocess Assets on the folder">Reprocess needed</span>' : '') + '</div>' : '';
         // Copied content can only be installed on an allowed server, not downloaded (see COPY_TARGETS on the server)
         const actions = p.state !== 'ready' ? '' :
@@ -5221,6 +5466,7 @@ function renderFilteredHistory() {
                         : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Failed</span>'}</td>
             <td data-col="actions" class="px-4 py-3 whitespace-nowrap"><div class="flex items-center gap-2">
                 <button onclick="rerunUpload(${origIdx})" class="text-xs text-adobe-blue hover:underline">Re-run</button>
+                ${h.baseUrl && h.damPath ? `<button onclick="openAemStatus({ baseUrl: ${esc(JSON.stringify(h.baseUrl))}, folder: ${esc(JSON.stringify(h.folder || '/' + String(h.damPath).replace(/^\/+/, '')))} })" class="text-xs text-adobe-blue hover:underline">Check in AEM</button>` : ''}
                 <button onclick="deleteHistoryItem('${h.uploadId}')" class="text-gray-300 hover:text-red-500 transition" title="Delete" aria-label="Delete history entry"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
             </div></td></tr>`;
     }).join('');

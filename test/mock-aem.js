@@ -24,12 +24,18 @@ const assetSha = new Map();
 const blobData = new Map();
 const assetData = new Map();
 const assetGuid = new Map();
+const assetGuides = new Map();
+const assetDam = new Map();
+const reprocessed = [];
+const DITA_FILE = /\.(dita|ditamap|xml|bookmap)$/i;
 const sha1 = (b) => crypto.createHash('sha1').update(b).digest('hex');
 for (const [p, a] of Object.entries(SEED.assets || {})) {
     const buf = Buffer.from(a.text != null ? a.text : a.base64 || '', a.text != null ? 'utf8' : 'base64');
     assetData.set(p, buf);
     assetSha.set(p, a.staleSha1 ? sha1(Buffer.from('older version')) : sha1(buf));
     if (a.guid) assetGuid.set(p, a.guid);
+    if (a.guidesState) assetGuides.set(p, a.guidesState);
+    if (a.damState) assetDam.set(p, a.damState);
     for (let d = path.posix.dirname(p); d.startsWith('/content/dam/'); d = path.posix.dirname(d)) folders.add(d);
 }
 
@@ -42,6 +48,7 @@ const server = http.createServer((req, res) => {
         if (p === '/__installs') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(installs)); }
         if (p === '/__folders') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(titles)); }
         if (p === '/__completed') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(completedPaths)); }
+        if (p === '/__reprocessed') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(reprocessed)); }
         if (p === '/__writes') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(writes)); }
         if (p === '/__profiles' && req.method === 'POST') { profiles = JSON.parse(body); res.writeHead(200); return res.end('{}'); }
         if (p.startsWith('/__asset/')) {
@@ -78,6 +85,36 @@ const server = http.createServer((req, res) => {
         if (req.method === 'GET' && p === '/bin/fmdita/profiles') {
             res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(profiles));
         }
+        if (req.method === 'POST' && p === '/bin/fmdita/profiles') {
+            const f = new URLSearchParams(body);
+            if (f.get('operation') !== 'updateprofile' || f.get('mode') !== 'create') { res.writeHead(432); return res.end('{}'); }
+            const prof = JSON.parse(f.get('data'));
+            // real Guides fails to save a non-default profile without its (empty) Node.js context
+            if (!prof.nodejs || !prof.schema || !prof.ditaot) { res.writeHead(432); return res.end('{}'); }
+            prof.paths.forEach((x) => profiles.forEach((o) => { o.paths = (o.paths || []).filter((y) => y !== x); }));
+            profiles.push({ ...prof, errors: '', schema: { ...prof.schema, errors: '' }, ditaot: { ...prof.ditaot, errors: '' } });
+            res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(profiles));
+        }
+        if (req.method === 'GET' && p === '/bin/xsd2json') {
+            // 200 when the DITA profile of the file (longest path) has a catalog with this public id, like Guides' SchemaServlet
+            const q = new URL(req.url, 'http://x').searchParams;
+            const file = q.get('file') || '';
+            let best = null;
+            for (const pr of profiles) for (const r of pr.paths || []) if ((file === r || file.startsWith(r + '/')) && (!best || r.length > best.r.length)) best = { pr, r };
+            const ids = new Set();
+            for (const c of (best ? best.pr.schema.catalogs : [])) {
+                const text = assetData.has(c) ? assetData.get(c).toString('utf8') : '';
+                for (const m of text.matchAll(/publicId="([^"]+)"/g)) ids.add(m[1]);
+            }
+            const ok = /^-\/\/OASIS\/\//.test(q.get('publicId') || '') || ids.has(q.get('publicId'));
+            res.writeHead(ok ? 200 : 400, { 'Content-Type': 'application/json' }); return res.end(ok ? '{}' : '{"code":"DTD_PATH_NOT_FOUND"}');
+        }
+        if (req.method === 'POST' && p === '/bin/asynccommand') {
+            const folder = new URLSearchParams(body).get('folder');
+            reprocessed.push(folder);
+            for (const k of assetData.keys()) if (k.startsWith(folder + '/')) assetDam.set(k, 'processed');
+            res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<div id="Message">Job(Id:mock) created successfully.</div>');
+        }
         if (req.method === 'GET' && p.endsWith('.json') && (folders.has(p.slice(0, -5)) || assetData.has(p.slice(0, -5)))) {
             res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{}');
         }
@@ -96,6 +133,7 @@ const server = http.createServer((req, res) => {
             const hits = [...assetSha.entries()].filter(([k]) => k.startsWith(root + '/'))
                 .filter(([k]) => !want || assetGuid.get(k) === want)
                 .map(([k, sha]) => ({ 'jcr:path': k, 'jcr:content': { ...(assetGuid.has(k) ? { fmUuid: assetGuid.get(k) } : {}),
+                    ...(assetGuides.has(k) ? { 'guides:assetState': assetGuides.get(k) } : {}), ...(assetDam.has(k) ? { 'dam:assetState': assetDam.get(k) } : {}),
                     metadata: { ...(sha ? { 'dam:sha1': sha } : {}), ...(assetData.has(k) ? { 'dam:size': assetData.get(k).length } : {}) } } }));
             res.writeHead(200, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ success: true, results: hits.length, total: hits.length, hits }));
@@ -107,6 +145,9 @@ const server = http.createServer((req, res) => {
             completedPaths.push(done);
             assetSha.set(done, blobSha.get(done) || null);
             if (blobData.has(done)) assetData.set(done, blobData.get(done));
+            // an upload is processed by AEM and by Guides (DITA files get a GUID)
+            assetDam.set(done, 'processed');
+            if (DITA_FILE.test(done)) { assetGuides.set(done, 'SUCCESS'); if (!assetGuid.has(done)) assetGuid.set(done, 'GUID-' + crypto.randomUUID()); }
             res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{}');
         }
         if (req.method === 'POST' && p === '/crx/packmgr/service.jsp') {
