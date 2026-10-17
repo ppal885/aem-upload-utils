@@ -121,6 +121,13 @@
         .pkg-fields p { font-size: 12px; color: #64748b; line-height: 1.45; }
         .dark .pkg-fields input { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
         .pkg-progress { margin: 10px 0 4px; }
+        .catalog-note { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
+        .catalog-note.bad { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+        .catalog-note ul { margin: 4px 0 0 18px; list-style: disc; }
+        .catalog-note code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+        .catalog-note .btn { margin-top: 8px; }
+        .dark .catalog-note { background: rgba(230, 134, 25, .1); border-color: rgba(230, 134, 25, .35); color: #fde68a; }
+        .dark .catalog-note.bad { background: rgba(215, 55, 63, .1); border-color: rgba(215, 55, 63, .35); color: #fecaca; }
         .skip-row { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 4px; padding: 10px 12px; border-radius: 8px;
             background: #f8fafc; border: 1px solid #e2e8f0; font-size: 13.5px; color: #1e293b; cursor: pointer; }
         .dark .skip-row { background: #12121c; border-color: #2d2d44; color: #e2e8f0; }
@@ -754,6 +761,7 @@
                         <!-- Folder info (shown when a folder is selected) -->
                         <div id="browserFolderInfo" class="hidden flex items-center gap-1.5 mt-2 text-sm"></div>
                         <div id="systemFilesNote" class="hidden mt-2 text-xs text-gray-500"></div>
+                        <div id="catalogNote" class="hidden catalog-note" role="alert"></div>
                         <div id="skipTopFolderRow" class="hidden mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
                             <label for="skipLevels" class="block text-sm font-medium text-gray-700">Start the upload from</label>
                             <select id="skipLevels" class="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-800" onchange="updateSkipTopFolderHint()"></select>
@@ -964,6 +972,11 @@
                         <input id="skipUnchanged" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 accent-adobe-blue" />
                         <span><span class="font-semibold">Skip files already in AEM</span>
                             <span class="block text-xs text-gray-500">Only new or changed files are sent (compared by path and content).</span></span>
+                    </label>
+                    <label id="keepNamesRow" class="skip-row" for="keepNames">
+                        <input id="keepNames" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-gray-300 accent-adobe-blue" onchange="keepNamesChanged()" />
+                        <span><span class="font-semibold">Keep folder and file names exactly</span>
+                            <span class="block text-xs text-gray-500">For DTD and DITA-OT folders: paths in catalog.xml must match. Dots and spaces stay; only / : [ ] | * \ are replaced.</span></span>
                     </label>
                     <div id="pkgProgress" class="hidden pkg-progress" role="status" aria-live="polite">
                         <div id="pkgProgressText" class="text-sm font-medium text-gray-700"></div>
@@ -1226,7 +1239,7 @@
     </div>
 </div>
 
-<script src="aem-names.js?v=9bdb47c93a"></script>
+<script src="aem-names.js?v=878347fade"></script>
 <script>
 // ═══ Error / message normalization (APIs may return strings or { message, code }) ═══
 function toErrorMessage(x) {
@@ -1782,6 +1795,72 @@ function selectNewFiles(entries) {
     const sel = document.getElementById('skipLevels');
     if (sel) sel.value = '0';
     setBrowserFileEntries(kept);
+    scanCatalogs(kept);
+}
+
+// ─── DTD catalogs in the selection (see AemNames.catalogProblems) ───
+let selectionCatalogs = [];
+
+function keepNamesOn() {
+    const el = document.getElementById('keepNames');
+    return !!(el && el.checked);
+}
+
+async function scanCatalogs(entries) {
+    selectionCatalogs = [];
+    const candidates = entries.filter((e) => /catalog[^/]*\.xml$/i.test(e.file.name) && e.file.size < 2 * 1024 * 1024).slice(0, 200);
+    for (const e of candidates) {
+        try {
+            const text = await e.file.text();
+            if (AemNames.isCatalogFile(e.file.name, text)) selectionCatalogs.push({ relPath: (e.relativePath || e.file.name).normalize('NFC'), text });
+        } catch (_) { /* unreadable: not checked */ }
+    }
+    if (selectionCatalogs.length && catalogRenames().length && !keepNamesOn()) {
+        Logger.info('DTD catalog paths would break with renamed names');
+    }
+    renderCatalogNote();
+}
+
+function catalogIssues() {
+    return AemNames.catalogProblems(selectionCatalogs, relPathsOf(browserFileEntries), keepNamesOn());
+}
+
+function catalogRenames() {
+    return catalogIssues().filter((p) => !p.missing);
+}
+
+function renderCatalogNote() {
+    const box = document.getElementById('catalogNote');
+    if (!box) return;
+    const issues = selectionCatalogs.length ? catalogIssues() : [];
+    const renames = issues.filter((p) => !p.missing);
+    const missing = issues.filter((p) => p.missing);
+    box.classList.toggle('hidden', !issues.length);
+    box.classList.toggle('bad', renames.length > 0);
+    if (!issues.length) { box.innerHTML = ''; return; }
+    const li = (p) => '<li><code>' + esc(p.catalog.split('/').pop()) + '</code> &rarr; <code>' + esc(p.ref) + '</code>'
+        + (p.missing ? '' : ': <code>' + esc(p.name) + '</code> would become <code>' + esc(p.to) + '</code>') + '</li>';
+    let html = '';
+    if (renames.length) {
+        html += '<strong>DTD catalog paths would break.</strong> AEM Guides would not find these DTD files and topics using them would not open:'
+            + '<ul>' + renames.slice(0, 5).map(li).join('') + (renames.length > 5 ? '<li>and ' + (renames.length - 5) + ' more</li>' : '') + '</ul>'
+            + '<button type="button" class="btn btn-accent btn-s" onclick="setKeepNames(true)">Keep names exactly</button>';
+    }
+    if (missing.length) {
+        html += (renames.length ? '<div style="margin-top:8px">' : '<div>') + '<strong>Not in your selection</strong> (referenced by a DTD catalog):'
+            + '<ul>' + missing.slice(0, 5).map(li).join('') + (missing.length > 5 ? '<li>and ' + (missing.length - 5) + ' more</li>' : '') + '</ul></div>';
+    }
+    box.innerHTML = html;
+}
+
+function setKeepNames(on) {
+    document.getElementById('keepNames').checked = on;
+    keepNamesChanged();
+}
+
+function keepNamesChanged() {
+    renderCatalogNote();
+    updateSummaryPanel();
 }
 
 function blockedWhileUploading() {
@@ -2104,6 +2183,7 @@ function updateSummaryPanel() {
     if (workMode === 'package') opts.unshift('Build package');
     if (document.getElementById('dryRun').checked) opts.push('Dry run');
     if (document.getElementById('skipUnchanged').checked) opts.push('Skip unchanged files');
+    if (keepNamesOn()) opts.push('Names kept exactly');
     document.getElementById('sumOptions').textContent = opts.length ? opts.join(' · ') : 'Default';
 }
 
@@ -3244,7 +3324,8 @@ async function buildPackageFromSelection() {
     const version = document.getElementById('pkgVersion').value.trim() || '1.0';
     const group = document.getElementById('pkgGroup').value.trim() || 'guides-upload';
     const paths = uploadRelativePaths();
-    const plan = AemNames.planUpload(relPathsOf(entries), dam.path, skipLevels());
+    const plan = AemNames.planUpload(relPathsOf(entries), dam.path, skipLevels(), keepNamesOn());
+    if (catalogRenames().length && !confirm('DTD catalog paths would break because names change (see the warning). Build anyway?')) return;
     if (plan.clashes.length && !confirm(plan.clashes.length + ' file(s) would overwrite another file after renaming. Build anyway?')) return;
     const totalBytes = entries.reduce((n, e) => n + e.file.size, 0);
 
@@ -3255,7 +3336,7 @@ async function buildPackageFromSelection() {
     try {
         const { sessionId } = await apiJson('/api/packages/init', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ damPath: dam.path, packageName, version, group, totalBytes, fileCount: entries.length }),
+            body: JSON.stringify({ damPath: dam.path, packageName, version, group, totalBytes, fileCount: entries.length, keepNames: keepNamesOn() }),
         });
         const CHUNK = 500;
         const chunks = [];
@@ -3400,7 +3481,7 @@ async function initiateUpload() {
         return;
     }
 
-    const plan = AemNames.planUpload(relPathsOf(browserFileEntries), damPath, skipLevels());
+    const plan = AemNames.planUpload(relPathsOf(browserFileEntries), damPath, skipLevels(), keepNamesOn());
     const skippedFolders = commonSelectedFolders().slice(0, skipLevels());
     const exampleIdx = plan.landed.findIndex((p) => p.split('/').length === Math.max(...plan.landed.slice(0, 200).map((x) => x.split('/').length)));
     let folderNote = '<p class="mt-2 text-xs text-gray-500">Example: <span class="font-mono break-all">' + esc(plan.landed[Math.max(0, exampleIdx)] || '') + '</span></p>';
@@ -3409,6 +3490,12 @@ async function initiateUpload() {
     }
     if (plan.unwrapped) {
         folderNote += '<p class="mt-1 text-xs text-gray-500">"' + esc(plan.unwrapped) + '" has the same name as the DAM folder, so its contents go straight in (no ' + esc(plan.unwrapped) + '/' + esc(plan.unwrapped) + ').</p>';
+    }
+    const brokenCatalog = catalogRenames();
+    if (brokenCatalog.length) {
+        folderNote += '<div class="mt-2 text-xs text-red-700 bg-red-50 rounded p-2"><strong>DTD catalog paths would break</strong>: '
+            + esc(brokenCatalog[0].ref) + (brokenCatalog.length > 1 ? ' and ' + (brokenCatalog.length - 1) + ' more' : '')
+            + '. Cancel and turn on <strong>Keep folder and file names exactly</strong>.</div>';
     }
     if (plan.renamed.length) {
         folderNote += '<div class="mt-2 text-xs text-amber-700 bg-amber-50 rounded p-2"><strong>' + plan.renamed.length.toLocaleString()
@@ -3451,6 +3538,7 @@ async function initiateUpload() {
         httpRetryDelay: readIntField('httpRetryDelay', 8, 1, 30) * 1000,
         httpRequestTimeout: readIntField('httpRequestTimeout', 120, 10, 300) * 1000,
         skipUnchanged: document.getElementById('skipUnchanged').checked,
+        keepNodeNames: keepNamesOn(),
     };
     // #20: a previous dialog (e.g. Clear All History) must not leave its handler or labels behind
     window._customConfirmHandler = null;
@@ -3570,6 +3658,7 @@ async function doBrowserUpload(config) {
             httpRetryDelay: config.httpRetryDelay,
             httpRequestTimeout: config.httpRequestTimeout,
             skipUnchanged: config.skipUnchanged === true,
+            keepNodeNames: config.keepNodeNames === true,
             totalBytes: totalSize,
             fileCount,
         }),

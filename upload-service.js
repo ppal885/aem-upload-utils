@@ -328,8 +328,8 @@ function runUpload(config, eventCallback) {
         .withHttpRequestTimeout(httpRequestTimeout)
         .withHttpOptions(httpOptions)
         // A copy from another AEM keeps the source's node names exactly: links and DITA profile paths use them
-        .withFolderNodeNameProcessor(async (folderName) => (config.keepNodeNames ? folderName : AemNames.folderNodeName(folderName)))
-        .withAssetNodeNameProcessor(async (assetName) => (config.keepNodeNames ? assetName : AemNames.assetNodeName(assetName)));
+        .withFolderNodeNameProcessor(async (folderName) => (config.keepNodeNames ? AemNames.keepNodeName(folderName) : AemNames.folderNodeName(folderName)))
+        .withAssetNodeNameProcessor(async (assetName) => (config.keepNodeNames ? AemNames.keepNodeName(assetName) : AemNames.assetNodeName(assetName)));
 
     const errors = [];
     let totalFiles = 0;

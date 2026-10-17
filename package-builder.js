@@ -270,8 +270,8 @@ async function buildPackage({
     onProgress,
 } = {}) {
     // keepNames: the names are AEM node names already (copied from another AEM server) and must not change
-    const folderName = keepNames ? (n) => n : cleanFolderName;
-    const assetName = keepNames ? (n) => n : cleanAssetName;
+    const folderName = keepNames ? AemNames.keepNodeName : cleanFolderName;
+    const assetName = keepNames ? AemNames.keepNodeName : cleanAssetName;
     if (!sourceDir) throw new Error('sourceDir is required');
     if (!outFile) throw new Error('outFile is required');
     const root = validateDamRoot(damRoot, skipTopFolder);

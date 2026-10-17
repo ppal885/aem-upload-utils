@@ -1434,7 +1434,7 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
     const { damPath,
             maxConcurrent, maxUploadFiles,
             httpRetryCount, httpRetryDelay, httpRequestTimeout,
-            totalBytes, fileCount, skipUnchanged } = req.body;
+            totalBytes, fileCount, skipUnchanged, keepNodeNames } = req.body;
 
     if (!baseUrl || !damPath) {
         return res.status(400).json({ error: 'Missing baseUrl or damPath' });
@@ -1474,7 +1474,8 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
         tempDir,
         config: { baseUrl: normalizedInitUrl, damPath, username, password,
                   maxConcurrent, maxUploadFiles,
-                  httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged: skipUnchanged === true },
+                  httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged: skipUnchanged === true,
+                  keepNodeNames: keepNodeNames === true },
         receivedFiles: 0,
         totalReceivedBytes: 0,
         relativePaths: [],
@@ -1513,7 +1514,7 @@ app.post('/api/packages/init', uploadLimiter, async (req, res) => {
     await fsPromises.mkdir(nodePath.join(tempDir, '__staging'), { recursive: true });
     browserUploadSessions.set(sessionId, {
         owner: req.user.key, mode: 'package', tempDir,
-        config: { damPath: dam.path, packageName, version, group, description: String(b.description || '').slice(0, 500) },
+        config: { damPath: dam.path, packageName, version, group, description: String(b.description || '').slice(0, 500), keepNames: b.keepNames === true },
         receivedFiles: 0, totalReceivedBytes: 0, relativePaths: [], files: [], createdAt: Date.now(),
     });
     log.info(`Package session created: ${sessionId} (${packageName} ${version}) by ${req.user.key}`);
@@ -1540,9 +1541,9 @@ app.post('/api/packages/build/:sessionId', uploadLimiter, async (req, res) => {
     const fileCount = session.files.length;
     session.files = []; session.relativePaths = [];
     browserUploadSessions.delete(req.params.sessionId);
-    const { damPath, packageName, version, group, description } = session.config;
+    const { damPath, packageName, version, group, description, keepNames } = session.config;
     const record = packages.startBuild({
-        owner: session.owner, ownerName: req.user.name, contentDir, damPath, packageName, version, group, description, fileCount,
+        owner: session.owner, ownerName: req.user.name, contentDir, damPath, packageName, version, group, description, fileCount, keepNames,
         copiedFrom: session.copy ? { baseUrl: session.copy.source.baseUrl, folder: session.copy.source.folder } : null,
     }, (err, p) => {
         cleanupTempDir(session.tempDir).catch(() => {});
@@ -1853,8 +1854,8 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
 const SKIP_QUERY_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function stagedTargets(contentChildren, damPath, keepNodeNames) {
-    const fName = keepNodeNames ? (n) => n : AemNames.folderNodeName;
-    const aName = keepNodeNames ? (n) => n : AemNames.assetNodeName;
+    const fName = keepNodeNames ? AemNames.keepNodeName : AemNames.folderNodeName;
+    const aName = keepNodeNames ? AemNames.keepNodeName : AemNames.assetNodeName;
     const out = [];
     const base = '/' + String(damPath).replace(/^\/+|\/+$/g, '');
     const walk = async (abs, remote) => {
@@ -2257,7 +2258,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 
     const { baseUrl, damPath, username, password,
             maxConcurrent, maxUploadFiles,
-            httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged } = session.config;
+            httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged, keepNodeNames } = session.config;
     const tempDir = session.tempDir;
     const receivedFiles = session.receivedFiles;
     const totalReceivedBytes = session.totalReceivedBytes;
@@ -2308,7 +2309,7 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
 
     const started = await startAemUpload({
         owner: req.user.key, ownerName: req.user.name, baseUrl, damPath, username, password,
-        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged, keepNodeNames: !!session.copy },
+        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged, keepNodeNames: !!session.copy || keepNodeNames === true },
         tempDir, contentChildren, receivedFiles, totalReceivedBytes, sessionId,
         sourceLabel: session.copy ? copyLabel(session.copy) : null,
         onStarted: (uploadId) => res.json({ uploadId }),
