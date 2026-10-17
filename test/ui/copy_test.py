@@ -148,6 +148,8 @@ async def main():
             record('not ready: the target cannot resolve the CROWN DTDs yet', setup.get('ready') is False and CROWN_TOPIC in steps and 'DITA Profiles' in steps, steps[:300])
             record('setup check names the separate DTD folder and the linked folder outside', 'Copy /content/dam/crown-dtd too' in steps and '/content/dam/shared' in steps, steps[:300])
             record('setup check sees the custom DITA-OT of the source profile', 'crown-ot/dita-ot.zip' in steps, '')
+            help_html = await page.inner_html('#cpResult')
+            record('not ready: the DITA profile steps link to the target server', 'How to set up the DTD in AEM' in help_html and TARGET + '/libs/fmdita/profiles/profiles.html' in help_html and '/content/dam/crown-dtd/catalog.xml' in help_html, '')
             go = await page.inner_text('#cpGoBtn')
             record('the button warns instead of offering a plain upload', go == 'Upload anyway', go)
             record('nothing was written on the source server', json.loads(get(SOURCE + '/__writes')) == [], get(SOURCE + '/__writes').decode()[:200])
