@@ -74,6 +74,7 @@ async def main():
         record('warning also catches a renamed folder in nextCatalog', 'my plugin' in note and 'my-plugin' in note, '')
         record('warning lists a referenced file missing from the selection', 'Not in your selection' in note and 'base/dtd/map.dtd' in note, '')
         record('links to the web are not flagged', 'example.com' not in note, '')
+        record('the warning also offers the DITA profile steps', 'How to set up the DTD in AEM' in note, '')
 
         await page.click('#catalogNote button')
         record('the button turns on Keep names exactly', await page.is_checked('#keepNames'))
@@ -98,6 +99,24 @@ async def main():
         await page.evaluate(SELECT_JS, other)
         await page.wait_for_timeout(300)
         record('no warning for a selection without catalogs', await page.is_hidden('#catalogNote'))
+
+        clean = [['crown-dtd/catalog.xml', f'<catalog xmlns="{NS}"><public publicId="-//C//DTD T//EN" uri="topic.dtd"/></catalog>'],
+                 ['crown-dtd/topic.dtd', '<!ELEMENT topic ANY>']]
+        await page.fill('#damPath', 'content/dam/dtds')
+        await page.evaluate(SELECT_JS, clean)
+        await page.wait_for_function("!document.getElementById('catalogNote').classList.contains('hidden')", timeout=5000)
+        info = await page.inner_text('#catalogNote')
+        record('a clean DTD catalog gets an info box with where it lands', 'DTD catalog found' in info and '/content/dam/dtds/crown-dtd/catalog.xml' in info, info[:200])
+        await page.click('#catalogNote summary')
+        steps = await page.inner_text('#catalogNote')
+        record('the steps name the real DITA Profiles labels', all(x in steps for x in ('Create Profile', 'Assigned Paths', 'Catalogs', 'Done', '/content/dam/dtds/crown-dtd/catalog.xml')), steps[-400:])
+        link = await page.get_attribute('#catalogNote a', 'href')
+        record('the steps link to DITA Profiles on the chosen AEM server', link == AEM + '/libs/fmdita/profiles/profiles.html', str(link))
+        await page.fill('#damPath', 'content/dam/other')
+        await page.dispatch_event('#damPath', 'input')
+        info2 = await page.inner_text('#catalogNote')
+        record('the path follows the DAM folder and the opened steps stay open', '/content/dam/other/crown-dtd/catalog.xml' in info2
+               and await page.evaluate("!!document.querySelector('#catalogNote details[open]')"), info2[:160])
 
         # Package with the option: names inside the zip stay as they are
         await page.evaluate("setKeepNames(true)")

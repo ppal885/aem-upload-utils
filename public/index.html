@@ -123,6 +123,13 @@
         .pkg-progress { margin: 10px 0 4px; }
         .catalog-note { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
         .catalog-note.bad { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+        .catalog-note.info { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+        .dtd-help summary { cursor: pointer; font-weight: 600; color: #1473E6; margin-top: 8px; }
+        .dtd-help ol { margin: 6px 0 0 20px; list-style: decimal; }
+        .dtd-help li { margin-bottom: 4px; overflow-wrap: anywhere; }
+        .dtd-help p { margin-top: 6px; }
+        .dtd-help a { color: #1473E6; font-weight: 600; text-decoration: underline; }
+        .dark .catalog-note.info { background: rgba(20, 115, 230, .12); border-color: rgba(20, 115, 230, .35); color: #bfdbfe; }
         .catalog-note ul { margin: 4px 0 0 18px; list-style: disc; }
         .catalog-note code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
         .catalog-note .btn { margin-top: 8px; }
@@ -1829,15 +1836,54 @@ function catalogRenames() {
     return catalogIssues().filter((p) => !p.missing);
 }
 
+// The DITA profile steps, filled in with this server and these paths (labels as on Tools > Guides > DITA Profiles)
+function dtdSetupHelp({ aemUrl, catalogPaths, contentHint, open }) {
+    const base = /^https?:\/\//i.test(aemUrl || '') ? String(aemUrl).replace(/\/+$/, '') : '';
+    const page = base ? '<a href="' + esc(base) + '/libs/fmdita/profiles/profiles.html" target="_blank" rel="noopener">DITA Profiles</a>' : '<strong>DITA Profiles</strong>';
+    const cats = (catalogPaths || []).length ? catalogPaths.map((c) => '<code>' + esc(c) + '</code>').join(', ') : 'the uploaded <code>catalog.xml</code>';
+    return '<details class="dtd-help"' + (open ? ' open' : '') + '><summary>How to set up the DTD in AEM (DITA profile)</summary><ol>'
+        + '<li>Upload the DTD folder first (this one), not the topics yet.</li>'
+        + '<li>Open ' + page + ' (AEM <strong>Tools</strong> &rarr; <strong>Guides</strong> &rarr; <strong>DITA Profiles</strong>).</li>'
+        + '<li>New profile: select <strong>Global Profile</strong>, click <strong>Create Profile</strong>, enter a <strong>Profile Name</strong>. '
+        + 'Existing one: select it and click <strong>Edit Profile</strong>.</li>'
+        + '<li><strong>Assigned Paths</strong>: <strong>Browse</strong> to the folder the topics will go to'
+        + (contentHint ? ' (for example <code>' + esc(contentHint) + '</code>)' : '') + ', then <strong>Add</strong>.</li>'
+        + '<li><strong>Schema &rarr; Catalogs</strong>: keep the standard entries, <strong>Browse</strong> to ' + cats + ', then <strong>Add</strong>.</li>'
+        + '<li>Customer DITA-OT only: in the DITA-OT section pick the uploaded zip in <strong>AEM DITA-OT Zip Path</strong>.</li>'
+        + '<li>Click <strong>Done</strong> (it saves; wait for the spinner). An alert icon next to Schema or DITA-OT shows a problem, for example a wrong catalog path.</li>'
+        + '<li>Now upload the topics into the Assigned Path: they open in the editor with this DTD.</li></ol>'
+        + '<p>A folder belongs to one profile only: adding it moves it out of any other profile. After changing the DTD files later, open the profile, Edit Profile, Done again.</p></details>';
+}
+
+// Where the catalog files of the selection land in AEM
+function selectionCatalogTargets() {
+    const dam = AemNames.normalizeDamPath(val('damPath')).path;
+    if (!dam) return [];
+    const rel = relPathsOf(browserFileEntries);
+    const plan = AemNames.planUpload(rel, dam, skipLevels(), keepNamesOn());
+    const roots = selectionCatalogs.map((c) => plan.landed[rel.indexOf(c.relPath)]).filter(Boolean);
+    const top = roots.length ? Math.min(...roots.map((p) => p.split('/').length)) : 0;
+    return roots.filter((p) => p.split('/').length === top);
+}
+
 function renderCatalogNote() {
     const box = document.getElementById('catalogNote');
     if (!box) return;
     const issues = selectionCatalogs.length ? catalogIssues() : [];
     const renames = issues.filter((p) => !p.missing);
     const missing = issues.filter((p) => p.missing);
-    box.classList.toggle('hidden', !issues.length);
+    box.classList.toggle('hidden', !selectionCatalogs.length);
     box.classList.toggle('bad', renames.length > 0);
-    if (!issues.length) { box.innerHTML = ''; return; }
+    box.classList.toggle('info', !issues.length);
+    if (!selectionCatalogs.length) { box.innerHTML = ''; return; }
+    const wasOpen = !!box.querySelector('details.dtd-help[open]');
+    const help = dtdSetupHelp({ aemUrl: val('aemUrl'), catalogPaths: selectionCatalogTargets(), contentHint: '', open: wasOpen });
+    if (!issues.length) {
+        const where = selectionCatalogTargets();
+        box.innerHTML = '<strong>DTD catalog found.</strong> ' + (where.length ? 'It lands at <code>' + esc(where[0]) + '</code>. ' : '')
+            + 'After uploading, set it up in a DITA profile so the topics using it open in the editor.' + help;
+        return;
+    }
     const li = (p) => '<li><code>' + esc(p.catalog.split('/').pop()) + '</code> &rarr; <code>' + esc(p.ref) + '</code>'
         + (p.missing ? '' : ': <code>' + esc(p.name) + '</code> would become <code>' + esc(p.to) + '</code>') + '</li>';
     let html = '';
@@ -1850,7 +1896,7 @@ function renderCatalogNote() {
         html += (renames.length ? '<div style="margin-top:8px">' : '<div>') + '<strong>Not in your selection</strong> (referenced by a DTD catalog):'
             + '<ul>' + missing.slice(0, 5).map(li).join('') + (missing.length > 5 ? '<li>and ' + (missing.length - 5) + ' more</li>' : '') + '</ul></div>';
     }
-    box.innerHTML = html;
+    box.innerHTML = html + help;
 }
 
 function setKeepNames(on) {
@@ -2167,6 +2213,7 @@ function shortSource(localPath) {
 function updateSummaryPanel() {
     const dest = document.getElementById('sumDest');
     if (!dest) return;
+    if (selectionCatalogs.length) renderCatalogNote();
     const dam = AemNames.normalizeDamPath(document.getElementById('damPath').value).path;
     const root = getRootFolderName(browserFileEntries || []);
     const kept = commonSelectedFolders().slice(skipLevels());
@@ -3208,8 +3255,12 @@ function cpRenderResult(copy) {
         : setup.ready === false ? '<strong>Not ready yet.</strong> If you upload now, files whose DTD the target cannot find will not open in the editor. Do these steps first, then click Check again.'
             : cpMode === 'package' ? '<strong>Source checked.</strong> Before installing the package, make sure the target has what is listed below.'
                 : '<strong>Ready.</strong> The target can open these files.' + (setup.steps && setup.steps.length ? ' Still worth doing:' : '');
+    const needsProfile = setup.ready === false || (cpMode === 'package' && setup.doctypes && setup.doctypes.some((x) => !x.standard));
+    const sourceCatalogs = setup.source ? setup.source.items.filter((i) => i.kind === 'DTD catalog' && i.where !== 'built-in').map((i) => i.path) : [];
     html += '<div class="cp-verdict ' + cls + '"><div>' + verdict
-        + (setup.steps && setup.steps.length ? '<ol class="cp-steps">' + setup.steps.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>' : '') + '</div></div>';
+        + (setup.steps && setup.steps.length ? '<ol class="cp-steps">' + setup.steps.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>' : '')
+        + (needsProfile ? dtdSetupHelp({ aemUrl: cpMode === 'package' ? '' : document.getElementById('cpTgtUrl').value,
+            catalogPaths: sourceCatalogs, contentHint: setup.targetFolder || '', open: false }) : '') + '</div></div>';
     if (d.unresolvedCount) {
         html += '<div class="cp-verdict warn"><div>' + d.unresolvedCount + ' link(s) point to a GUID that no file on the source has (already broken there), for example <span class="cp-mono">'
             + esc(d.unresolvedGuids[0]) + '</span>. They are copied as they are.</div></div>';
