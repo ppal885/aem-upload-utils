@@ -36,6 +36,7 @@ const SUITES = {
     signup: ui('signup_test.py', APP),
     package: ui('package_test.py', APP, AEM),
     'skip-unchanged': ui('skip_unchanged_test.py', APP, AEM),
+    copy: ui('copy_test.py', APP, AEM),
     resume: ui('resume_test.py', AEM),
     queue: ui('queue_test.py'),
     // last: they try wrong passwords on purpose, and the sign-in limit (10 failures a minute) would block the next suites
@@ -139,7 +140,7 @@ async function main() {
 
     const procs = [
         start('mock-aem', process.execPath, [path.join(HERE, 'mock-aem.js'), '4620']),
-        start('app', process.execPath, [path.join(HERE, 'launch.js')], { ...appEnv('app', 3930), ADMIN_EMAILS: 'admin@test.local' }),
+        start('app', process.execPath, [path.join(HERE, 'launch.js')], { ...appEnv('app', 3930), ADMIN_EMAILS: 'admin@test.local', COPY_TARGETS: AEM }),
     ];
     const stopAll = () => procs.forEach((p) => { try { p.kill('SIGKILL'); } catch (_) { /* gone */ } });
     process.on('exit', stopAll);

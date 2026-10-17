@@ -139,6 +139,26 @@ e.g. uploaded minutes ago or installed from a package) are sent again, so a chan
 the search fails the upload sends everything and says so. History shows "+N skipped". Verified on an AEM Cloud
 stage author: re-uploading 50 files with 2 changed sent 2 and skipped 48.
 
+### Copy from AEM
+
+**Copy from AEM** copies a folder from another AEM Guides server (for example a customer's stage) to one of our servers, by upload or as a package. The source is only read: one QueryBuilder search, then the original renditions (8 at a time by default; Gentle 4 or Fast 16). Nothing is created, changed or locked there, and its password is used only during the copy.
+
+- **Links keep working.** On UUID-based Guides servers files point at each other by GUID (`href="GUID-….dita"`), and GUIDs are given out per server. The copy turns every GUID link back into a relative path; the target's Guides converts those to its own GUIDs. Links to files outside the folder are resolved on the source and reported; GUIDs that no file has (already broken on the source) are reported and left as they are.
+- **Names are kept exactly** (a folder `v1.2` stays `v1.2`), and the target folder defaults to the same path as on the source: Guides DITA profiles point at absolute paths.
+- **Every file is checked**: against AEM's `dam:sha1` when it matches, otherwise against the size AEM sent (Guides rewrites DITA files after AEM computed the SHA-1, so an older fingerprint is normal there).
+- **Setup check before uploading.** Guides finds DTDs and DITA-OT through the DITA profile (Tools > Guides > DITA Profiles) that covers the folder. The tool reads the source profile and its DTD catalogs, lists the DOCTYPEs the files use, and checks that the target's profile for the target folder resolves them. It says what to copy too (a DTD folder or DITA-OT zip outside the folder, linked folders) and what to set up. Topics uploaded before their DTDs and profile are in place do not open in the editor, so the Upload button turns into **Upload anyway** until the target is ready; **Check again** re-reads the target. Output presets stored on maps are not copied.
+
+Rules for copied content (often a customer's):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `COPY_TARGETS` | (none: copying is off) | Comma-separated server URLs copied content may go to, by upload or package install. |
+| `COPY_IDLE_MINUTES` | `60` | Copied files nobody uploads or packages are removed after this. |
+| `COPY_PACKAGE_KEEP_HOURS` | `24` | Packages built from copied content are removed after this. |
+| `COPY_ALLOW_DOWNLOAD` | off | Packages of copied content can only be installed on a `COPY_TARGETS` server, not downloaded, unless set to `true`. |
+
+Every copy is recorded in History ("Copied from host/folder").
+
 ### Fair queue per AEM server
 
 At most `MAX_UPLOADS_PER_SERVER` (default 3) uploads run against the same AEM host at a time; each already
