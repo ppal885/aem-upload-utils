@@ -1587,6 +1587,9 @@ app.post('/api/packages/:id/install', uploadLimiter, async (req, res) => {
     if (p.copiedFrom && !isAllowedCopyTarget(target)) {
         return res.status(403).json({ error: copyTargetError(target), code: 'COPY_TARGET_NOT_ALLOWED' });
     }
+    if (p.copiedFrom && originOf(p.copiedFrom.baseUrl) === originOf(target) && (p.filterRoots || []).some((r) => overlaps(r, p.copiedFrom.folder))) {
+        return res.status(409).json({ error: `This package would replace ${p.copiedFrom.folder}, the folder it was copied from, on the same server.`, code: 'COPY_ONTO_SOURCE' });
+    }
     const cred = await checkAemCredentials(target, username, password);
     if (!cred.ok) return res.status(400).json({ error: cred.error, code: cred.code });
     log.info(`Installing package ${p.downloadName} on ${target} as ${username} (by ${req.user.key})`);
@@ -1626,6 +1629,17 @@ function copyTargetError(url) {
         : 'Copying from another AEM server is not set up: the admin has to list the allowed target servers in COPY_TARGETS.';
 }
 
+/** Where a copied folder lands: under damPath, or damPath itself when it already ends with the folder's name. */
+function copyLanding(folder, damPath) {
+    const name = folder.split('/').pop();
+    const dam = String(damPath || '').replace(/^\/+|\/+$/g, '');
+    return '/' + (dam.split('/').pop() === name ? dam : `${dam}/${name}`);
+}
+
+function overlaps(a, b) {
+    return a === b || a.startsWith(b + '/') || b.startsWith(a + '/');
+}
+
 function copyLabel(copy) {
     return `Copied from ${new URL(copy.source.baseUrl).host}${copy.source.folder}`;
 }
@@ -1656,6 +1670,12 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, async (req, res) => {
     const username = String(b.sourceUsername || '');
     const password = String(b.sourcePassword || '');
     if (!origin || !username || !password) return res.status(400).json({ error: 'Enter the source AEM server, username and password' });
+    if (session.mode !== 'package' && originOf(session.config.baseUrl) === origin) {
+        const landing = copyLanding(folder.path, session.config.damPath);
+        if (overlaps(landing, folder.path)) {
+            return res.status(409).json({ error: `The copy would land on ${landing}, inside the folder it is copied from on the same server. Choose another target folder.`, code: 'COPY_ONTO_SOURCE' });
+        }
+    }
     const cred = await checkAemCredentials(origin, username, password);
     if (!cred.ok) return res.status(400).json({ error: 'Source AEM: ' + cred.error, code: cred.code });
 
@@ -1686,9 +1706,7 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, async (req, res) => {
         Object.assign(copy, { state: 'checking', done: sum.files, bytes: sum.bytes, verified: sum.verified, unverified: sum.unverified, failed: sum.failed, dita: sum.dita });
         log.info(`Copy finished: ${origin}${folder.path}: ${sum.files} files (${sum.verified} SHA-1 verified), ${sum.failed.length} failed, ${sum.dita.rewrittenLinks} GUID links rewritten`);
         // Checked now, while the source password is still in memory: it is never stored
-        const name = folder.path.split('/').pop();
-        const dam = String((session.config && session.config.damPath) || '').replace(/^\/+|\/+$/g, '');
-        const targetFolder = '/' + (dam.split('/').pop() === name ? dam : `${dam}/${name}`);
+        const targetFolder = copyLanding(folder.path, session.config && session.config.damPath);
         const target = session.mode === 'package' ? null
             : { baseUrl: session.config.baseUrl, username: session.config.username, password: session.config.password };
         try {

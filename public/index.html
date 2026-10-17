@@ -376,7 +376,7 @@
 
 <!-- Header -->
 <!-- Sign-in screen: shown until /api/auth/me confirms a session -->
-<div id="loginScreen" class="fixed inset-0 z-[60] flex bg-gray-50" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+<div id="loginScreen" class="hidden fixed inset-0 z-[60] flex bg-gray-50" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
     <aside class="brand-panel hidden lg:flex flex-col justify-between w-[44%] p-12 text-white">
         <div class="flex items-center gap-3">
             <svg class="w-10 h-9 shrink-0" viewBox="0 0 30 26" aria-hidden="true"><path fill="#FA0F00" d="M19 0h11v26zM11.1 0H0v26zM15 9.6l7.1 16.4h-4.6l-2.1-5.2h-5.2z"/></svg>
@@ -1026,7 +1026,7 @@
                 <div class="cp-field" data-cp-upload><label for="cpTgtUser">Username</label><input id="cpTgtUser" type="text" autocomplete="off" /></div>
                 <div class="cp-field" data-cp-upload><label for="cpTgtPass">Password</label><input id="cpTgtPass" type="password" autocomplete="new-password" /></div>
                 <div class="cp-field wide"><label for="cpTgtDam" id="cpTgtDamLabel">Into this DAM folder</label>
-                    <input id="cpTgtDam" type="text" placeholder="content/dam" autocomplete="off" oninput="cpFolderChanged()" />
+                    <input id="cpTgtDam" type="text" placeholder="content/dam" autocomplete="off" oninput="this.dataset.auto = '0'; cpFolderChanged(true)" />
                     <div class="note" id="cpLandNote"></div></div>
                 <div class="cp-field" data-cp-package><label for="cpPkgName">Package name</label><input id="cpPkgName" type="text" maxlength="80" /></div>
                 <div class="cp-field" data-cp-package><label for="cpPkgVersion">Version</label><input id="cpPkgVersion" type="text" maxlength="40" value="1.0" /></div>
@@ -1356,18 +1356,14 @@ let bannerDismissed = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
     Logger.info('Guides Upload Utility initializing...');
-    try {
-        const h = await fetch('/api/health');
-        const hd = await h.json();
-        Logger.info('Server health OK — auth:', hd.authEnabled ? 'enabled' : 'disabled');
-    } catch (e) {
-        Logger.error('Health check failed:', toErrorMessage(e));
-    }
-    // Dismiss loading overlay
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) { overlay.style.opacity = '0'; setTimeout(() => overlay.remove(), 300); }
+    fetch('/api/health').then((h) => h.json())
+        .then((hd) => Logger.info('Server health OK — auth:', hd.authEnabled ? 'enabled' : 'disabled'))
+        .catch((e) => Logger.error('Health check failed:', toErrorMessage(e)));
     requestNotificationPermission();
     await initSession();
+    // Dismiss the loading overlay only now: the page shows either the workspace or the sign-in screen, never both
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) { overlay.style.opacity = '0'; setTimeout(() => overlay.remove(), 300); }
     Logger.info('Initialization complete');
 });
 
@@ -2491,16 +2487,20 @@ function applySignedIn(user) {
     showView((location.hash || '').replace('#', '') || 'upload');
 }
 
+// The sign-in screen stays hidden (behind "Connecting…") until this knows nobody is signed in: no flash on reload
 async function initSession() {
+    const me = fetch('/api/auth/me', { cache: 'no-store' }).catch(() => null);
     await loadAuthOptions();
     const reset = /^#reset=([A-Za-z0-9_-]{20,})$/.exec(location.hash || '');
     if (reset) {
         window._resetToken = reset[1];
         showAuthCard('resetForm');
+        document.getElementById('loginScreen').classList.remove('hidden');
         return;
     }
     try {
-        const r = await fetch('/api/auth/me');
+        const r = await me;
+        if (!r) throw new Error('offline');
         if (r.ok) {
             const { user } = await r.json();
             if (user.mustChangePassword) { currentUser = user; showChangePassword(true); return; }
@@ -2962,11 +2962,12 @@ function cpSourceFolder() {
 }
 
 // The content keeps its path on the target by default: DITA profiles point at absolute paths (DTD catalogs, DITA-OT)
-function cpFolderChanged() {
+function cpFolderChanged(fromTargetField) {
     const folder = cpSourceFolder();
     const valid = /^\/content\/dam\/[^/]/.test(folder);
     const dam = document.getElementById('cpTgtDam');
-    if (valid && (!dam.value || dam.dataset.auto === '1')) {
+    // Filled in until the user edits it; typing there never refills it, an emptied field is refilled when the source changes
+    if (valid && !fromTargetField && (dam.dataset.auto !== '0' || !dam.value)) {
         dam.value = folder.slice(1, folder.lastIndexOf('/'));
         dam.dataset.auto = '1';
     }

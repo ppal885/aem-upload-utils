@@ -129,6 +129,14 @@ async def main():
             await page.dispatch_event('#cpFolder', 'input')
             land = await page.inner_text('#cpLandNote')
             record('the target folder defaults to the same path as on the source', '/content/dam/crown' in land and 'recommended' in land, land)
+            await page.fill('#cpTgtDam', '')
+            await page.type('#cpTgtDam', 'content/dam/elsewhere')
+            typed = await page.input_value('#cpTgtDam')
+            record('a target folder typed by the user is kept (not overwritten by the default)', typed == 'content/dam/elsewhere', typed)
+            await page.fill('#cpTgtDam', '')
+            await page.dispatch_event('#cpTgtDam', 'input')
+            await page.fill('#cpFolder', '/content/dam/crown')
+            await page.dispatch_event('#cpFolder', 'input')
 
             c = await copy(page, '/content/dam/crown')
             d = c.get('dita') or {}
@@ -201,6 +209,15 @@ async def main():
                 return [r.status, (await r.json()).code];
             })()""")
             record('copying to a server that is not allowed is refused', refused == [403, 'COPY_TARGET_NOT_ALLOWED'], str(refused))
+            onto = await page3.evaluate("""(t) => (async () => {
+                const init = await fetch('/api/upload/browser/init', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({baseUrl: t, damPath: 'content/dam', username: 'admin', password: 'admin'})}).then(r => r.json());
+                const r = await fetch('/api/copy/' + init.sessionId + '/start', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({sourceUrl: t, sourceUsername: 'admin', sourcePassword: 'admin', folder: '/content/dam/crown'})});
+                await fetch('/api/upload/browser/cancel/' + init.sessionId, {method: 'POST'});
+                return [r.status, (await r.json()).code];
+            })()""", TARGET)
+            record('a copy that would land on its own source folder (same server) is refused', onto == [409, 'COPY_ONTO_SOURCE'], str(onto))
 
             # Cancel throws the copied files away
             page4 = await signed_in(browser)
