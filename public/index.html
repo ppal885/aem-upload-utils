@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guides Upload Utility</title>
-    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=e1eeed10ad" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=aca04be92b" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&display=swap" rel="stylesheet">
@@ -282,9 +282,56 @@
         @media (min-width: 769px) {
             #histPanel .hist-mobile-cards { display: none !important; }
         }
+        /* ─── Copy from AEM ─── */
+        .cp-step { padding: 20px 22px; margin-bottom: 16px; background: #fff; border: 1px solid #e5e7eb; }
+        .cp-step h3 { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+        .cp-num { width: 24px; height: 24px; border-radius: 9999px; background: #1473E6; color: #fff; font-size: 13px; font-weight: 700;
+            display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .cp-hint { font-size: 13px; color: #6b7280; line-height: 1.5; margin-bottom: 12px; }
+        .cp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+        .cp-grid .wide { grid-column: 1 / -1; }
+        @media (max-width: 720px) { .cp-grid { grid-template-columns: 1fr; } }
+        .cp-field label { display: block; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+        .cp-field input, .cp-field select { width: 100%; height: 38px; padding: 0 11px; border: 1px solid #cbd5e1; border-radius: 7px;
+            font-size: 14px; background: #fff; color: #0f172a; outline: none; }
+        .cp-field input:focus, .cp-field select:focus { border-color: #1473E6; box-shadow: 0 0 0 2px rgba(20, 115, 230, .2); }
+        .cp-field .note { font-size: 12px; color: #6b7280; margin-top: 4px; overflow-wrap: anywhere; }
+        .cp-field .note b { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; color: #0f172a; }
+        .cp-safe { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0;
+            border-radius: 8px; padding: 8px 10px; margin-top: 12px; line-height: 1.45; }
+        .cp-off { padding: 14px 16px; border-radius: 10px; background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; font-size: 14px; margin-bottom: 16px; }
+        .cp-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
+        .cp-bar { height: 8px; border-radius: 9999px; background: #e5e7eb; overflow: hidden; margin: 10px 0 6px; }
+        .cp-bar > div { height: 100%; background: #1473E6; width: 0; transition: width .3s; }
+        .cp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+        .cp-stat { border: 1px solid #e5e7eb; border-radius: 9px; padding: 10px 12px; }
+        .cp-stat .v { font-size: 20px; font-weight: 800; color: #111827; font-variant-numeric: tabular-nums; }
+        .cp-stat .l { font-size: 12px; color: #6b7280; }
+        .cp-verdict { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 9px; font-size: 14px; line-height: 1.5; margin: 10px 0; }
+        .cp-verdict.ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+        .cp-verdict.warn { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
+        .cp-verdict.bad { background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; }
+        .cp-steps { margin: 6px 0 0; padding-left: 20px; list-style: decimal; font-size: 13.5px; line-height: 1.6; color: #1f2937; }
+        .cp-steps li { margin-bottom: 4px; overflow-wrap: anywhere; }
+        .cp-table { width: 100%; font-size: 12.5px; border-collapse: collapse; margin-top: 6px; }
+        .cp-table th { text-align: left; font-weight: 600; color: #6b7280; padding: 4px 6px; border-bottom: 1px solid #e5e7eb; }
+        .cp-table td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; color: #111827; overflow-wrap: anywhere; }
+        .cp-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+        .cp-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9999px; }
+        .cp-tag.copied { background: #dcfce7; color: #166534; } .cp-tag.built-in { background: #e0f2fe; color: #075985; } .cp-tag.outside { background: #fef3c7; color: #92400e; }
+        .cp-details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: #1473E6; margin-top: 8px; }
+        .dark .cp-step, .dark .cp-stat { background: #1e1e2e; border-color: #2d2d44; }
+        .dark .cp-step h3, .dark .cp-stat .v, .dark .cp-table td, .dark .cp-steps { color: #f1f5f9; }
+        .dark .cp-field label { color: #cbd5e1; }
+        .dark .cp-field input, .dark .cp-field select { background: #12121c; border-color: #3a3a55; color: #e2e8f0; }
+        .dark .cp-field .note b { color: #e2e8f0; }
+        .dark .cp-safe, .dark .cp-verdict.ok { background: rgba(16, 185, 129, .1); border-color: rgba(16, 185, 129, .35); color: #a7f3d0; }
+        .dark .cp-verdict.warn { background: rgba(230, 134, 25, .1); border-color: rgba(230, 134, 25, .35); color: #fde68a; }
+        .dark .cp-verdict.bad, .dark .cp-off { background: rgba(215, 55, 63, .1); border-color: rgba(215, 55, 63, .35); color: #fecaca; }
+        .dark .cp-bar { background: #2d2d44; }
     </style>
     <!-- after the page styles, so utilities such as "hidden" win, as with the old in-browser Tailwind -->
-    <link rel="stylesheet" href="app.css?v=933be963ab" />
+    <link rel="stylesheet" href="app.css?v=66131c3c54" />
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
 <div id="appRoot">
@@ -532,6 +579,10 @@
                 <span>History</span>
                 <span class="nav-badge hidden" data-history-count></span>
             </button>
+            <button type="button" class="nav-item" data-view="copy" onclick="showView('copy')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
+                <span>Copy from AEM</span>
+            </button>
             <button type="button" class="nav-item" data-view="packages" onclick="showView('packages')">
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                 <span>Packages</span>
@@ -557,6 +608,10 @@
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 <span>History</span>
                 <span class="nav-badge hidden" data-history-count></span>
+            </button>
+            <button type="button" class="nav-item nav-tab" data-view="copy" onclick="showView('copy')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
+                <span>Copy</span>
             </button>
             <button type="button" class="nav-item nav-tab" data-view="packages" onclick="showView('packages')">
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
@@ -932,6 +987,76 @@
         </div>
     </section>
 
+    <section id="viewCopy" data-view-panel="copy" class="hidden">
+        <div class="page-head">
+            <h2>Copy from AEM</h2>
+            <p>Copy a folder from another AEM Guides server (for example a customer's stage) to one of our servers, by upload or as a package.
+               Links between files keep working, and the DTD / DITA-OT setup the content needs is checked before anything is uploaded.</p>
+        </div>
+        <div id="cpDisabled" class="cp-off hidden" role="alert"></div>
+
+        <div class="card cp-step" id="cpSourceStep">
+            <h3><span class="cp-num">1</span>Source: where the content is now</h3>
+            <p class="cp-hint">Read only: the tool only reads from this server (one search, then the files). Nothing is created, changed or locked there.</p>
+            <div class="cp-grid">
+                <div class="cp-field wide"><label for="cpSrcUrl">Source AEM server</label>
+                    <input id="cpSrcUrl" type="text" placeholder="https://author-p12345-e67890.adobeaemcloud.com" autocomplete="off" /></div>
+                <div class="cp-field"><label for="cpSrcUser">Username</label><input id="cpSrcUser" type="text" autocomplete="off" /></div>
+                <div class="cp-field"><label for="cpSrcPass">Password</label><input id="cpSrcPass" type="password" autocomplete="new-password" />
+                    <div class="note">Used only during the copy, never stored.</div></div>
+                <div class="cp-field wide"><label for="cpFolder">Folder to copy</label>
+                    <input id="cpFolder" type="text" placeholder="/content/dam/crown" autocomplete="off" oninput="cpFolderChanged()" />
+                    <div class="note">Include the folder with the DTDs too if it is separate; the check below tells you if something is missing.</div></div>
+                <div class="cp-field"><label for="cpSpeed">Speed</label>
+                    <select id="cpSpeed"><option value="4">Gentle (4 at a time)</option><option value="8" selected>Normal (8 at a time)</option><option value="16">Fast (16 at a time)</option></select>
+                    <div class="note">Use Gentle on a busy customer server.</div></div>
+            </div>
+        </div>
+
+        <div class="card cp-step" id="cpTargetStep">
+            <h3><span class="cp-num">2</span>Target: where it goes</h3>
+            <div class="mode-switch" role="radiogroup" aria-label="Upload or package" style="max-width:360px">
+                <button type="button" id="cpModeUpload" role="radio" aria-checked="true" class="on" onclick="cpSetMode('upload')">Upload to AEM</button>
+                <button type="button" id="cpModePackage" role="radio" aria-checked="false" onclick="cpSetMode('package')">Build package</button>
+            </div>
+            <div class="cp-grid" style="margin-top:12px">
+                <div class="cp-field wide" id="cpTgtUrlRow"><label for="cpTgtUrl">Target AEM server</label>
+                    <select id="cpTgtUrl"></select>
+                    <div class="note">Only the servers the admin allowed for copied content are listed.</div></div>
+                <div class="cp-field" data-cp-upload><label for="cpTgtUser">Username</label><input id="cpTgtUser" type="text" autocomplete="off" /></div>
+                <div class="cp-field" data-cp-upload><label for="cpTgtPass">Password</label><input id="cpTgtPass" type="password" autocomplete="new-password" /></div>
+                <div class="cp-field wide"><label for="cpTgtDam" id="cpTgtDamLabel">Into this DAM folder</label>
+                    <input id="cpTgtDam" type="text" placeholder="content/dam" autocomplete="off" oninput="cpFolderChanged()" />
+                    <div class="note" id="cpLandNote"></div></div>
+                <div class="cp-field" data-cp-package><label for="cpPkgName">Package name</label><input id="cpPkgName" type="text" maxlength="80" /></div>
+                <div class="cp-field" data-cp-package><label for="cpPkgVersion">Version</label><input id="cpPkgVersion" type="text" maxlength="40" value="1.0" /></div>
+            </div>
+            <label class="skip-row" data-cp-upload><input id="cpSkipUnchanged" type="checkbox" class="mt-1" />
+                <span>Skip files that are already in the target and unchanged</span></label>
+            <div class="cp-safe"><svg class="h-4 w-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                <span>Copied files stay on this tool's server only until they are uploaded or packaged (unused copies are removed after an hour).
+                Packages of copied content cannot be downloaded and are removed after a day. Every copy is recorded in History.</span></div>
+            <div class="cp-actions">
+                <button type="button" class="btn btn-accent btn-l" id="cpStartBtn" onclick="cpStart()">Copy and check</button>
+                <span id="cpStartNote" class="text-sm text-gray-500"></span>
+            </div>
+        </div>
+
+        <div class="card cp-step hidden" id="cpRunStep" aria-live="polite">
+            <h3><span class="cp-num">3</span><span id="cpRunTitle">Copying…</span></h3>
+            <div id="cpProgress">
+                <div class="cp-bar"><div id="cpBar"></div></div>
+                <div id="cpProgressText" class="text-sm text-gray-600"></div>
+            </div>
+            <div id="cpResult"></div>
+            <div class="cp-actions">
+                <button type="button" class="btn btn-accent btn-l hidden" id="cpGoBtn" onclick="cpGo()"></button>
+                <button type="button" class="btn btn-secondary btn-m btn-outline hidden" id="cpRecheckBtn" onclick="cpRecheck()">Check again</button>
+                <button type="button" class="btn btn-secondary btn-m btn-outline" id="cpCancelBtn" onclick="cpCancel()">Cancel</button>
+            </div>
+        </div>
+    </section>
+
     <section id="viewPackages" data-view-panel="packages" class="hidden">
         <div class="page-head">
             <h2>Content packages</h2>
@@ -1101,7 +1226,7 @@
     </div>
 </div>
 
-<script src="aem-names.js?v=e8d72a4c72"></script>
+<script src="aem-names.js?v=9bdb47c93a"></script>
 <script>
 // ═══ Error / message normalization (APIs may return strings or { message, code }) ═══
 function toErrorMessage(x) {
@@ -1929,10 +2054,11 @@ document.addEventListener('visibilitychange', () => {
 
 // ═══ Views (sidebar navigation) ═══
 function showView(view) {
-    let target = ['history', 'team', 'packages'].includes(view) ? view : 'upload';
+    let target = ['history', 'team', 'packages', 'copy'].includes(view) ? view : 'upload';
     if (target === 'team' && !(currentUser && currentUser.isAdmin)) target = 'upload';
     if (target === 'team') loadTeam();
     if (target === 'packages') loadPackages();
+    if (target === 'copy') cpLoadOptions();
     document.querySelectorAll('[data-view-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.viewPanel !== target));
     document.querySelectorAll('.nav-item[data-view]').forEach((b) => {
         const on = b.dataset.view === target;
@@ -2806,6 +2932,306 @@ async function apiJson(url, opts) {
     return body;
 }
 
+// ═══ Copy from AEM (see lib/copy-from-aem.js and lib/guides-setup.js on the server) ═══
+let cpMode = 'upload';
+let cpSessionId = null;
+let cpPoll = null;
+let cpLast = null;
+
+async function cpLoadOptions() {
+    try {
+        const o = await apiJson('/api/copy/options');
+        const box = document.getElementById('cpDisabled');
+        box.classList.toggle('hidden', o.enabled);
+        if (!o.enabled) box.textContent = 'Copying from another AEM server is not set up on this tool yet: an admin has to list the allowed target servers (COPY_TARGETS).';
+        document.getElementById('cpStartBtn').disabled = !o.enabled;
+        const sel = document.getElementById('cpTgtUrl');
+        const keep = sel.value;
+        sel.innerHTML = o.targets.map((t) => '<option value="' + esc(t) + '">' + esc(hostOf(t)) + '</option>').join('');
+        if (keep && o.targets.includes(keep)) sel.value = keep;
+    } catch (e) {
+        showToast('Could not load the copy settings: ' + toErrorMessage(e), 'error');
+    }
+    cpSetMode(cpMode);
+}
+
+function cpSourceFolder() {
+    const raw = document.getElementById('cpFolder').value.trim().replace(/\\/g, '/');
+    const m = /\/content\/dam\/.*/.exec(raw);
+    return (m ? m[0] : '/' + raw.replace(/^\/+/, '')).replace(/\/+$/, '');
+}
+
+// The content keeps its path on the target by default: DITA profiles point at absolute paths (DTD catalogs, DITA-OT)
+function cpFolderChanged() {
+    const folder = cpSourceFolder();
+    const valid = /^\/content\/dam\/[^/]/.test(folder);
+    const dam = document.getElementById('cpTgtDam');
+    if (valid && (!dam.value || dam.dataset.auto === '1')) {
+        dam.value = folder.slice(1, folder.lastIndexOf('/'));
+        dam.dataset.auto = '1';
+    }
+    const name = valid ? folder.split('/').pop() : '';
+    const target = AemNames.normalizeDamPath(dam.value).path;
+    const lands = name ? '/' + (target.split('/').pop() === name ? target : target + '/' + name) : '';
+    const note = document.getElementById('cpLandNote');
+    note.innerHTML = lands ? 'Lands at <b>' + esc(lands) + '</b>' + (lands === folder ? ' (same path as on the source: recommended)' : ' - a different path than on the source, so the DITA profile on the target must cover it') : '';
+    const pkg = document.getElementById('cpPkgName');
+    if (name && (!pkg.value || pkg.dataset.auto === '1')) { pkg.value = ('copy-' + name).replace(/[^A-Za-z0-9._ -]+/g, '-').slice(0, 80); pkg.dataset.auto = '1'; }
+}
+
+function cpSetMode(mode) {
+    if (cpSessionId) return;
+    cpMode = mode === 'package' ? 'package' : 'upload';
+    const pkg = cpMode === 'package';
+    [['cpModeUpload', !pkg], ['cpModePackage', pkg]].forEach(([id, on]) => {
+        const b = document.getElementById(id);
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-checked', String(on));
+    });
+    document.querySelectorAll('[data-cp-upload]').forEach((el) => el.classList.toggle('hidden', pkg));
+    document.querySelectorAll('[data-cp-package]').forEach((el) => el.classList.toggle('hidden', !pkg));
+    document.getElementById('cpTgtUrlRow').classList.toggle('hidden', pkg);
+    document.getElementById('cpTgtDamLabel').textContent = pkg ? 'Package root (DAM folder)' : 'Into this DAM folder';
+    cpFolderChanged();
+}
+
+function cpLock(locked) {
+    document.querySelectorAll('#cpSourceStep input, #cpSourceStep select, #cpTargetStep input, #cpTargetStep select').forEach((el) => { el.disabled = locked; });
+    document.getElementById('cpStartBtn').disabled = locked;
+}
+
+async function cpStart() {
+    const sourceUrl = normalizeAemBaseUrl(document.getElementById('cpSrcUrl').value.trim());
+    const sourceUsername = document.getElementById('cpSrcUser').value.trim();
+    const sourcePassword = document.getElementById('cpSrcPass').value;
+    const folder = cpSourceFolder();
+    const dam = AemNames.normalizeDamPath(document.getElementById('cpTgtDam').value);
+    const problem = !/^https?:\/\//i.test(sourceUrl) ? 'Enter the source AEM server address (https://…).'
+        : !sourceUsername || !sourcePassword ? 'Enter the username and password for the source server.'
+            : !/^\/content\/dam\/[^/]/.test(folder) ? 'Enter the folder to copy, for example /content/dam/crown.'
+                : dam.error ? dam.error : '';
+    if (problem) { showToast(problem, 'error'); return; }
+    const note = document.getElementById('cpStartNote');
+    cpLock(true);
+    note.textContent = 'Checking both servers…';
+    try {
+        let sessionId;
+        if (cpMode === 'package') {
+            const packageName = document.getElementById('cpPkgName').value.trim() || ('copy-' + folder.split('/').pop());
+            ({ sessionId } = await apiJson('/api/packages/init', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ damPath: dam.path, packageName, version: document.getElementById('cpPkgVersion').value.trim() || '1.0', group: 'guides-upload-copy' }),
+            }));
+        } else {
+            const username = document.getElementById('cpTgtUser').value.trim();
+            const password = document.getElementById('cpTgtPass').value;
+            if (!username || !password) throw new Error('Enter the username and password for the target server.');
+            ({ sessionId } = await apiJson('/api/upload/browser/init', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ baseUrl: document.getElementById('cpTgtUrl').value, damPath: dam.path, username, password,
+                    skipUnchanged: document.getElementById('cpSkipUnchanged').checked }),
+            }));
+        }
+        cpSessionId = sessionId;
+        await apiJson('/api/copy/' + sessionId + '/start', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceUrl, sourceUsername, sourcePassword, folder, concurrency: Number(document.getElementById('cpSpeed').value) }),
+        });
+        document.getElementById('cpSrcPass').value = '';
+        note.textContent = '';
+        cpShowRun();
+        cpPoll = setInterval(cpRefresh, 1000);
+        cpRefresh();
+    } catch (e) {
+        if (cpSessionId) { try { await fetch('/api/upload/browser/cancel/' + cpSessionId, { method: 'POST' }); } catch (_) { /* gone */ } }
+        cpSessionId = null;
+        note.textContent = '';
+        cpLock(false);
+        showToast('Copy not started: ' + toErrorMessage(e), 'error');
+    }
+}
+
+function cpShowRun() {
+    const run = document.getElementById('cpRunStep');
+    run.classList.remove('hidden');
+    document.getElementById('cpResult').innerHTML = '';
+    document.getElementById('cpProgress').classList.remove('hidden');
+    ['cpGoBtn', 'cpRecheckBtn'].forEach((id) => document.getElementById(id).classList.add('hidden'));
+    document.getElementById('cpCancelBtn').textContent = 'Cancel';
+    run.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function cpRefresh() {
+    if (!cpSessionId) return;
+    let copy;
+    try {
+        ({ copy } = await apiJson('/api/copy/' + cpSessionId));
+    } catch (e) {
+        clearInterval(cpPoll);
+        cpEnd('The copy is gone: ' + toErrorMessage(e));
+        return;
+    }
+    cpLast = copy;
+    const title = document.getElementById('cpRunTitle');
+    const text = document.getElementById('cpProgressText');
+    const bar = document.getElementById('cpBar');
+    if (copy.state === 'listing') {
+        title.textContent = 'Listing the files on the source…';
+        text.textContent = 'One search on ' + hostOf(copy.source.baseUrl) + '.';
+        bar.style.width = '2%';
+    } else if (copy.state === 'copying') {
+        title.textContent = 'Copying…';
+        const pct = copy.total ? Math.round((copy.done * 100) / copy.total) : 0;
+        bar.style.width = Math.max(2, pct) + '%';
+        text.textContent = copy.done.toLocaleString() + ' of ' + copy.total.toLocaleString() + ' files (' + fmtBytes(copy.bytes) + ' of ' + fmtBytes(copy.totalBytes) + ')'
+            + (copy.failedCount ? ' - ' + copy.failedCount + ' failed so far' : '');
+    } else if (copy.state === 'checking') {
+        title.textContent = 'Checking the DTD and DITA-OT setup…';
+        bar.style.width = '100%';
+        text.textContent = 'All files are here. Reading the DITA profiles on both servers.';
+    } else {
+        clearInterval(cpPoll);
+        if (copy.state === 'done') cpRenderResult(copy);
+        else cpEnd(copy.state === 'cancelled' ? 'Copy cancelled.' : 'Copy failed: ' + (copy.error || 'unknown error'));
+    }
+}
+
+function cpEnd(message) {
+    document.getElementById('cpRunTitle').textContent = message;
+    document.getElementById('cpProgress').classList.add('hidden');
+    ['cpGoBtn', 'cpRecheckBtn'].forEach((id) => document.getElementById(id).classList.add('hidden'));
+    document.getElementById('cpCancelBtn').textContent = 'Close';
+    cpSessionId = null;
+    cpLock(false);
+}
+
+function cpRenderResult(copy) {
+    document.getElementById('cpProgress').classList.add('hidden');
+    const d = copy.dita || {};
+    const setup = copy.setup || {};
+    const failed = copy.failedCount || 0;
+    document.getElementById('cpRunTitle').textContent = 'Copied ' + copy.done.toLocaleString() + ' files from ' + hostOf(copy.source.baseUrl) + copy.source.folder;
+    const stat = (v, l) => '<div class="cp-stat"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>';
+    let html = '<div class="cp-stats">'
+        + stat(copy.done.toLocaleString(), 'files copied (' + fmtBytes(copy.bytes) + ')')
+        + stat(copy.verified.toLocaleString(), 'identical to AEM\'s SHA-1; the rest checked by size')
+        + stat((d.rewrittenLinks || 0).toLocaleString(), 'GUID links turned into paths (' + (d.rewrittenFiles || 0).toLocaleString() + ' files)')
+        + stat(failed ? '<span style="color:#D7373F">' + failed + '</span>' : '0', 'files failed')
+        + '</div>';
+    if (failed) {
+        html += '<details class="cp-details" open><summary>Files that could not be copied (' + failed + ')</summary><table class="cp-table"><tr><th>File</th><th>Problem</th></tr>'
+            + copy.failed.map((f) => '<tr><td class="cp-mono">' + esc(f.path) + '</td><td>' + esc(f.error) + '</td></tr>').join('') + '</table></details>';
+    }
+    const cls = setup.ready === true ? 'ok' : setup.ready === false ? 'bad' : 'warn';
+    const verdict = setup.error ? esc(setup.error)
+        : setup.ready === false ? '<strong>Not ready yet.</strong> If you upload now, files whose DTD the target cannot find will not open in the editor. Do these steps first, then click Check again.'
+            : cpMode === 'package' ? '<strong>Source checked.</strong> Before installing the package, make sure the target has what is listed below.'
+                : '<strong>Ready.</strong> The target can open these files.' + (setup.steps && setup.steps.length ? ' Still worth doing:' : '');
+    html += '<div class="cp-verdict ' + cls + '"><div>' + verdict
+        + (setup.steps && setup.steps.length ? '<ol class="cp-steps">' + setup.steps.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>' : '') + '</div></div>';
+    if (d.unresolvedCount) {
+        html += '<div class="cp-verdict warn"><div>' + d.unresolvedCount + ' link(s) point to a GUID that no file on the source has (already broken there), for example <span class="cp-mono">'
+            + esc(d.unresolvedGuids[0]) + '</span>. They are copied as they are.</div></div>';
+    }
+    const src = setup.source;
+    if (src || (setup.doctypes && setup.doctypes.length)) {
+        html += '<details class="cp-details"><summary>Details: DITA profile, DTDs and DITA-OT</summary>';
+        if (src) {
+            html += '<p class="text-sm mt-2">Source DITA profile <strong>' + esc(src.name) + '</strong> (paths: <span class="cp-mono">' + esc((src.paths || []).join(', ')) + '</span>)'
+                + (setup.target ? '; on the target, <strong>' + esc(setup.target.name) + '</strong> applies to <span class="cp-mono">' + esc(setup.targetFolder || '') + '</span>' : '') + '.</p>'
+                + '<table class="cp-table"><tr><th>What</th><th>Path</th><th>Where</th></tr>'
+                + src.items.map((i) => '<tr><td>' + esc(i.kind) + '</td><td class="cp-mono">' + esc(i.path) + '</td><td><span class="cp-tag ' + i.where + '">'
+                    + ({ copied: 'in this copy', 'built-in': 'built into Guides', outside: 'copy it too' }[i.where] || i.where) + '</span></td></tr>').join('') + '</table>';
+        }
+        if (setup.doctypes && setup.doctypes.length) {
+            html += '<table class="cp-table" style="margin-top:10px"><tr><th>DOCTYPE used</th><th>Files</th><th>Resolved on the source by</th></tr>'
+                + setup.doctypes.map((x) => '<tr><td class="cp-mono">' + esc(x.publicId) + '</td><td>' + x.files.toLocaleString() + '</td><td class="cp-mono">' + esc(x.catalog || 'nothing') + '</td></tr>').join('') + '</table>';
+        }
+        html += '</details>';
+    }
+    document.getElementById('cpResult').innerHTML = html;
+    const go = document.getElementById('cpGoBtn');
+    go.classList.toggle('hidden', !copy.done);
+    go.textContent = cpMode === 'package' ? 'Build package' : (setup.ready === false ? 'Upload anyway' : 'Upload to ' + hostOf(document.getElementById('cpTgtUrl').value));
+    go.className = 'btn btn-l ' + (setup.ready === false ? 'btn-negative' : 'btn-accent');
+    document.getElementById('cpRecheckBtn').classList.toggle('hidden', cpMode === 'package' || !setup.source);
+}
+
+async function cpRecheck() {
+    const btn = document.getElementById('cpRecheckBtn');
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    try {
+        const { copy } = await apiJson('/api/copy/' + cpSessionId + '/recheck', { method: 'POST' });
+        cpLast = copy;
+        cpRenderResult(copy);
+        showToast(copy.setup && copy.setup.ready ? 'The target is ready now' : 'Still not ready: see the steps', copy.setup && copy.setup.ready ? 'success' : 'warn');
+    } catch (e) {
+        showToast(toErrorMessage(e), 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Check again';
+    }
+}
+
+async function cpGo() {
+    const setup = (cpLast && cpLast.setup) || {};
+    if (cpMode === 'upload' && setup.ready === false
+        && !confirm('The target cannot resolve the DTDs of some files yet. Uploaded now, those files will not open in the editor until the DITA profile is set up and they are processed again. Upload anyway?')) return;
+    const go = document.getElementById('cpGoBtn');
+    go.disabled = true;
+    try {
+        if (cpMode === 'package') {
+            go.textContent = 'Building…';
+            let { package: pkg } = await apiJson('/api/packages/build/' + cpSessionId, { method: 'POST' });
+            cpSessionId = null;
+            while (pkg.state === 'building') {
+                await new Promise((r) => setTimeout(r, 800));
+                ({ package: pkg } = await apiJson('/api/packages/' + pkg.id));
+                const pr = pkg.progress || {};
+                go.textContent = 'Building… ' + (pr.files || 0).toLocaleString() + ' / ' + (pr.totalFiles || 0).toLocaleString();
+            }
+            if (pkg.state !== 'ready') throw new Error(pkg.error || 'The package could not be built');
+            showToast('Package ready: ' + pkg.downloadName + '. Install it from the Packages page.', 'success');
+            cpReset();
+            showView('packages');
+        } else {
+            go.textContent = 'Starting…';
+            const { uploadId } = await apiJson('/api/upload/browser/finalize', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: cpSessionId }),
+            });
+            cpSessionId = null;
+            sessionStorage.setItem('activeUploadId', uploadId);
+            window._activeBannerUploadId = uploadId;
+            cpReset();
+            showView('upload');
+            reconnectActiveUploadNow();
+        }
+    } catch (e) {
+        showToast(toErrorMessage(e), 'error');
+        go.disabled = false;
+        if (cpLast) cpRenderResult(cpLast);
+    }
+}
+
+async function cpCancel() {
+    if (cpSessionId) {
+        if (cpLast && cpLast.state === 'done' && !confirm('Discard the copied files?')) return;
+        clearInterval(cpPoll);
+        try { await fetch('/api/upload/browser/cancel/' + cpSessionId, { method: 'POST' }); } catch (_) { /* gone */ }
+    }
+    cpReset();
+}
+
+function cpReset() {
+    clearInterval(cpPoll);
+    cpSessionId = null;
+    cpLast = null;
+    document.getElementById('cpRunStep').classList.add('hidden');
+    document.getElementById('cpGoBtn').disabled = false;
+    cpLock(false);
+}
+
 async function buildPackageFromSelection() {
     if (packageBuilding) return;
     const entries = browserFileEntries || [];
@@ -2903,12 +3329,14 @@ function renderPackages(list) {
         const cloudInstall = last && last.ok && /\.adobeaemcloud\.com/i.test(last.server || '');
         const installed = last ? '<div class="text-xs mt-1 ' + (last.ok ? 'text-green-700' : 'text-red-600') + '">' + (last.ok ? 'Installed on ' : 'Install failed on ') + esc(hostOf(last.server)) + ' ' + esc(timeAgo(last.at))
             + (cloudInstall ? '<span class="pkg-reprocess" title="AEM as a Cloud Service does not process package content: run Reprocess Assets on the folder">Reprocess needed</span>' : '') + '</div>' : '';
+        // Copied content can only be installed on an allowed server, not downloaded (see COPY_TARGETS on the server)
         const actions = p.state !== 'ready' ? '' :
-            '<a class="text-xs font-semibold text-adobe-blue hover:underline" href="/api/packages/' + encodeURIComponent(p.id) + '/download" download>Download</a>'
-            + '<span class="text-gray-300 mx-1">|</span><button type="button" class="text-xs font-semibold text-gray-700 hover:underline" onclick="installPackage(' + esc(JSON.stringify(p.id)) + ')">Install on AEM</button>';
+            (p.copiedFrom ? '' : '<a class="text-xs font-semibold text-adobe-blue hover:underline" href="/api/packages/' + encodeURIComponent(p.id) + '/download" download>Download</a>'
+            + '<span class="text-gray-300 mx-1">|</span>') + '<button type="button" class="text-xs font-semibold text-gray-700 hover:underline" onclick="installPackage(' + esc(JSON.stringify(p.id)) + ')">Install on AEM</button>';
         return '<tr>'
             + '<td class="px-4 py-3"><div class="font-semibold text-gray-800">' + esc(p.downloadName) + '</div><div class="text-xs text-gray-500">' + esc(p.group) + (currentUser && currentUser.isAdmin && p.ownerName ? ' &middot; ' + esc(p.ownerName) : '') + '</div></td>'
-            + '<td class="px-4 py-3 text-xs text-gray-600"><div class="font-mono break-all">' + esc(p.damPath) + '</div>' + (p.files != null ? '<div>' + p.files.toLocaleString() + ' files &middot; ' + fmtBytes(p.zipBytes || 0) + (p.skippedCount ? ' &middot; ' + p.skippedCount + ' skipped' : '') + '</div>' : '') + '</td>'
+            + '<td class="px-4 py-3 text-xs text-gray-600"><div class="font-mono break-all">' + esc(p.damPath) + '</div>'
+            + (p.copiedFrom ? '<div class="text-gray-500">Copied from ' + esc(hostOf(p.copiedFrom.baseUrl)) + '<span class="font-mono">' + esc(p.copiedFrom.folder) + '</span> &middot; kept until ' + esc(fmtTimestamp(p.expiresAt)) + '</div>' : '') + (p.files != null ? '<div>' + p.files.toLocaleString() + ' files &middot; ' + fmtBytes(p.zipBytes || 0) + (p.skippedCount ? ' &middot; ' + p.skippedCount + ' skipped' : '') + '</div>' : '') + '</td>'
             + '<td class="px-4 py-3">' + status + installed + '</td>'
             + '<td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">' + esc(timeAgo(p.createdAt)) + '</td>'
             + '<td class="px-4 py-3 text-right whitespace-nowrap">' + actions + '</td></tr>';

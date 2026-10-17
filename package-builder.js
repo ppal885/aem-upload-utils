@@ -223,9 +223,11 @@ async function entryKind(dir, dirent) {
 }
 
 // --- validation --------------------------------------------------------------------------------
-function validateDamRoot(damRoot) {
+// /content/dam itself only with skipTopFolder: the filters are then one per top folder, never all of /content/dam
+function validateDamRoot(damRoot, allowDamRoot = false) {
     if (typeof damRoot !== 'string') throw new Error('damRoot is required');
     const root = damRoot.replace(/\/+$/, '');
+    if (allowDamRoot && root === '/content/dam') return root;
     if (!root.startsWith('/content/dam/') || root.length <= '/content/dam/'.length) {
         throw new Error(`damRoot must be a path under /content/dam/ (got "${damRoot}")`);
     }
@@ -263,18 +265,22 @@ async function buildPackage({
     description = '',
     createdBy = 'aem-upload-utils',
     skipTopFolder = false,
+    keepNames = false,
     outFile,
     onProgress,
 } = {}) {
+    // keepNames: the names are AEM node names already (copied from another AEM server) and must not change
+    const folderName = keepNames ? (n) => n : cleanFolderName;
+    const assetName = keepNames ? (n) => n : cleanAssetName;
     if (!sourceDir) throw new Error('sourceDir is required');
     if (!outFile) throw new Error('outFile is required');
-    const root = validateDamRoot(damRoot);
+    const root = validateDamRoot(damRoot, skipTopFolder);
     const srcAbs = path.resolve(sourceDir);
     const srcStat = await fsp.stat(srcAbs);
     if (!srcStat.isDirectory()) throw new Error(`sourceDir is not a directory: ${srcAbs}`);
 
     const topRaw = path.basename(srcAbs);
-    const topName = cleanFolderName(topRaw);
+    const topName = folderName(topRaw);
     const name = validatePackageField('name', packageName || topName || 'dam-package');
     const grp = validatePackageField('group', group, { allowSlash: true });
     const ver = validatePackageField('version', version);
@@ -315,8 +321,8 @@ async function buildPackage({
             let st;
             try { st = await fsp.stat(path.join(srcAbs, n)); } catch (_) { continue; }
             let jcrName;
-            if (st.isDirectory()) jcrName = cleanFolderName(n);
-            else if (st.isFile()) jcrName = cleanAssetName(n);
+            if (st.isDirectory()) jcrName = folderName(n);
+            else if (st.isFile()) jcrName = assetName(n);
             else continue;
             if (!jcrName || seen.has(jcrName)) continue;
             if (st.isFile() && jcrName.endsWith('.dir')) continue;
@@ -450,7 +456,7 @@ async function buildPackage({
             }
             if (kind !== 'dir' && kind !== 'file') continue;
             const isDir = kind === 'dir';
-            const jcrName = isDir ? cleanFolderName(n) : cleanAssetName(n);
+            const jcrName = isDir ? folderName(n) : assetName(n);
             if (!jcrName || jcrName === '.' || jcrName === '..' || XML_INVALID_CHARS.test(jcrName)) {
                 skipped.push({ path: abs, reason: `cannot map to a valid JCR name ("${jcrName}")` });
                 continue;
