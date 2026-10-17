@@ -106,7 +106,11 @@ function readZip(file) {
 
 function sysTar() {
     const win = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
-    return process.platform === 'win32' && fs.existsSync(win) ? win : 'tar';
+    if (process.platform === 'win32' && fs.existsSync(win)) return win;
+    // GNU tar cannot read zip files; libarchive's bsdtar (what Windows and macOS ship as tar) can
+    if (process.platform !== 'linux') return 'tar';
+    if (spawnSync('bsdtar', ['--version']).status === 0) return 'bsdtar';
+    throw new Error('bsdtar not found: install libarchive-tools (apt) to read zip files with tar');
 }
 
 function pythonCmd() {
