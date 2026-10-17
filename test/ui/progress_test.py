@@ -4,12 +4,15 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 
 from playwright.async_api import async_playwright
 
 APP, AEM, FILES_DIR = sys.argv[1:4]
 FILES = [os.path.join(FILES_DIR, f) for f in sorted(os.listdir(FILES_DIR)) if f.startswith('t')]
+# the page gets progress in small batches, so it may show a server reading from up to this long ago
+PAGE_LAG_S = 1.0
 MODAL_OPEN = "!document.getElementById('confirmModal').classList.contains('hidden')"
 
 
@@ -43,21 +46,25 @@ async def main():
         await page.wait_for_function(MODAL_OPEN, timeout=10000)
         await page.evaluate('handleConfirmOk()')
         samples = []
+        readings = []
+        last_sample = 0
         for _ in range(400):
             a = api('/api/upload/active')
-            if a and a[0]['completedFiles'] > 40:
-                done, total = a[0]['completedFiles'], a[0]['expectedFiles']
+            if a:
+                readings.append((time.monotonic(), a[0]['completedFiles'] * 100 / a[0]['expectedFiles']))
+            if a and a[0]['completedFiles'] > 40 and (not samples or time.monotonic() - last_sample >= 1.5):
                 shown = int((await page.inner_text('#progressPct')).rstrip('%') or 0)
-                samples.append((done, total, shown, await page.inner_text('#uploadSpeed'), await page.inner_text('#uploadEta')))
+                last_sample = time.monotonic()
+                recent = [pct for t, pct in readings if last_sample - t <= PAGE_LAG_S]
+                samples.append((recent, shown, await page.inner_text('#uploadSpeed'), await page.inner_text('#uploadEta')))
                 if len(samples) >= 4:
                     break
-                await asyncio.sleep(1.5)
             await asyncio.sleep(0.25)
         header = await page.evaluate("document.getElementById('fileList').innerText.split('\\n').slice(0, 5).join(' | ')")
         ok = bool(samples)
-        for done, total, shown, speed, eta in samples:
-            real = done * 100 / total
-            ok = ok and abs(shown - real) <= 3 and (eta.startswith('Calculating') or re.match(r'ETA (\d+h )?\d+m? ?\d*s?|ETA \d+s', eta) is not None)
+        for recent, shown, speed, eta in samples:
+            real = recent[-1]
+            ok = ok and any(abs(shown - pct) <= 3 for pct in recent) and (eta.startswith('Calculating') or re.match(r'ETA (\d+h )?\d+m? ?\d*s?|ETA \d+s', eta) is not None)
             print(f"  real={real:.1f}% shown={shown}% speed={speed!r} eta={eta!r}")
         print(f"  header: {header[:140]!r}")
         ok = ok and ('remaining' in header or '300 done' in header) and 'in progress' not in header and not errors

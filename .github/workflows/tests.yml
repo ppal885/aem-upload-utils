@@ -36,6 +36,7 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: test/requirements.txt
+      - run: sudo apt-get install -y --no-install-recommends libarchive-tools
       - run: npm ci
       - run: pip install -r test/requirements.txt
       - run: python -m playwright install --with-deps chromium
