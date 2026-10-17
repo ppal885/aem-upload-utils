@@ -19,6 +19,8 @@ const packages = require('./lib/packages');
 const backup = require('./lib/backup');
 const copyFromAem = require('./lib/copy-from-aem');
 const guidesSetup = require('./lib/guides-setup');
+const guidesStatus = require('./lib/guides-status');
+const guidesProfile = require('./lib/guides-profile');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
@@ -599,6 +601,7 @@ setInterval(() => {
 
 function addHistoryRow(meta, row) {
     if (meta && meta.skippedFiles) row.skippedFiles = meta.skippedFiles;
+    if (meta && meta.folder) row.folder = meta.folder;
     uploadHistory.unshift({ ...row, owner: (meta && meta.owner) || null, ownerName: (meta && meta.ownerName) || null });
 }
 
@@ -1605,6 +1608,89 @@ app.post('/api/packages/:id/install', uploadLimiter, async (req, res) => {
     res.status(result.ok ? 200 : 502).json({ ...result, package: packages.publicPackage(p) });
 });
 
+// ─── API: AEM Guides readiness and DITA profiles (lib/guides-status.js, lib/guides-profile.js) ───
+// Credentials come with the request, or from a copy session (the target of that copy), never stored.
+function guidesServer(req) {
+    const b = req.body || {};
+    if (b.sessionId) {
+        const session = browserUploadSessions.get(b.sessionId);
+        if (!session || !auth.canAccess(req, session.owner) || !session.config || !session.config.username) return { error: 'Copy session not found or expired' };
+        return { server: { baseUrl: originOf(session.config.baseUrl), username: session.config.username, password: session.config.password }, session };
+    }
+    const baseUrl = originOf(b.baseUrl);
+    if (!baseUrl || !b.username || !b.password) return { error: 'Enter the AEM server, username and password' };
+    return { server: { baseUrl, username: String(b.username), password: String(b.password) } };
+}
+
+function damFolder(raw) {
+    const p = '/' + String(raw || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    return /^\/content\/dam\/[^/]/.test(p) && !p.split('/').includes('..') ? p : null;
+}
+
+app.post('/api/guides/status', uploadLimiter, async (req, res) => {
+    const g = guidesServer(req);
+    if (g.error) return res.status(400).json({ error: g.error });
+    const folder = damFolder(req.body.folder);
+    if (!folder) return res.status(400).json({ error: 'Choose a folder inside /content/dam' });
+    try {
+        res.json({ status: await guidesStatus.folderStatus(g.server, folder) });
+    } catch (e) {
+        res.status(502).json({ error: e.name === 'TimeoutError' ? 'AEM did not answer in time' : e.message });
+    }
+});
+
+app.post('/api/guides/reprocess', uploadLimiter, async (req, res) => {
+    const g = guidesServer(req);
+    if (g.error) return res.status(400).json({ error: g.error });
+    const folder = damFolder(req.body.folder);
+    if (!folder) return res.status(400).json({ error: 'Choose a folder inside /content/dam' });
+    try {
+        const r = await guidesStatus.reprocessFolder(g.server, folder);
+        log.info(`Reprocess Assets started by ${req.user.key}: ${g.server.baseUrl}${folder}`);
+        res.json(r);
+    } catch (e) {
+        res.status(502).json({ error: e.message });
+    }
+});
+
+// Creating a DITA profile changes the AEM server's configuration: only on the allowed servers, never editing existing ones
+function profileServer(req, res) {
+    const g = guidesServer(req);
+    if (g.error) { res.status(400).json({ error: g.error }); return null; }
+    if (!isAllowedCopyTarget(g.server.baseUrl)) {
+        res.status(403).json({ error: `DITA profiles can only be created from here on the allowed servers (${COPY_TARGETS.join(', ') || 'none set'}). Create it in AEM instead (Tools > Guides > DITA Profiles).`, code: 'PROFILE_SERVER_NOT_ALLOWED' });
+        return null;
+    }
+    return g;
+}
+
+const profileInput = (b) => ({ name: b.name, paths: [].concat(b.paths || []), catalogs: [].concat(b.catalogs || []), ditaotZip: b.ditaotZip || '' });
+
+app.post('/api/guides/profile/plan', uploadLimiter, async (req, res) => {
+    const g = profileServer(req, res);
+    if (!g) return;
+    try {
+        const plan = await guidesProfile.planProfile(g.server, profileInput(req.body));
+        res.json({ ok: plan.ok, problems: plan.problems, notes: plan.notes, profile: plan.profile });
+    } catch (e) {
+        res.status(502).json({ error: e.message });
+    }
+});
+
+app.post('/api/guides/profile/create', uploadLimiter, async (req, res) => {
+    const g = profileServer(req, res);
+    if (!g) return;
+    try {
+        const input = profileInput(req.body);
+        const result = await guidesProfile.createProfile(g.server, input);
+        log.info(`DITA profile ${result.ok ? 'created' : 'not created'} by ${req.user.key} on ${g.server.baseUrl}: "${input.name}" paths ${JSON.stringify(input.paths)} catalogs ${JSON.stringify(input.catalogs)}`
+            + (result.problems ? ` problems ${JSON.stringify(result.problems)}` : '') + (result.errors && result.errors.length ? ` errors ${JSON.stringify(result.errors)}` : ''));
+        res.status(result.problems ? 409 : 200).json(result);
+    } catch (e) {
+        res.status(502).json({ error: e.message });
+    }
+});
+
 // ─── API: copy a folder from another AEM server (read-only on that server, see lib/copy-from-aem.js) ───
 // The copied files fill an upload or package session exactly like files sent from the browser, so the normal
 // finalize (upload) or package build runs afterwards. Copied content may only go to the servers in COPY_TARGETS.
@@ -1996,6 +2082,17 @@ function releaseUploadSlot(baseUrl, uploadId) {
  * Starts the AEM upload of files staged in tempDir (fresh from finalize, or what is left after a restart).
  * Returns { uploadId } or { status, error }; onStarted(uploadId) runs as soon as the upload exists.
  */
+// The folder an upload lands in (for "Check in AEM"): damPath/<folder> when one folder was sent, else damPath
+function landedFolder(damPath, contentChildren, keepNames) {
+    const root = '/' + String(damPath || '').replace(/^\/+|\/+$/g, '');
+    if (!contentChildren || contentChildren.length !== 1) return root;
+    let st;
+    try { st = fs.statSync(contentChildren[0]); } catch (_) { return root; }
+    if (!st.isDirectory()) return root;
+    const name = nodePath.basename(contentChildren[0]);
+    return `${root}/${keepNames ? AemNames.keepNodeName(name) : AemNames.folderNodeName(name)}`;
+}
+
 async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, password, settings, tempDir, contentChildren,
     receivedFiles, totalReceivedBytes, totalFilesOverall, sessionId, resumeOf, sourceLabel, onStarted }) {
     const { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged, keepNodeNames } = settings;
@@ -2036,6 +2133,7 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
                 : sourceLabel ? `${sourceLabel} (${receivedFiles} files, ${Math.round(totalReceivedBytes / 1048576)} MB)`
                 : 'Browser upload (' + receivedFiles + ' files, ' + Math.round(totalReceivedBytes / 1048576) + ' MB)',
             expectedFiles: receivedFiles,
+            folder: landedFolder(damPath, contentChildren, keepNodeNames === true),
             expectedBytes: totalReceivedBytes,
             startTime,
         },

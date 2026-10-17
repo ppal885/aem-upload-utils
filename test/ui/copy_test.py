@@ -159,10 +159,22 @@ async def main():
             c2 = await copy(page2, '/content/dam/crown-dtd')
             await page2.click('#cpGoBtn')
             record('the DTD folder is copied to the same path on the target', wait_completed('/content/dam/crown-dtd/', 3), str(completed('/content/dam/crown-dtd/')))
-            prof = [SEED['profiles'][0], {**SEED['profiles'][1], 'ditaot': {'zip': '/libs/fmdita/dita_resources/DITA-OT.zip', 'catalogs': []}}]
-            urllib.request.urlopen(urllib.request.Request(TARGET + '/__profiles', data=json.dumps(prof).encode(), method='POST'))
-            await page.click('#cpRecheckBtn')
+            # Create the DITA profile from the copy result (filled in from the source's "Crown" profile)
+            await page.click('#cpProfileBtn')
+            await page.wait_for_selector('#pfName', timeout=5000)
+            record('profile dialog is filled from the source profile', await page.input_value('#pfName') == 'Crown (copy)'
+                   and await page.input_value('#pfPath') == '/content/dam/crown' and await page.input_value('#pfCatalogs') == '/content/dam/crown-dtd/catalog.xml'
+                   and await page.input_value('#pfZip') == '/content/dam/crown-ot/dita-ot.zip', '')
+            await page.click('#pfCheckBtn')
+            await page.wait_for_function("document.getElementById('pfResult').innerText.length > 10", timeout=10000)
+            t = await page.inner_text('#pfResult')
+            record('a DITA-OT zip that is not on the target blocks creating', 'Not possible yet' in t and 'dita-ot.zip is not on this server yet' in t, t[:200])
+            await page.fill('#pfZip', '')
+            await page.click('#pfCheckBtn')
+            await page.wait_for_selector('#pfCreateBtn', timeout=10000)
+            await page.click('#pfCreateBtn')
             await page.wait_for_function("cpLast.setup && cpLast.setup.ready === true", timeout=20000)
+            record('after creating the profile, Check again says ready by itself', True)
             go = await page.inner_text('#cpGoBtn')
             record('Check again: ready once the DTDs and the profile are on the target', go.startswith('Upload to'), go)
 

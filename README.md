@@ -145,6 +145,14 @@ AEM does not allow some characters in folder names, so an upload normally cleans
 
 When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog namespace), the page reads it and warns before uploading: references (`uri`, `nextCatalog`, `rewritePrefix`, …) whose folder or file name would change, with a button to keep names exactly, and referenced files missing from the selection. After the upload, add the uploaded `catalog.xml` to a DITA profile (Tools > Guides > DITA Profiles) whose paths cover the content, save it, and only then upload the topics.
 
+### Check in AEM
+
+**Check in AEM** (History rows, and Packages after an install) shows how far AEM and AEM Guides got with a folder: DITA files processed / waiting / failed by Guides (failed ones by name), AEM processing (renditions, SHA-1), whether the links in up to 100 processed maps point at files in the folder, and whether the editor can load the DTD of a few topics. It refreshes every 30 seconds until Guides is done. On AEM as a Cloud Service, files installed from a package have no AEM processing: the dialog offers **Reprocess Assets** (Full Process + Run Post Process, as in Assets). Only reads, except Reprocess; the credentials are the ones on New upload for the same server, or typed in the dialog, and are not stored.
+
+### Create a DITA profile
+
+**Create DITA profile** (in the "DTD catalog found" box after uploading a DTD folder, and in a not-ready Copy from AEM result) creates a new profile on the AEM server from its Global/Default profile, like Tools > Guides > DITA Profiles > Create Profile: the topics folder in Assigned Paths, the uploaded `catalog.xml` added to the built-in catalogs, optionally a customer DITA-OT zip. **Check** first shows what changes (which profile a folder uses now, or that it moves out of another profile) and refuses a duplicate name or a catalog / zip that is not on the server yet; **Create profile** saves it and reads it back to confirm there are no errors. It never edits or deletes an existing profile, works only on the `COPY_TARGETS` servers, and every change is logged. After creating, a Copy from AEM result runs **Check again** by itself.
+
 ### Copy from AEM
 
 **Copy from AEM** copies a folder from another AEM Guides server (for example a customer's stage) to one of our servers, by upload or as a package. The source is only read: one QueryBuilder search, then the original renditions (8 at a time by default; Gentle 4 or Fast 16). Nothing is created, changed or locked there, and its password is used only during the copy.
