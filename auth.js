@@ -260,7 +260,9 @@ function parseCookies(req) {
 }
 
 function cookieHeader(req, value, maxAgeSec) {
-    const secure = req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+    // Only a real HTTPS connection: a Secure cookie sent over plain HTTP is dropped by the browser, which
+    // signed people out on every reload when a proxy added X-Forwarded-Proto: https
+    const secure = req.secure ? '; Secure' : '';
     return `${COOKIE_NAME}=${encodeURIComponent(value)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSec}${secure}`;
 }
 

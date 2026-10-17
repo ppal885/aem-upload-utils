@@ -64,6 +64,10 @@ const json = async (r) => ({ status: r.status, body: await r.json().catch(() => 
     const xsite = await fetch(BASE + '/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example', Cookie: admin.cookie }, body: '{"email":"x@y.z"}' });
     record('cross-origin admin write rejected', xsite.status === 403, `status=${xsite.status}`);
 
+    const proxied = await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { ...H, 'X-Forwarded-Proto': 'https' }, body: JSON.stringify({ email: 'qe@test.local', password: 'qe-pass-12345' }) });
+    const proxiedCookie = proxied.headers.get('set-cookie') || '';
+    record('over plain HTTP the session cookie is never Secure (else the browser drops it and a reload signs out)', proxied.status === 200 && !/;\s*Secure/i.test(proxiedCookie), proxiedCookie.replace(/=[0-9a-f]{20,}/, '=…'));
+
     const out = await call('/api/auth/logout', member.cookie, 'POST');
     const gone = await call('/api/upload/history', member.cookie);
     record('sign-out ends the session', out.status === 200 && gone.status === 401, `after=${gone.status}`);
