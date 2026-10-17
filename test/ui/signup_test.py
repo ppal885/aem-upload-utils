@@ -113,6 +113,30 @@ async def main():
         record('late session check keeps the sign-up screen and what was typed',
                await page.is_visible('#signupForm') and await page.input_value('#signupName') == 'Typing')
         await ctx.close()
+
+        # reload while signed in, on a slow network: the sign-in screen must never flash
+        ctx = await browser.new_context()
+        page = await ctx.new_page()
+        await page.goto(APP, wait_until='domcontentloaded')
+        await page.wait_for_function("typeof submitLogin === 'function'", timeout=60000)
+        await page.fill('#loginEmail', 'qe@test.local')
+        await page.fill('#loginPassword', 'qe-pass-12345')
+        await page.click('#loginSubmit')
+        await page.wait_for_function('!!currentUser', timeout=15000)
+
+        async def slow_me(route):
+            await asyncio.sleep(1)
+            await route.continue_()
+        await page.route('**/api/auth/me', slow_me)
+        await page.add_init_script("""window.__loginSeen = false; const t = setInterval(() => {
+            const el = document.getElementById('loginScreen');
+            if (el && !el.classList.contains('hidden') && getComputedStyle(el).display !== 'none') window.__loginSeen = true;
+            if (window.currentUser) clearInterval(t); }, 10);""")
+        await page.reload(wait_until='domcontentloaded')
+        await page.wait_for_function('!!currentUser', timeout=15000)
+        seen = await page.evaluate('window.__loginSeen')
+        record('reload while signed in never shows the sign-in screen, even when the check is slow', seen is False, f'loginSeen={seen}')
+        await ctx.close()
         await browser.close()
     print(f'\n{sum(results)}/{len(results)} passed')
     sys.exit(0 if all(results) else 1)
