@@ -2129,6 +2129,7 @@ async function submitSignup() {
         if (!r.ok) { showAuthError('signupError', toErrorMessage(r.body.error || 'Could not create the account (HTTP ' + r.status + ')')); return; }
         try { localStorage.setItem('lastEmail', r.body.user.email); } catch (_) { /* ignore */ }
         ['signupName', 'signupEmail', 'signupPassword', 'signupConfirm'].forEach((x) => { document.getElementById(x).value = ''; });
+        if (!(await sessionKept())) { showAuthError('signupError', 'Your account was created. ' + COOKIE_DROPPED); return; }
         applySignedIn(r.body.user);
         showToast('Welcome, ' + r.body.user.name + '! Your account is ready.', 'success');
     } catch (e) {
@@ -2205,6 +2206,13 @@ function setBusy(btn, busy, label) {
         : label;
 }
 
+// The account works but the browser may still drop the session cookie (blocked cookies, an extension):
+// then every reload would show the sign-in screen again, so check before showing the workspace.
+async function sessionKept() {
+    try { return (await fetch('/api/auth/me', { cache: 'no-store' })).ok; } catch (_) { return false; }
+}
+const COOKIE_DROPPED = 'Your browser did not keep the sign-in cookie, so you would be signed out on the next reload. Allow cookies for this site (check browser settings and extensions), then sign in again.';
+
 async function submitLogin() {
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -2234,6 +2242,11 @@ async function submitLogin() {
         }
         try { localStorage.setItem('lastEmail', email); } catch (_) { /* ignore */ }
         err.classList.add('hidden');
+        if (!(await sessionKept())) {
+            err.textContent = COOKIE_DROPPED;
+            err.classList.remove('hidden');
+            return;
+        }
         if (j.user.mustChangePassword) {
             currentUser = j.user;
             document.getElementById('changePwCurrent').value = password;
