@@ -68,6 +68,13 @@ const json = async (r) => ({ status: r.status, body: await r.json().catch(() => 
     const proxiedCookie = proxied.headers.get('set-cookie') || '';
     record('over plain HTTP the session cookie is never Secure (else the browser drops it and a reload signs out)', proxied.status === 200 && !/;\s*Secure/i.test(proxiedCookie), proxiedCookie.replace(/=[0-9a-f]{20,}/, '=…'));
 
+    const promote = await json(await call('/api/admin/users/qe%40test.local', admin.cookie, 'POST', { role: 'admin' }));
+    const meNow = await json(await call('/api/auth/me', member.cookie));
+    await call('/api/admin/users/qe%40test.local', admin.cookie, 'POST', { role: 'member' });
+    const meBack = await json(await call('/api/auth/me', member.cookie));
+    record('a role change by an admin applies to the open session at once', promote.status === 200 && meNow.body.user && meNow.body.user.isAdmin && meBack.body.user && !meBack.body.user.isAdmin,
+        `admin now=${meNow.body.user && meNow.body.user.isAdmin}, after revert=${meBack.body.user && meBack.body.user.isAdmin}`);
+
     const out = await call('/api/auth/logout', member.cookie, 'POST');
     const gone = await call('/api/upload/history', member.cookie);
     record('sign-out ends the session', out.status === 200 && gone.status === 401, `after=${gone.status}`);

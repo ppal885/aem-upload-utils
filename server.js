@@ -2758,6 +2758,7 @@ let shuttingDown = false;
 async function shutdown(signal) {
     shuttingDown = true;
     log.info(`${signal} received. Shutting down gracefully...`);
+    auth.flushSessions();
     uploadSessions.forEach((session, uploadId) => {
         if (session.done) return;
         const meta = session.meta;

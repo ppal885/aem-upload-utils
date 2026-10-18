@@ -22,7 +22,7 @@ module.exports = {
         'SMTP_USER', 'SMTP_PASS', 'SMTP_SECURE', 'MAIL_FROM', 'PACKAGES_DIR', 'PACKAGE_KEEP_DAYS', 'UPLOAD_PIPELINES',
         'TLS_CERT_FILE', 'TLS_KEY_FILE', 'HTTPS_PORT', 'HTTPS_ONLY', 'MIN_PASSWORD_LENGTH',
         'BACKUP_DIR', 'BACKUP_KEEP_DAYS', 'MAX_UPLOADS_PER_SERVER',
-        'COPY_TARGETS', 'COPY_ALLOW_DOWNLOAD', 'COPY_IDLE_MINUTES', 'COPY_PACKAGE_KEEP_HOURS']
+        'COPY_TARGETS', 'COPY_ALLOW_DOWNLOAD', 'COPY_IDLE_MINUTES', 'COPY_PACKAGE_KEEP_HOURS', 'SESSIONS_FILE']
         .filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])),
     },
     merge_logs: true,

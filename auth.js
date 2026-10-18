@@ -24,11 +24,50 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.tr
 const SIGNUP_ENABLED = !/^(0|false|no)$/i.test(process.env.SIGNUP_ENABLED || '');
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
+// Sessions survive a restart, so a deploy does not sign everyone out. The file holds only a SHA-256 of each
+// session id (the cookie value), so it cannot be used to sign in; it is written atomically, readable by the
+// server's user only, at most every few seconds and once more at shutdown (flushSessions).
+const SESSIONS_FILE = process.env.SESSIONS_FILE || path.join(__dirname, 'sessions.json');
+const SESSIONS_SAVE_DELAY_MS = 5000;
 const sessions = new Map();
+const sidKey = (sid) => crypto.createHash('sha256').update(String(sid)).digest('hex');
+let saveTimer = null;
+
+function flushSessions() {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    try {
+        const list = [...sessions.entries()].map(([key, s]) => ({ key, user: s.user, mustChangePassword: s.mustChangePassword, createdAt: s.createdAt, lastSeen: s.lastSeen }));
+        const tmp = SESSIONS_FILE + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(list), { mode: 0o600 });
+        fs.renameSync(tmp, SESSIONS_FILE);
+    } catch (_) { /* sessions stay in memory; the next save tries again */ }
+}
+
+function saveSessionsSoon() {
+    if (!saveTimer) saveTimer = setTimeout(flushSessions, SESSIONS_SAVE_DELAY_MS);
+    if (saveTimer.unref) saveTimer.unref();
+}
 
 // ─── User store ───
 function normalizeEmail(email) {
     return String(email || '').trim().toLowerCase();
+}
+
+// Sessions from before a restart: expired ones, and those of deleted or disabled accounts, are dropped;
+// name and role come from the account, so a change made by an admin applies
+function loadSessions() {
+    let list = [];
+    try { list = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8')); } catch (_) { return; }
+    if (!Array.isArray(list)) return;
+    const users = new Map(loadUsers().map((u) => [u.email, u]));
+    const now = Date.now();
+    for (const s of list) {
+        const u = s && s.user && users.get(s.user.email);
+        if (!u || u.disabled || typeof s.key !== 'string') continue;
+        if (now - s.lastSeen > SESSION_IDLE_MS || now - s.createdAt > SESSION_MAX_MS) continue;
+        sessions.set(s.key, { user: { email: u.email, name: u.name, role: u.role }, mustChangePassword: !!(s.mustChangePassword || u.mustChangePassword), createdAt: s.createdAt, lastSeen: s.lastSeen });
+    }
 }
 
 function isValidEmail(email) {
@@ -212,8 +251,9 @@ function updateUser(email, changes) {
         delete u.resetTokenHash; delete u.resetExpiresAt; delete u.resetRequestedAt;
     }
     saveUsers(users);
-    // A disabled account, or a reset password, ends that person's sessions
+    // A disabled account, or a reset password, ends that person's sessions; a new role or name applies at once
     if (u.disabled || changes.resetPassword) endSessionsFor(u.email);
+    else sessions.forEach((s) => { if (s.user.email === u.email) { s.user.role = u.role; s.user.name = u.name; saveSessionsSoon(); } });
     return { user: publicAccount(u), temporaryPassword };
 }
 
@@ -274,8 +314,9 @@ function publicUser(s) {
 function createSession(req, res, user) {
     const sid = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    const s = { sid, user: { email: user.email, name: user.name, role: user.role }, mustChangePassword: !!user.mustChangePassword, createdAt: now, lastSeen: now };
-    sessions.set(sid, s);
+    const s = { user: { email: user.email, name: user.name, role: user.role }, mustChangePassword: !!user.mustChangePassword, createdAt: now, lastSeen: now };
+    sessions.set(sidKey(sid), s);
+    saveSessionsSoon();
     res.setHeader('Set-Cookie', cookieHeader(req, sid, Math.floor(SESSION_MAX_MS / 1000)));
     return s;
 }
@@ -283,40 +324,46 @@ function createSession(req, res, user) {
 function getSession(req) {
     const sid = parseCookies(req)[COOKIE_NAME];
     if (!sid) return null;
-    const s = sessions.get(sid);
+    const key = sidKey(sid);
+    const s = sessions.get(key);
     if (!s) return null;
     const now = Date.now();
     if (now - s.lastSeen > SESSION_IDLE_MS || now - s.createdAt > SESSION_MAX_MS) {
-        sessions.delete(sid);
+        sessions.delete(key);
+        saveSessionsSoon();
         return null;
     }
+    // lastSeen only matters to the minute for the idle limit: do not rewrite the file on every request
+    if (now - s.lastSeen > 60 * 1000) saveSessionsSoon();
     s.lastSeen = now;
     return s;
 }
 
 function destroySession(req, res) {
     const sid = parseCookies(req)[COOKIE_NAME];
-    if (sid) sessions.delete(sid);
+    if (sid) { sessions.delete(sidKey(sid)); saveSessionsSoon(); }
     res.setHeader('Set-Cookie', cookieHeader(req, '', 0));
 }
 
 function endSessionsFor(email, exceptSid) {
-    sessions.forEach((s, sid) => { if (s.user.email === email && sid !== exceptSid) sessions.delete(sid); });
+    const keep = exceptSid ? sidKey(exceptSid) : null;
+    sessions.forEach((s, key) => { if (s.user.email === email && key !== keep) sessions.delete(key); });
+    saveSessionsSoon();
 }
 
 /** After a password change: this session is cleared to continue, other sessions of the account end. */
 function passwordChanged(req, user) {
     const sid = parseCookies(req)[COOKIE_NAME];
-    const s = sid && sessions.get(sid);
-    if (s) { s.mustChangePassword = false; s.user.role = user.role; s.user.name = user.name; }
+    const s = sid && sessions.get(sidKey(sid));
+    if (s) { s.mustChangePassword = false; s.user.role = user.role; s.user.name = user.name; saveSessionsSoon(); }
     endSessionsFor(user.email, sid);
     return s;
 }
 
 setInterval(() => {
     const now = Date.now();
-    sessions.forEach((s, sid) => {
-        if (now - s.lastSeen > SESSION_IDLE_MS || now - s.createdAt > SESSION_MAX_MS) sessions.delete(sid);
+    sessions.forEach((s, key) => {
+        if (now - s.lastSeen > SESSION_IDLE_MS || now - s.createdAt > SESSION_MAX_MS) { sessions.delete(key); saveSessionsSoon(); }
     });
 }, 10 * 60 * 1000).unref();
 
@@ -376,8 +423,10 @@ function resolveAemTarget(req) {
     return { baseUrl: b.baseUrl, username: b.username, password: b.password };
 }
 
+loadSessions();
+
 module.exports = {
-    createSession, getSession, destroySession, publicUser, requireAuth, requireAdmin, canAccess, resolveAemTarget,
+    createSession, getSession, destroySession, flushSessions, SESSIONS_FILE, publicUser, requireAuth, requireAdmin, canAccess, resolveAemTarget,
     checkPassword, recordSignIn, changePassword, passwordChanged, listUsers, addUser, registerUser, updateUser, normalizeEmail,
     isAllowedDomain, domainHint, authOptions, requestPasswordReset, resetPasswordWithToken, MIN_PASSWORD_LENGTH, USERS_FILE,
 };

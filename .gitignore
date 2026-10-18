@@ -7,6 +7,8 @@ upload-history.json
 *.log
 .upload-tmp
 users.json
+sessions.json
+sessions.json.tmp
 users.json.tmp
 packages/
 certs/

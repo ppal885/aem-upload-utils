@@ -82,6 +82,7 @@ function appEnv(name, port) {
     return {
         PORT: String(port), TMPDIR: tmp, TEMP: tmp, TMP: tmp,
         HISTORY_FILE: path.join(d, 'upload-history.json'), PACKAGES_DIR: path.join(d, 'packages'), BACKUP_DIR: path.join(d, 'backups'),
+        SESSIONS_FILE: path.join(d, 'sessions.json'),
     };
 }
 
@@ -137,6 +138,7 @@ async function main() {
     seedUsers(usersFile);
     process.env.TEST_WORK_DIR = WORK;
     process.env.USERS_FILE = usersFile;
+    process.env.SESSIONS_FILE = path.join(WORK, 'sessions-other.json');
     process.env.ALLOWED_EMAIL_DOMAINS = 'adobe.com,test.local';
     process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'info';
     console.log(`work folder: ${WORK}`);

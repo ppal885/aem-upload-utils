@@ -23,7 +23,7 @@ def server_env(name, port, extra=None):
     tmp = os.path.join(d, 'tmp')
     os.makedirs(tmp, exist_ok=True)
     env = dict(os.environ, PORT=str(port), TMPDIR=tmp, TEMP=tmp, TMP=tmp,
-               HISTORY_FILE=os.path.join(d, 'upload-history.json'), PACKAGES_DIR=os.path.join(d, 'packages'),
+               HISTORY_FILE=os.path.join(d, 'upload-history.json'), PACKAGES_DIR=os.path.join(d, 'packages'), SESSIONS_FILE=os.path.join(d, 'sessions.json'),
                BACKUP_DIR=os.path.join(d, 'backups'))
     env.update(extra or {})
     return env
