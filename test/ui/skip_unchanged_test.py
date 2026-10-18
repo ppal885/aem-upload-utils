@@ -35,7 +35,10 @@ async def upload(page, dam, selection, skip):
     await page.fill('#damPath', dam)
     await page.evaluate(SELECT_JS, selection)
     await page.set_checked('#skipUnchanged', skip)
-    toasts_before = await page.evaluate("document.querySelectorAll('#toastContainer > *').length")
+    # toasts close after a few seconds: record each one as it appears, not what is left when the upload ends
+    await page.evaluate("""() => { window.__toasts = []; if (window.__toastObs) return;
+        window.__toastObs = new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => window.__toasts.push(n.textContent.trim()))));
+        window.__toastObs.observe(document.getElementById('toastContainer'), { childList: true }); }""")
     before = len(completed('/' + dam + '/'))
     await page.evaluate('initiateUpload()')
     await page.wait_for_function("!document.getElementById('confirmModal').classList.contains('hidden')")
@@ -47,7 +50,7 @@ async def upload(page, dam, selection, skip):
             break
         await asyncio.sleep(0.25)
     sent = completed('/' + dam + '/')[before:]
-    toasts = await page.evaluate("[...document.querySelectorAll('#toastContainer > *')].map(t => t.textContent.trim())")
+    toasts = await page.evaluate('window.__toasts')
     return note, sent, toasts
 
 

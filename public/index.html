@@ -637,6 +637,10 @@
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                 <span>Packages</span>
             </button>
+            <button type="button" class="nav-item hidden" data-admin-only data-view="status" onclick="showView('status')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+                <span>Server status</span>
+            </button>
             <button type="button" class="nav-item hidden" data-admin-only data-view="team" onclick="showView('team')">
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 <span>Team members</span>
@@ -666,6 +670,10 @@
             <button type="button" class="nav-item nav-tab" data-view="packages" onclick="showView('packages')">
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                 <span>Packages</span>
+            </button>
+            <button type="button" class="nav-item nav-tab hidden" data-admin-only data-view="status" onclick="showView('status')">
+                <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+                <span>Status</span>
             </button>
             <button type="button" class="nav-item nav-tab hidden" data-admin-only data-view="team" onclick="showView('team')">
                 <svg class="h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -986,6 +994,7 @@
                 <div id="fileList" class="max-h-80 overflow-y-auto text-sm"></div>
             </div>
             <div id="summaryBar" class="hidden px-6 py-4 border-t border-gray-100"></div>
+            <div id="readyBox" class="hidden px-6 py-4 border-t border-gray-100" aria-live="polite"></div>
         </section>
 
             </div>
@@ -1139,6 +1148,23 @@
                 </thead>
                 <tbody id="pkgBody" class="divide-y divide-gray-100"></tbody>
             </table>
+        </div>
+    </section>
+
+    <section id="viewStatus" data-view-panel="status" class="hidden">
+        <div class="page-head">
+            <h2>Server status</h2>
+            <p>Disk, memory, running uploads and backups of this tool's server. Refreshes every 30 seconds.</p>
+        </div>
+        <div id="statusWarnings"></div>
+        <div id="statusCards" class="cp-stats"></div>
+        <div class="card cp-step" style="margin-top:12px">
+            <h3>Running uploads</h3>
+            <div id="statusUploads" class="text-sm text-gray-500">—</div>
+        </div>
+        <div class="card cp-step">
+            <h3>Details</h3>
+            <div id="statusDetails" class="text-sm"></div>
         </div>
     </section>
 
@@ -2251,12 +2277,14 @@ document.addEventListener('visibilitychange', () => {
 
 // ═══ Views (sidebar navigation) ═══
 function showView(view) {
-    let target = ['history', 'team', 'packages', 'copy'].includes(view) ? view : 'upload';
-    if (target === 'team' && !(currentUser && currentUser.isAdmin)) target = 'upload';
+    let target = ['history', 'team', 'packages', 'copy', 'status'].includes(view) ? view : 'upload';
+    if ((target === 'team' || target === 'status') && !(currentUser && currentUser.isAdmin)) target = 'upload';
     if (target === 'team') loadTeam();
+    if (target !== 'status') clearTimeout(statusTimer);
     if (target === 'packages') loadPackages();
     if (target === 'copy') cpLoadOptions();
     document.querySelectorAll('[data-view-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.viewPanel !== target));
+    if (target === 'status') loadServerStatus();
     document.querySelectorAll('.nav-item[data-view]').forEach((b) => {
         const on = b.dataset.view === target;
         b.classList.toggle('active', on);
@@ -2674,6 +2702,7 @@ function resetWorkspace() {
     document.getElementById('damPath').classList.remove('field-error', 'field-valid', 'field-warning');
     document.getElementById('progressPanel').classList.add('hidden');
     document.getElementById('summaryBar').classList.add('hidden');
+    stopReadyCheck();
     document.querySelectorAll('#toastContainer > *').forEach((t) => t.remove());
     updateSummaryPanel();
 }
@@ -3667,6 +3696,114 @@ function createProfileForCopy() {
     });
 }
 
+// ═══ "Ready in AEM?" right after an upload: the Check in AEM status for the folder, refreshed until Guides is done ═══
+let readyTimer = null;
+let readyStopAt = 0;
+
+function stopReadyCheck() {
+    clearTimeout(readyTimer);
+    readyTimer = null;
+    const box = document.getElementById('readyBox');
+    if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+}
+
+function startReadyCheck(target) {
+    stopReadyCheck();
+    const box = document.getElementById('readyBox');
+    box.classList.remove('hidden');
+    const creds = knownCredentials(target.baseUrl);
+    const open = '<button type="button" class="btn btn-secondary btn-outline btn-s" onclick="openAemStatus({ baseUrl: '
+        + esc(JSON.stringify(target.baseUrl)) + ', folder: ' + esc(JSON.stringify(target.folder)) + ' })">Details</button>';
+    if (!creds) {
+        box.innerHTML = '<div class="flex flex-wrap items-center gap-3"><strong class="text-sm">Ready in AEM?</strong>'
+            + '<span class="text-sm text-gray-500">Check how far AEM Guides got with <span class="cp-mono">' + esc(target.folder) + '</span>.</span>'
+            + open.replace('>Details<', '>Check in AEM<') + '</div>';
+        return;
+    }
+    target.creds = creds;
+    readyStopAt = Date.now() + 60 * 60 * 1000;
+    box.innerHTML = '<p class="text-sm text-gray-500"><strong class="text-gray-800">Ready in AEM?</strong> Checking ' + esc(target.folder) + '…</p>';
+    runReadyCheck(target, open);
+}
+
+async function runReadyCheck(target, open) {
+    const box = document.getElementById('readyBox');
+    let st;
+    try {
+        ({ status: st } = await apiJson('/api/guides/status', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ baseUrl: target.baseUrl, ...target.creds, folder: target.folder }) }));
+    } catch (e) {
+        if (!box.classList.contains('hidden')) box.innerHTML = '<p class="text-sm text-gray-500"><strong class="text-gray-800">Ready in AEM?</strong> Could not check: ' + esc(toErrorMessage(e)) + ' ' + open + '</p>';
+        return;
+    }
+    if (box.classList.contains('hidden')) return;
+    const g = st.guides;
+    const pct = st.dita ? Math.round((g.done * 100) / st.dita) : 100;
+    const dtdBad = st.dtd.some((d) => !d.ok);
+    const state = g.failed || dtdBad ? 'bad' : st.finished ? 'ok' : 'warn';
+    const headline = st.dita === 0 ? 'Uploaded; no DITA files for AEM Guides to process in this folder.'
+        : g.failed ? g.failed + ' file(s) failed in AEM Guides and will not open properly.'
+            : dtdBad ? 'The editor cannot load the DTD of some topics: set up the DITA profile for this folder.'
+                : st.finished ? 'Ready: AEM Guides processed all ' + st.dita.toLocaleString() + ' DITA files.'
+                    : 'AEM Guides is processing: ' + g.done.toLocaleString() + ' of ' + st.dita.toLocaleString() + ' done. This refreshes every 30 seconds.';
+    box.innerHTML = '<div class="cp-verdict ' + state + '" style="margin:0"><div style="flex:1"><div class="flex flex-wrap items-center gap-3 justify-between">'
+        + '<span><strong>Ready in AEM?</strong> ' + esc(headline) + '</span>' + open + '</div>'
+        + (st.dita ? '<div class="rd-bar"><div style="width:' + pct + '%"></div></div>' : '')
+        + '<p class="text-xs mt-1" style="opacity:.8">' + esc(target.folder)
+        + (st.links.maps ? ' &middot; links ok ' + st.links.ok.toLocaleString() + (st.links.notInFolder ? ', ' + st.links.notInFolder + ' outside the folder' : '') : '')
+        + (st.dtd.length ? ' &middot; DTD loads for ' + st.dtd.filter((d) => d.ok).length + '/' + st.dtd.length + ' topics' : '') + '</p></div></div>';
+    if (!st.finished && Date.now() < readyStopAt) readyTimer = setTimeout(() => runReadyCheck(target, open), 30000);
+}
+
+// ═══ Server status (admins) ═══
+let statusTimer = null;
+
+async function loadServerStatus() {
+    clearTimeout(statusTimer);
+    if (document.querySelector('[data-view-panel="status"]').classList.contains('hidden')) return;
+    let st;
+    try {
+        st = await apiJson('/api/admin/status');
+    } catch (e) {
+        document.getElementById('statusWarnings').innerHTML = '<div class="cp-verdict bad"><div>' + esc(toErrorMessage(e)) + '</div></div>';
+        statusTimer = setTimeout(loadServerStatus, 30000);
+        return;
+    }
+    const gb = (b) => b == null ? '—' : (b / 1073741824).toFixed(1) + ' GB';
+    const mb = (b) => (b / 1048576).toFixed(0) + ' MB';
+    const up = (s) => s >= 86400 ? Math.floor(s / 86400) + 'd ' + Math.floor((s % 86400) / 3600) + 'h' : Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+    document.getElementById('statusWarnings').innerHTML = st.warnings.length
+        ? '<div class="cp-verdict bad"><div><strong>Needs attention</strong><ul class="rd-list">' + st.warnings.map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul></div></div>'
+        : '<div class="cp-verdict ok"><div><strong>All good.</strong> Disk, memory and backups are fine.</div></div>';
+    const stat = (v, l) => '<div class="cp-stat"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>';
+    document.getElementById('statusCards').innerHTML = [
+        stat(gb(st.disk.temp.free), 'free for uploads (of ' + gb(st.disk.temp.total) + ')'),
+        stat(st.uploads.length, 'uploads running' + (st.copying ? ', ' + st.copying + ' copy(ies)' : '')),
+        stat(st.signedIn, 'signed-in sessions'),
+        stat(mb(st.memory.rss), 'memory used by the tool'),
+        stat(esc(st.backup.last || 'none'), 'last backup (' + st.backup.count + ' kept)'),
+        stat(up(st.uptimeSeconds), 'up since ' + esc(new Date(st.startedAt).toLocaleString())),
+    ].join('');
+    document.getElementById('statusUploads').innerHTML = st.uploads.length
+        ? '<table class="cp-table"><tr><th>Who</th><th>AEM server</th><th>Folder</th><th>Files</th><th>Started</th></tr>' + st.uploads.map((u) => '<tr><td>' + esc(u.owner || '') + '</td><td>'
+            + esc(u.server) + '</td><td class="cp-mono">' + esc(u.folder) + '</td><td>' + (u.waiting ? 'waiting, #' + u.waiting + ' in line' : u.files.toLocaleString() + ' / ' + u.totalFiles.toLocaleString())
+            + '</td><td>' + esc(timeAgo(u.startedAt)) + '</td></tr>').join('') + '</table>'
+        : 'No uploads running: a deploy now would not interrupt anyone.';
+    const row = (k, v) => '<div class="rd-row"><span class="k">' + k + '</span><span class="v" style="font-weight:600">' + v + '</span></div>';
+    document.getElementById('statusDetails').innerHTML = row('Version', esc(st.version) + ' &middot; Node ' + esc(st.node))
+        + row('Upload temp folder', '<span class="cp-mono">' + esc(st.disk.temp.path) + '</span> &middot; ' + gb(st.disk.temp.free) + ' free')
+        + row('App folder', '<span class="cp-mono">' + esc(st.disk.app.path) + '</span> &middot; ' + gb(st.disk.app.free) + ' free')
+        + row('Memory', mb(st.memory.heapUsed) + ' heap of ' + mb(st.memory.heapLimit) + ' &middot; server ' + mb(st.memory.systemFree) + ' free of ' + mb(st.memory.systemTotal))
+        + row('Load (1/5/15 min)', st.memory.load.map((x) => x.toFixed(2)).join(' / '))
+        + row('Queues per AEM server', st.queues.length ? st.queues.map((q) => esc(q.server) + ': ' + q.running + ' running, ' + q.waiting + ' waiting').join('<br>') : 'empty')
+        + row('Limits', st.settings.maxUploadsPerServer + ' uploads at a time per AEM server &middot; ' + st.settings.pipelines + ' pipelines')
+        + row('History / packages', st.history.toLocaleString() + ' uploads &middot; ' + st.packages.count + ' package(s), ' + mb(st.packages.bytes))
+        + row('Interrupted uploads waiting for Resume', String(st.interrupted))
+        + row('Backups', '<span class="cp-mono">' + esc(st.backup.dir) + '</span> &middot; last ' + esc(st.backup.last || 'none'))
+        + row('Allowed copy targets', st.settings.copyTargets.length ? st.settings.copyTargets.map(esc).join('<br>') : 'none (Copy from AEM is off)');
+    statusTimer = setTimeout(loadServerStatus, 30000);
+}
+
 async function buildPackageFromSelection() {
     if (packageBuilding) return;
     const entries = browserFileEntries || [];
@@ -4549,6 +4686,7 @@ function resetProgress() {
     document.getElementById('uploadEta').classList.add('hidden');
     document.getElementById('fileList').innerHTML = '';
     document.getElementById('summaryBar').classList.add('hidden');
+    stopReadyCheck();
     document.getElementById('summaryBar').innerHTML = '';
     document.getElementById('elapsedTime').textContent = '0s';
     updateMiniProgress(0, 0, 0, '-- MB/s');
@@ -4902,6 +5040,7 @@ function connectSSE(uploadId, isReconnect = false) {
         }
         showSummary(d.success, d.totalFiles, d.errorCount, d.duration, d.errors, d.cancelled, d.totalBytes);
         setUploading(false);
+        if (!d.cancelled && d.folder && d.baseUrl && (d.totalFiles || 0) > (d.errorCount || 0)) startReadyCheck({ baseUrl: d.baseUrl, folder: d.folder });
         if (d.success && uploadStartedHere) clearBrowserFiles(); // Free memory only on success; keep for Retry on failure
         broadcastTabEvent('upload_done');
         loadHistory();

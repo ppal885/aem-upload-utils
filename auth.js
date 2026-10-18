@@ -425,8 +425,12 @@ function resolveAemTarget(req) {
 
 loadSessions();
 
+function sessionCount() {
+    return sessions.size;
+}
+
 module.exports = {
-    createSession, getSession, destroySession, flushSessions, SESSIONS_FILE, publicUser, requireAuth, requireAdmin, canAccess, resolveAemTarget,
+    createSession, getSession, destroySession, flushSessions, SESSIONS_FILE, sessionCount, publicUser, requireAuth, requireAdmin, canAccess, resolveAemTarget,
     checkPassword, recordSignIn, changePassword, passwordChanged, listUsers, addUser, registerUser, updateUser, normalizeEmail,
     isAllowedDomain, domainHint, authOptions, requestPasswordReset, resetPasswordWithToken, MIN_PASSWORD_LENGTH, USERS_FILE,
 };

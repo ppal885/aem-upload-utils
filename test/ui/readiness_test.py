@@ -136,6 +136,9 @@ async def main():
                 if not await page.evaluate('uploading'):
                     break
                 await asyncio.sleep(0.25)
+            await page.wait_for_function("document.getElementById('readyBox').innerText.includes('Ready in AEM?')", timeout=20000)
+            ready = await page.inner_text('#readyBox')
+            record('right after the upload the page says whether it is ready in AEM', 'AEM Guides processed all' in ready and f'/content/dam/rd{RUN}/acme-dtd' in ready, ready[:160])
             catalog = f'/content/dam/rd{RUN}/acme-dtd/catalog.xml'
             await page.evaluate(SELECT_JS, dtd)
             await page.wait_for_function("!document.getElementById('catalogNote').classList.contains('hidden')", timeout=5000)
