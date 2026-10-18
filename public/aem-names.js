@@ -140,6 +140,83 @@
     }
 
     /**
+     * Relative catalog references that leave the catalog's own folder ("../x.dtd" from wd-dtd/catalog.xml):
+     * AEM Guides copies only the folder of each catalog in a DITA profile, so such files are not found
+     * unless that folder also holds a catalog of the same profile.
+     */
+    function catalogEscapes(text) {
+        const out = [];
+        for (const m of String(text).matchAll(CATALOG_REF)) {
+            const ref = m[3].trim();
+            if (!ref || /^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('/') || ref.startsWith('#')) continue;
+            let depth = 0;
+            let escapes = false;
+            for (const seg of ref.split('#')[0].split('/')) {
+                if (!seg || seg === '.') continue;
+                depth += seg === '..' ? -1 : 1;
+                if (depth < 0) { escapes = true; break; }
+            }
+            if (escapes && !out.includes(ref)) out.push(ref);
+        }
+        return out;
+    }
+
+    // ─── DITA-OT zips ───
+    // Guides unzips the DITA-OT zip and expects everything under a top folder named exactly "DITA-OT"
+    // (DitaOtContext DITA_OT_FOLDER), with DITA-OT/plugins/org.dita.base/catalog-dita.xml for Integrate Catalogs.
+    // listZipEntries reads only the central directory: read(start, end) resolves to the bytes [start, end).
+    async function listZipEntries(size, read) {
+        const tailLen = Math.min(size, 65536 + 22);
+        const tail = await read(size - tailLen, size);
+        const dv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+        let eocd = -1;
+        for (let i = tail.length - 22; i >= 0; i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+        if (eocd < 0) throw new Error('not a zip file');
+        let cdSize = dv.getUint32(eocd + 12, true);
+        let cdOffset = dv.getUint32(eocd + 16, true);
+        if (cdOffset === 0xffffffff || cdSize === 0xffffffff) {
+            const loc = eocd - 20;
+            if (loc < 0 || dv.getUint32(loc, true) !== 0x07064b50) throw new Error('ZIP64 record not found');
+            const z64 = Number(dv.getBigUint64(loc + 8, true));
+            const rec = await read(z64, z64 + 56);
+            const rv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength);
+            cdSize = Number(rv.getBigUint64(40, true));
+            cdOffset = Number(rv.getBigUint64(48, true));
+        }
+        const cd = await read(cdOffset, cdOffset + cdSize);
+        const cv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength);
+        const names = [];
+        const dec = new TextDecoder('utf-8');
+        for (let p = 0; p + 46 <= cd.length && cv.getUint32(p, true) === 0x02014b50;) {
+            const n = cv.getUint16(p + 28, true);
+            const e = cv.getUint16(p + 30, true);
+            const c = cv.getUint16(p + 32, true);
+            names.push(dec.decode(cd.subarray(p + 46, p + 46 + n)));
+            p += 46 + n + e + c;
+        }
+        return names;
+    }
+
+    /** { ok, top, catalog, problems: [string], warnings: [string] } for the entry names of a DITA-OT zip. */
+    function checkDitaOtZip(names) {
+        const problems = [];
+        const warnings = [];
+        const tops = [...new Set(names.map((n) => n.replace(/^\/+/, '').split('/')[0]).filter(Boolean))];
+        if (names.some((n) => n.startsWith('/') || n.split('/').includes('..'))) problems.push('The zip has entries with ".." or absolute paths; Guides would write them outside its DITA-OT folder.');
+        const hasTop = names.some((n) => n.startsWith('DITA-OT/'));
+        if (!hasTop) {
+            const near = tops.find((t) => t.toLowerCase().replace(/[^a-z]/g, '').startsWith('ditaot'));
+            problems.push(near
+                ? `The top folder in the zip is "${near}"; AEM Guides needs it named exactly "DITA-OT" (rename the folder and zip it again).`
+                : `AEM Guides needs a top folder named exactly "DITA-OT" in the zip; found ${tops.slice(0, 3).map((t) => `"${t}"`).join(', ') || 'no folder'}.`);
+        }
+        const catalog = names.includes('DITA-OT/plugins/org.dita.base/catalog-dita.xml') ? 'DITA-OT/plugins/org.dita.base/catalog-dita.xml'
+            : names.includes('DITA-OT/catalog-dita.xml') ? 'DITA-OT/catalog-dita.xml' : null;
+        if (hasTop && !catalog) warnings.push('No DITA-OT/plugins/org.dita.base/catalog-dita.xml in the zip: "Integrate Catalogs" in the DITA profile would have no effect.');
+        return { ok: problems.length === 0, tops, catalog, problems, warnings };
+    }
+
+    /**
      * catalogs: [{ relPath, text }] (relPath as in the selection). Returns the references that break:
      * { catalog, ref, name, to } when a name in the reference would be renamed, { catalog, ref, missing: true }
      * when the referenced file is not in the selection.
@@ -168,6 +245,10 @@
                         out.push({ catalog: c.relPath, ref, name: s, to: node, folder: !isFile });
                     }
                 }
+                if (catalogEscapes(`<uri uri="${ref.replace(/"/g, '')}"/>`).length) {
+                    const key = `${c.relPath}|${ref}|o`;
+                    if (!seen.has(key)) { seen.add(key); out.push({ catalog: c.relPath, ref, outside: true }); }
+                }
                 if (!folderRef) {
                     const parts = [...dir];
                     for (const s of decoded.split('/')) {
@@ -187,6 +268,6 @@
 
     return {
         isSystemName, isSystemPath, folderNodeName, assetNodeName, keepNodeName, normalizeDamPath,
-        commonFolders, stripLevels, planUpload, isCatalogFile, catalogProblems, MAX_NAME_BYTES,
+        commonFolders, stripLevels, planUpload, isCatalogFile, catalogProblems, catalogEscapes, listZipEntries, checkDitaOtZip, MAX_NAME_BYTES,
     };
 }));

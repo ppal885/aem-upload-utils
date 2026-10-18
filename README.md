@@ -153,6 +153,14 @@ When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog 
 
 **Create DITA profile** (in the "DTD catalog found" box after uploading a DTD folder, and in a not-ready Copy from AEM result) creates a new profile on the AEM server from its Global/Default profile, like Tools > Guides > DITA Profiles > Create Profile: the topics folder in Assigned Paths, the uploaded `catalog.xml` added to the built-in catalogs, optionally a customer DITA-OT zip. **Check** first shows what changes (which profile a folder uses now, or that it moves out of another profile) and refuses a duplicate name or a catalog / zip that is not on the server yet; **Create profile** saves it and reads it back to confirm there are no errors. It never edits or deletes an existing profile, works only on the `COPY_TARGETS` servers, and every change is logged. After creating, a Copy from AEM result runs **Check again** by itself.
 
+### DTD catalogs and DITA-OT zips: what AEM Guides needs
+
+Checked in the Guides code and on AEM as a Cloud Service; the tool checks these on the selection and before creating a DITA profile:
+
+- **DITA-OT zip in DAM**: Guides reads the zip from `<path>/jcr:content/jcr:data`, which a DAM asset does not have, so the asset path gives "Failed to extract DITA-OT … jcr:data not found" (AEM still answers 200; only the alert icon in DITA Profiles shows it). Use `<zip>/jcr:content/renditions/original` as **AEM DITA-OT Zip Path**; **Create DITA profile** sets it for you.
+- **The zip needs a top folder named exactly `DITA-OT`** (with `DITA-OT/plugins/org.dita.base/catalog-dita.xml` for Integrate Catalogs). With `dita-ot-3.7.4/` or files at the root the profile saves without an error and publishing fails later. The tool reads only the zip's table of contents (in the browser for a selected zip, with an HTTP range request in AEM) and blocks such a zip.
+- **Catalogs**: point at the catalog **file**; Guides copies that file's folder (with subfolders) and resolves the catalog there, so a reference like `uri="../shared/x.dtd"` that leaves the folder is not found unless that folder has its own catalog in the same profile, and two catalogs in the same or nested folders collide (one is dropped). Folder and file names must match the catalog exactly: use **Keep folder and file names exactly** for DTD folders.
+
 ### Copy from AEM
 
 **Copy from AEM** copies a folder from another AEM Guides server (for example a customer's stage) to one of our servers, by upload or as a package. The source is only read: one QueryBuilder search, then the original renditions (8 at a time by default; Gentle 4 or Fast 16). Nothing is created, changed or locked there, and its password is used only during the copy.

@@ -80,7 +80,17 @@ const server = http.createServer((req, res) => {
         if (req.method === 'GET' && p.endsWith('/jcr:content/renditions/original')) {
             const a = assetData.get(p.slice(0, -'/jcr:content/renditions/original'.length));
             if (!a) { res.writeHead(404); return res.end(); }
+            const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
+            if (range) {
+                const start = Number(range[1]);
+                const end = Math.min(Number(range[2]), a.length - 1);
+                res.writeHead(206, { 'Content-Type': 'application/octet-stream', 'Content-Range': `bytes ${start}-${end}/${a.length}`, 'Content-Length': end - start + 1 });
+                return res.end(a.subarray(start, end + 1));
+            }
             res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': a.length }); return res.end(a);
+        }
+        if (req.method === 'GET' && p.endsWith('/jcr:content.json') && assetData.has(p.slice(0, -'/jcr:content.json'.length))) {
+            res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"jcr:primaryType":"dam:AssetContent"}');
         }
         if (req.method === 'GET' && p === '/bin/fmdita/profiles') {
             res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(profiles));
@@ -116,7 +126,8 @@ const server = http.createServer((req, res) => {
             res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<div id="Message">Job(Id:mock) created successfully.</div>');
         }
         if (req.method === 'GET' && p.endsWith('.json') && (folders.has(p.slice(0, -5)) || assetData.has(p.slice(0, -5)))) {
-            res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{}');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ 'jcr:primaryType': assetData.has(p.slice(0, -5)) ? 'dam:Asset' : 'sling:Folder' }));
         }
         if (req.method === 'PUT') {
             if (p.startsWith('/blob/')) {
