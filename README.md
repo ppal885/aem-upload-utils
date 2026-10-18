@@ -152,6 +152,12 @@ When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog 
 
 **Server status** (admins, sidebar) shows free disk for uploads and for the app, memory, running and waiting uploads per AEM server, signed-in sessions, the last backup, packages and the version, with warnings for low disk (under 10 GB or 10 %), no backup in the last day or high memory. "No uploads running" there means a deploy now interrupts nobody. Data: GET `/api/admin/status`.
 
+### Copy log and pausing uploads for a deploy
+
+**Copy log** (admins, sidebar) lists every Copy from AEM: who copied which folder from which server (and as which AEM user), how it ended, and where the content went: uploaded to an allowed server, built into a package, package installed or downloaded. **Download CSV** exports it. Passwords and file contents are never logged. The log is `copy-log.jsonl` next to the app (`COPY_LOG_FILE`), readable by the server user only, included in the daily backup; above 10 MB it moves to `copy-log.jsonl.1`.
+
+**Pause new uploads** (Server status, "Before a deploy") refuses new uploads, copies, packages and installs with a short note for everyone, and lets the running ones finish. When it says **Safe to deploy now**, deploy; the restart opens uploads again (the pause is not saved). `/api/health` shows `draining` and `busy` (work a restart would break).
+
 ### Check in AEM
 
 **Check in AEM** (History rows, and Packages after an install) shows how far AEM and AEM Guides got with a folder: DITA files processed / waiting / failed by Guides (failed ones by name), AEM processing (renditions, SHA-1), whether the links in up to 100 processed maps point at files in the folder, and whether the editor can load the DTD of a few topics. It refreshes every 30 seconds until Guides is done. On AEM as a Cloud Service, files installed from a package have no AEM processing: the dialog offers **Reprocess Assets** (Full Process + Run Post Process, as in Assets). Only reads, except Reprocess; the credentials are the ones on New upload for the same server, or typed in the dialog, and are not stored.

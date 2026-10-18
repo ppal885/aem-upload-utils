@@ -245,6 +245,33 @@ async def main():
             other = await page4.evaluate("fetch('/api/copy/' + 'not-a-session').then(r => r.status)")
             record('a copy of someone else / unknown session is not visible', other == 404, str(other))
             record('still nothing written on the source', json.loads(get(SOURCE + '/__writes')) == [], '')
+
+            admin = await browser.new_page(viewport={'width': 1280, 'height': 1000})
+            await admin.goto(APP, wait_until='domcontentloaded')
+            await admin.wait_for_function("typeof submitLogin === 'function'", timeout=60000)
+            await admin.fill('#loginEmail', 'admin@test.local')
+            await admin.fill('#loginPassword', 'admin-pass-123')
+            await admin.click('#loginSubmit')
+            await admin.wait_for_function('!!currentUser && currentUser.isAdmin', timeout=15000)
+            entries = (await admin.evaluate("fetch('/api/admin/copy-log').then(r => r.json())"))['entries']
+            crown = [e for e in entries if e.get('sourceFolder') == '/content/dam/crown']
+            events = {e['event'] for e in crown}
+            start = next((e for e in crown if e['event'] == 'copy-start'), {})
+            end = next((e for e in crown if e['event'] == 'copy-end' and e.get('state') == 'done'), {})
+            record('copy log: who copied what from where, and where it went',
+                   {'copy-start', 'copy-end', 'copy-upload', 'package-built'} <= events and start.get('by') == 'qe@test.local'
+                   and start.get('sourceUser') == 'admin' and start.get('sourceServer') == SOURCE and end.get('files') == 4,
+                   json.dumps({'events': sorted(events), 'start': start})[:400])
+            upload = next((e for e in crown if e['event'] == 'copy-upload'), {})
+            record('copy log: the upload names the target server and folder', upload.get('targetServer') == TARGET and upload.get('targetFolder') == '/content/dam/crown',
+                   json.dumps(upload)[:300])
+            record('copy log never holds a password', not any('password' in json.dumps(e).lower() for e in entries) and 'admin-pass' not in json.dumps(entries), '')
+            await admin.evaluate("showView('copylog')")
+            await admin.wait_for_selector('#copyLogTable', timeout=10000)
+            table = await admin.inner_text('#copyLogTable')
+            record('Copy log page lists the copies', 'Copy started' in table and 'Uploaded to AEM' in table and '/content/dam/crown' in table, table[:300])
+            member_view = await page.evaluate("showView('copylog'); document.querySelector('[data-view-panel=\"copylog\"]').classList.contains('hidden')")
+            record('members do not get the Copy log', member_view is True, str(member_view))
             await browser.close()
     finally:
         source.kill()

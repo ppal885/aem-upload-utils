@@ -82,7 +82,7 @@ function appEnv(name, port) {
     return {
         PORT: String(port), TMPDIR: tmp, TEMP: tmp, TMP: tmp,
         HISTORY_FILE: path.join(d, 'upload-history.json'), PACKAGES_DIR: path.join(d, 'packages'), BACKUP_DIR: path.join(d, 'backups'),
-        SESSIONS_FILE: path.join(d, 'sessions.json'),
+        SESSIONS_FILE: path.join(d, 'sessions.json'), COPY_LOG_FILE: path.join(d, 'copy-log.jsonl'),
     };
 }
 

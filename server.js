@@ -21,6 +21,7 @@ const copyFromAem = require('./lib/copy-from-aem');
 const guidesSetup = require('./lib/guides-setup');
 const guidesStatus = require('./lib/guides-status');
 const guidesProfile = require('./lib/guides-profile');
+const copyLog = require('./lib/copy-log');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
@@ -471,6 +472,16 @@ const uploadLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many upload requests, please slow down' },
+});
+
+// Read-only Guides checks (Check in AEM, Ready in AEM? refreshes) must not use up the upload budget
+const checkLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    keyGenerator: perUserKey,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many checks, please wait a minute' },
 });
 
 // Every API call needs a signed-in user (or an API key for scripts); see auth.js
@@ -925,6 +936,56 @@ async function lastBackupInfo() {
     }
 }
 
+// ─── Drain mode: an admin pauses new uploads before a deploy; running ones finish ───
+// Not saved: the restart of the deploy opens uploads again.
+let draining = null;
+let installsRunning = 0;
+const RECEIVING_IDLE_MS = 10 * 60 * 1000;
+const COPY_WAITING_MS = 30 * 60 * 1000;
+const DRAINING_ERROR = 'Uploads are paused for a short update of this tool. Uploads already running finish normally; try again in a few minutes.';
+
+function refuseWhenDraining(req, res, next) {
+    if (!draining) return next();
+    res.status(503).json({ error: DRAINING_ERROR, code: 'DRAINING' });
+}
+
+/** Work a restart would break: uploads to AEM, files still arriving from a browser, copies, package builds and installs. */
+function busyWork() {
+    const now = Date.now();
+    let uploads = 0, receiving = 0, copies = 0;
+    uploadSessions.forEach((s) => { if (!s.done) uploads++; });
+    browserUploadSessions.forEach((s) => {
+        if (s.copy) {
+            const running = ['listing', 'copying', 'checking'].includes(s.copy.state);
+            // a finished copy still waits for its Upload click; its staged files live only in this process
+            if (running || (s.copy.state === 'done' && !s.finalized && now - s.copy.finishedAt < COPY_WAITING_MS)) copies++;
+        } else if (!s.finalized && now - (s.lastChunkAt || s.createdAt) < RECEIVING_IDLE_MS) receiving++;
+    });
+    const building = packages.list(null, true).filter((p) => p.state === 'building').length;
+    const total = uploads + receiving + copies + building + installsRunning;
+    return { total, uploads, receiving, copies, packagesBuilding: building, installs: installsRunning };
+}
+
+app.post('/api/admin/drain', auth.requireAdmin, (req, res) => {
+    const on = (req.body || {}).on === true;
+    if (on && !draining) draining = { by: req.user.email || req.user.key, at: new Date().toISOString() };
+    if (!on) draining = null;
+    log.info(`Drain mode ${on ? 'on' : 'off'} (by ${req.user.email || req.user.key})`);
+    res.json({ draining, busy: busyWork() });
+});
+
+app.get('/api/admin/copy-log', auth.requireAdmin, (req, res) => {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 20000);
+    const entries = copyLog.read(limit);
+    if (req.query.format === 'csv') {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="copy-log-${new Date().toISOString().slice(0, 10)}.csv"`);
+        res.setHeader('Cache-Control', 'no-store');
+        return res.send('﻿' + copyLog.toCsv(entries));
+    }
+    res.json({ entries });
+});
+
 app.get('/api/admin/status', auth.requireAdmin, async (_req, res) => {
     const [tmp, appDisk, lastBackup] = await Promise.all([diskInfo(os.tmpdir()), diskInfo(__dirname), lastBackupInfo()]);
     const mem = process.memoryUsage();
@@ -956,6 +1017,7 @@ app.get('/api/admin/status', auth.requireAdmin, async (_req, res) => {
         history: uploadHistory.length, packages: { count: pkgs.length, bytes: pkgs.reduce((n, p) => n + (p.zipBytes || 0), 0) },
         backup: lastBackup,
         settings: { maxUploadsPerServer: MAX_UPLOADS_PER_SERVER, pipelines: DEFAULT_UPLOAD_PIPELINES, copyTargets: COPY_TARGETS },
+        draining, busy: busyWork(),
         warnings,
     });
 });
@@ -1010,6 +1072,8 @@ app.get('/api/health', (_req, res) => {
         sep: nodePath.sep,
         authEnabled: !!API_KEY,
         signInRequired: true,
+        draining: !!draining,
+        busy: busyWork().total,
     });
 });
 
@@ -1053,7 +1117,7 @@ function useNormalizedDamPath(req) {
     }
 }
 
-app.post('/api/upload', uploadLimiter, auth.requireAdmin, async (req, res) => {
+app.post('/api/upload', uploadLimiter, auth.requireAdmin, refuseWhenDraining, async (req, res) => {
     useNormalizedDamPath(req);
     const { baseUrl, username, password } = auth.resolveAemTarget(req);
     const {
@@ -1496,7 +1560,7 @@ app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, 
 });
 
 // ─── API: chunked browser upload — init session ───
-app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
+app.post('/api/upload/browser/init', uploadLimiter, refuseWhenDraining, async (req, res) => {
     useNormalizedDamPath(req);
     const { baseUrl, username, password } = auth.resolveAemTarget(req);
     const { damPath,
@@ -1559,7 +1623,7 @@ app.post('/api/upload/browser/init', uploadLimiter, async (req, res) => {
 // The files arrive through the same chunk route as an upload: init here, then /api/upload/browser/chunk/:id.
 const PACKAGE_FIELD = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/;
 
-app.post('/api/packages/init', uploadLimiter, async (req, res) => {
+app.post('/api/packages/init', uploadLimiter, refuseWhenDraining, async (req, res) => {
     useNormalizedDamPath(req);
     const b = req.body || {};
     const dam = AemNames.normalizeDamPath(b.damPath);
@@ -1610,9 +1674,13 @@ app.post('/api/packages/build/:sessionId', uploadLimiter, async (req, res) => {
     session.files = []; session.relativePaths = [];
     browserUploadSessions.delete(req.params.sessionId);
     const { damPath, packageName, version, group, description, keepNames } = session.config;
+    if (session.copy) {
+        copyLog.record('package-built', { copyId: session.copy.id, by: req.user.email || req.user.key, sourceServer: session.copy.source.baseUrl,
+            sourceFolder: session.copy.source.folder, package: `${packageName} ${version}`, targetFolder: damPath, files: fileCount }, log);
+    }
     const record = packages.startBuild({
         owner: session.owner, ownerName: req.user.name, contentDir, damPath, packageName, version, group, description, fileCount, keepNames,
-        copiedFrom: session.copy ? { baseUrl: session.copy.source.baseUrl, folder: session.copy.source.folder } : null,
+        copiedFrom: session.copy ? { baseUrl: session.copy.source.baseUrl, folder: session.copy.source.folder, copyId: session.copy.id } : null,
     }, (err, p) => {
         cleanupTempDir(session.tempDir).catch(() => {});
         if (err) log.error(`Package build failed (${p.name} ${p.version}): ${err.message}`);
@@ -1643,10 +1711,14 @@ app.get('/api/packages/:id/download', (req, res) => {
     if (p.copiedFrom && !COPY_ALLOW_DOWNLOAD) {
         return res.status(403).json({ error: 'Packages made from content copied from another AEM server can only be installed on an allowed server, not downloaded.' });
     }
+    if (p.copiedFrom) {
+        copyLog.record('package-download', { copyId: p.copiedFrom.copyId, by: req.user.email || req.user.key, package: p.downloadName,
+            sourceServer: p.copiedFrom.baseUrl, sourceFolder: p.copiedFrom.folder, bytes: p.zipBytes }, log);
+    }
     res.download(packages.fileOf(p), p.downloadName, { headers: { 'Cache-Control': 'no-store' } });
 });
 
-app.post('/api/packages/:id/install', uploadLimiter, async (req, res) => {
+app.post('/api/packages/:id/install', uploadLimiter, refuseWhenDraining, async (req, res) => {
     const p = ownPackage(req, res);
     if (!p) return;
     if (p.state !== 'ready') return res.status(409).json({ error: 'The package is not ready yet' });
@@ -1663,12 +1735,20 @@ app.post('/api/packages/:id/install', uploadLimiter, async (req, res) => {
     if (!cred.ok) return res.status(400).json({ error: cred.error, code: cred.code });
     log.info(`Installing package ${p.downloadName} on ${target} as ${username} (by ${req.user.key})`);
     let result;
+    installsRunning++;
     try {
         result = await packages.install(p, { baseUrl: target, username, password });
     } catch (e) {
         result = { ok: false, message: e.name === 'AbortError' ? 'AEM did not answer within 30 minutes.' : 'Could not reach AEM: ' + e.message };
+    } finally {
+        installsRunning--;
     }
     packages.recordInstall(p, { at: new Date().toISOString(), server: target, by: req.user.key, ok: result.ok, message: result.message });
+    if (p.copiedFrom) {
+        copyLog.record('package-install', { copyId: p.copiedFrom.copyId, by: req.user.email || req.user.key, package: p.downloadName,
+            sourceServer: p.copiedFrom.baseUrl, sourceFolder: p.copiedFrom.folder, targetServer: target, state: result.ok ? 'ok' : 'failed',
+            error: result.ok ? undefined : result.message }, log);
+    }
     log.info(`Package install ${result.ok ? 'succeeded' : 'failed'}: ${p.downloadName} on ${target}: ${result.message}`);
     res.status(result.ok ? 200 : 502).json({ ...result, package: packages.publicPackage(p) });
 });
@@ -1692,7 +1772,7 @@ function damFolder(raw) {
     return /^\/content\/dam\/[^/]/.test(p) && !p.split('/').includes('..') ? p : null;
 }
 
-app.post('/api/guides/status', uploadLimiter, async (req, res) => {
+app.post('/api/guides/status', checkLimiter, async (req, res) => {
     const g = guidesServer(req);
     if (g.error) return res.status(400).json({ error: g.error });
     const folder = damFolder(req.body.folder);
@@ -1806,7 +1886,7 @@ app.get('/api/copy/options', (_req, res) => {
         defaultConcurrency: copyFromAem.DEFAULT_CONCURRENCY, maxConcurrency: copyFromAem.MAX_CONCURRENCY });
 });
 
-app.post('/api/copy/:sessionId/start', uploadLimiter, async (req, res) => {
+app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async (req, res) => {
     const session = browserUploadSessions.get(req.params.sessionId);
     if (!session || !auth.canAccess(req, session.owner)) return res.status(404).json({ error: 'Session not found or expired' });
     if (session.copy || session.finalized || session.files.length) return res.status(409).json({ error: 'This session already has files' });
@@ -1832,11 +1912,18 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, async (req, res) => {
     if (!cred.ok) return res.status(400).json({ error: 'Source AEM: ' + cred.error, code: cred.code });
 
     const copy = {
+        id: crypto.randomUUID().slice(0, 8),
         state: 'listing', source: { baseUrl: origin, folder: folder.path, username }, startedAt: new Date().toISOString(),
         total: 0, totalBytes: 0, done: 0, bytes: 0, verified: 0, unverified: 0, failed: [], abort: new AbortController(),
     };
     session.copy = copy;
     log.info(`Copy started by ${req.user.key}: ${origin}${folder.path} -> ${session.mode === 'package' ? 'package' : session.config.baseUrl}`);
+    const copyBy = req.user.email || req.user.key;
+    const copyTarget = session.mode === 'package' ? { package: 'new package' }
+        : { targetServer: originOf(session.config.baseUrl), targetFolder: copyLanding(folder.path, session.config.damPath) };
+    copyLog.record('copy-start', { copyId: copy.id, by: copyBy, sourceServer: origin, sourceFolder: folder.path, sourceUser: username, ...copyTarget }, log);
+    const logCopyEnd = () => copyLog.record('copy-end', { copyId: copy.id, by: copyBy, sourceServer: origin, sourceFolder: folder.path, ...copyTarget,
+        state: copy.state, files: copy.done, bytes: copy.bytes, verified: copy.verified, failed: copy.failed.length, error: copy.error }, log);
     res.status(202).json({ copy: publicCopy(copy) });
 
     const stagingDir = nodePath.join(session.tempDir, '__staging');
@@ -1871,8 +1958,10 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, async (req, res) => {
             copy.setup = { error: 'The Guides setup could not be checked: ' + e.message, steps: [], ready: null };
         }
         Object.assign(copy, { state: 'done', finishedAt: Date.now() });
+        logCopyEnd();
     }).catch((e) => {
         Object.assign(copy, { state: copy.spaceError ? 'failed' : e.cancelled ? 'cancelled' : 'failed', error: copy.spaceError || e.message, finishedAt: Date.now() });
+        logCopyEnd();
         log.warn(`Copy ${copy.state}: ${origin}${folder.path}: ${copy.error}`);
         if (browserUploadSessions.get(req.params.sessionId) === session) {
             browserUploadSessions.delete(req.params.sessionId);
@@ -1957,6 +2046,7 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
     if (!session) {
         return res.status(404).json({ error: 'Upload session not found or expired' });
     }
+    session.lastChunkAt = Date.now();
 
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No files in chunk' });
@@ -2471,6 +2561,10 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
         }
     }
 
+    if (session.copy) {
+        copyLog.record('copy-upload', { copyId: session.copy.id, by: req.user.email || req.user.key, sourceServer: session.copy.source.baseUrl,
+            sourceFolder: session.copy.source.folder, targetServer: originOf(baseUrl), targetFolder: copyLanding(session.copy.source.folder, damPath), files: receivedFiles }, log);
+    }
     const started = await startAemUpload({
         owner: req.user.key, ownerName: req.user.name, baseUrl, damPath, username, password,
         settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged, keepNodeNames: !!session.copy || keepNodeNames === true },
@@ -2490,7 +2584,7 @@ app.get('/api/upload/interrupted', async (req, res) => {
     res.json({ jobs: [...interruptedJobs.values()].filter((j) => auth.canAccess(req, j.owner)).map(publicInterruptedJob) });
 });
 
-app.post('/api/upload/interrupted/:id/resume', uploadLimiter, async (req, res) => {
+app.post('/api/upload/interrupted/:id/resume', uploadLimiter, refuseWhenDraining, async (req, res) => {
     await startupScan;
     const job = interruptedJobs.get(req.params.id);
     if (!job || !auth.canAccess(req, job.owner)) return res.status(404).json({ error: 'Interrupted upload not found' });
@@ -2888,6 +2982,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
         'users.json': auth.USERS_FILE,
         'upload-history.json': HISTORY_FILE,
         'packages.json': nodePath.join(packages.PACKAGES_DIR, 'packages.json'),
+        'copy-log.jsonl': copyLog.COPY_LOG_FILE,
     }, log);
     const tempFree = await getTempFreeBytes();
     const tls = TLS_CERT_FILE && TLS_KEY_FILE

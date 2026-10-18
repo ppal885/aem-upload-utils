@@ -81,6 +81,36 @@ const json = async (r) => ({ status: r.status, body: await r.json().catch(() => 
         && st.body.memory && st.body.backup && st.body.version && Array.isArray(st.body.warnings) && stMember.status === 403,
         `admin=${st.status} warnings=${JSON.stringify(st.body.warnings)} member=${stMember.status}`);
 
+    const open = await json(await call('/api/upload/browser/init', member.cookie, 'POST', { baseUrl: AEM, username: 'admin', password: 'admin', damPath: 'content/dam/T', totalBytes: 1, fileCount: 1 }));
+    const memberDrain = await call('/api/admin/drain', member.cookie, 'POST', { on: true });
+    const drainOn = await json(await call('/api/admin/drain', admin.cookie, 'POST', { on: true }));
+    try {
+        const health = await json(await fetch(BASE + '/api/health'));
+        const refused = await json(await call('/api/upload/browser/init', member.cookie, 'POST', { baseUrl: AEM, username: 'admin', password: 'admin', damPath: 'content/dam/T', totalBytes: 1, fileCount: 1 }));
+        const pkgRefused = await call('/api/packages/init', member.cookie, 'POST', { damPath: 'content/dam/T', packageName: 'p', version: '1.0', totalBytes: 1, fileCount: 1 });
+        const stDrain = await json(await call('/api/admin/status', admin.cookie));
+        record('drain mode: only admins; new uploads and packages refused with a clear message; health and status show it',
+            memberDrain.status === 403 && drainOn.status === 200 && drainOn.body.draining.by === 'admin@test.local' && health.body.draining === true
+            && refused.status === 503 && refused.body.code === 'DRAINING' && /paused/.test(refused.body.error) && pkgRefused.status === 503 && stDrain.body.draining,
+            `member=${memberDrain.status} on=${drainOn.status} health=${health.body.draining} init=${refused.status} ${refused.body.code} package=${pkgRefused.status}`);
+        record('drain mode: an upload that already started counts as running (not safe to deploy yet)',
+            open.status === 200 && stDrain.body.busy.receiving >= 1 && health.body.busy >= 1, JSON.stringify(stDrain.body.busy));
+        if (open.body.sessionId) await call('/api/upload/browser/cancel/' + open.body.sessionId, member.cookie, 'POST');
+    } finally {
+        const off = await json(await call('/api/admin/drain', admin.cookie, 'POST', { on: false }));
+        const again = await json(await call('/api/upload/browser/init', member.cookie, 'POST', { baseUrl: AEM, username: 'admin', password: 'admin', damPath: 'content/dam/T', totalBytes: 1, fileCount: 1 }));
+        if (again.body.sessionId) await call('/api/upload/browser/cancel/' + again.body.sessionId, member.cookie, 'POST');
+        record('resume uploads opens them again', off.status === 200 && off.body.draining === null && again.status === 200, `off=${off.status} init=${again.status}`);
+    }
+
+    const logMember = await call('/api/admin/copy-log', member.cookie);
+    const logAdmin = await json(await call('/api/admin/copy-log', admin.cookie));
+    const csv = await call('/api/admin/copy-log?format=csv', admin.cookie);
+    const csvText = await csv.text();
+    record('copy log: admins only; JSON and CSV download', logMember.status === 403 && logAdmin.status === 200 && Array.isArray(logAdmin.body.entries)
+        && /text\/csv/.test(csv.headers.get('content-type')) && /attachment/.test(csv.headers.get('content-disposition')) && csvText.replace(/^﻿/, '').startsWith('at,event,copyId,by,'),
+        `member=${logMember.status} admin=${logAdmin.status} csv=${csv.headers.get('content-type')}`);
+
     const out = await call('/api/auth/logout', member.cookie, 'POST');
     const gone = await call('/api/upload/history', member.cookie);
     record('sign-out ends the session', out.status === 200 && gone.status === 401, `after=${gone.status}`);
