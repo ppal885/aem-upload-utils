@@ -365,7 +365,7 @@
         .dark .cp-bar { background: #2d2d44; }
     </style>
     <!-- after the page styles, so utilities such as "hidden" win, as with the old in-browser Tailwind -->
-    <link rel="stylesheet" href="app.css?v=66131c3c54" />
+    <link rel="stylesheet" href="app.css?v=e31643ea0c" />
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
 <div id="appRoot">
@@ -1285,7 +1285,7 @@
     </div>
 </div>
 
-<script src="aem-names.js?v=878347fade"></script>
+<script src="aem-names.js?v=523a11f523"></script>
 <script>
 // ═══ Error / message normalization (APIs may return strings or { message, code }) ═══
 function toErrorMessage(x) {
@@ -1846,6 +1846,7 @@ function selectNewFiles(entries) {
 
 // ─── DTD catalogs in the selection (see AemNames.catalogProblems) ───
 let selectionCatalogs = [];
+let selectionZips = [];
 
 function keepNamesOn() {
     const el = document.getElementById('keepNames');
@@ -1854,6 +1855,16 @@ function keepNamesOn() {
 
 async function scanCatalogs(entries) {
     selectionCatalogs = [];
+    selectionZips = [];
+    // DITA-OT zips: only the zip's table of contents is read (a few KB at the end of the file)
+    for (const e of entries.filter((x) => /\.zip$/i.test(x.file.name)).slice(0, 20)) {
+        try {
+            const file = e.file;
+            const names = await AemNames.listZipEntries(file.size, async (a, b) => new Uint8Array(await file.slice(a, b).arrayBuffer()));
+            const looksLikeOt = /dita.?ot/i.test(file.name) || names.some((n) => /(^|\/)(catalog-dita\.xml|org\.dita\.base\/)/.test(n));
+            if (looksLikeOt) selectionZips.push({ relPath: (e.relativePath || file.name).normalize('NFC'), check: AemNames.checkDitaOtZip(names) });
+        } catch (_) { /* not a readable zip: not checked */ }
+    }
     const candidates = entries.filter((e) => /catalog[^/]*\.xml$/i.test(e.file.name) && e.file.size < 2 * 1024 * 1024).slice(0, 200);
     for (const e of candidates) {
         try {
@@ -1872,7 +1883,24 @@ function catalogIssues() {
 }
 
 function catalogRenames() {
-    return catalogIssues().filter((p) => !p.missing);
+    return catalogIssues().filter((p) => !p.missing && !p.outside);
+}
+
+// Where the DITA-OT zips of the selection land, and the path a DITA profile needs for them
+function selectionZipTargets() {
+    const dam = AemNames.normalizeDamPath(val('damPath')).path;
+    const rel = relPathsOf(browserFileEntries);
+    const plan = dam ? AemNames.planUpload(rel, dam, skipLevels(), keepNamesOn()) : null;
+    return selectionZips.map((z) => ({ ...z, landed: plan ? plan.landed[rel.indexOf(z.relPath)] : '' }));
+}
+
+function zipNoteHtml() {
+    return selectionZipTargets().map((z) => '<div style="margin-top:8px"><strong>DITA-OT zip found</strong> (<code>' + esc(z.relPath.split('/').pop()) + '</code>). '
+        + (z.check.ok ? 'Its structure is right (<code>DITA-OT/</code>' + (z.check.catalog ? ', <code>' + esc(z.check.catalog.replace('DITA-OT/', '')) + '</code>' : '') + '). ' : '')
+        + (z.landed ? 'In the DITA profile, <strong>AEM DITA-OT Zip Path</strong> must be <code>' + esc(z.landed) + '/jcr:content/renditions/original</code> '
+            + '(the zip as a DAM asset cannot be read by Guides; Create DITA profile sets this for you).' : '')
+        + (z.check.problems.length ? '<ul>' + z.check.problems.map((x) => '<li><strong>' + esc(x) + '</strong></li>').join('') + '</ul>' : '')
+        + (z.check.warnings.length ? '<ul>' + z.check.warnings.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') + '</div>').join('');
 }
 
 // The DITA profile steps, filled in with this server and these paths (labels as on Tools > Guides > DITA Profiles)
@@ -1888,7 +1916,8 @@ function dtdSetupHelp({ aemUrl, catalogPaths, contentHint, open }) {
         + '<li><strong>Assigned Paths</strong>: <strong>Browse</strong> to the folder the topics will go to'
         + (contentHint ? ' (for example <code>' + esc(contentHint) + '</code>)' : '') + ', then <strong>Add</strong>.</li>'
         + '<li><strong>Schema &rarr; Catalogs</strong>: keep the standard entries, <strong>Browse</strong> to ' + cats + ', then <strong>Add</strong>.</li>'
-        + '<li>Customer DITA-OT only: in the DITA-OT section pick the uploaded zip in <strong>AEM DITA-OT Zip Path</strong>.</li>'
+        + '<li>Customer DITA-OT only: <strong>AEM DITA-OT Zip Path</strong> = the uploaded zip followed by <code>/jcr:content/renditions/original</code> '
+        + '(Guides cannot read a DAM asset zip from its own path); the zip needs a top folder named exactly <code>DITA-OT</code>.</li>'
         + '<li>Click <strong>Done</strong> (it saves; wait for the spinner). An alert icon next to Schema or DITA-OT shows a problem, for example a wrong catalog path.</li>'
         + '<li>Now upload the topics into the Assigned Path: they open in the editor with this DTD.</li></ol>'
         + '<p>A folder belongs to one profile only: adding it moves it out of any other profile. After changing the DTD files later, open the profile, Edit Profile, Done again.</p></details>';
@@ -1909,18 +1938,21 @@ function renderCatalogNote() {
     const box = document.getElementById('catalogNote');
     if (!box) return;
     const issues = selectionCatalogs.length ? catalogIssues() : [];
-    const renames = issues.filter((p) => !p.missing);
+    const renames = issues.filter((p) => !p.missing && !p.outside);
     const missing = issues.filter((p) => p.missing);
-    box.classList.toggle('hidden', !selectionCatalogs.length);
-    box.classList.toggle('bad', renames.length > 0);
-    box.classList.toggle('info', !issues.length);
-    if (!selectionCatalogs.length) { box.innerHTML = ''; return; }
+    const outside = issues.filter((p) => p.outside);
+    const zipBad = selectionZips.some((z) => !z.check.ok);
+    box.classList.toggle('hidden', !selectionCatalogs.length && !selectionZips.length);
+    box.classList.toggle('bad', renames.length > 0 || zipBad);
+    box.classList.toggle('info', !issues.length && !zipBad);
+    if (!selectionCatalogs.length && !selectionZips.length) { box.innerHTML = ''; return; }
+    if (!selectionCatalogs.length) { box.innerHTML = zipNoteHtml().replace(/^<div style="margin-top:8px">/, '<div>'); return; }
     const wasOpen = !!box.querySelector('details.dtd-help[open]');
     const help = dtdSetupHelp({ aemUrl: val('aemUrl'), catalogPaths: selectionCatalogTargets(), contentHint: '', open: wasOpen });
     if (!issues.length) {
         const where = selectionCatalogTargets();
         box.innerHTML = '<strong>DTD catalog found.</strong> ' + (where.length ? 'It lands at <code>' + esc(where[0]) + '</code>. ' : '')
-            + 'After uploading, set it up in a DITA profile so the topics using it open in the editor.' + help
+            + 'After uploading, set it up in a DITA profile so the topics using it open in the editor.' + zipNoteHtml() + help
             + '<button type="button" class="btn btn-secondary btn-outline btn-s" onclick="createProfileForSelection()">Create DITA profile after uploading…</button>';
         return;
     }
@@ -1932,11 +1964,15 @@ function renderCatalogNote() {
             + '<ul>' + renames.slice(0, 5).map(li).join('') + (renames.length > 5 ? '<li>and ' + (renames.length - 5) + ' more</li>' : '') + '</ul>'
             + '<button type="button" class="btn btn-accent btn-s" onclick="setKeepNames(true)">Keep names exactly</button>';
     }
+    if (outside.length) {
+        html += (renames.length ? '<div style="margin-top:8px">' : '<div>') + '<strong>Outside the catalog\'s folder</strong> (AEM Guides copies only the folder of the catalog, so these are not found unless that folder has its own catalog in the DITA profile):'
+            + '<ul>' + outside.slice(0, 5).map(li).join('') + (outside.length > 5 ? '<li>and ' + (outside.length - 5) + ' more</li>' : '') + '</ul></div>';
+    }
     if (missing.length) {
-        html += (renames.length ? '<div style="margin-top:8px">' : '<div>') + '<strong>Not in your selection</strong> (referenced by a DTD catalog):'
+        html += (renames.length || outside.length ? '<div style="margin-top:8px">' : '<div>') + '<strong>Not in your selection</strong> (referenced by a DTD catalog):'
             + '<ul>' + missing.slice(0, 5).map(li).join('') + (missing.length > 5 ? '<li>and ' + (missing.length - 5) + ' more</li>' : '') + '</ul></div>';
     }
-    box.innerHTML = html + help;
+    box.innerHTML = html + zipNoteHtml() + help;
 }
 
 function setKeepNames(on) {
@@ -3550,7 +3586,8 @@ function openProfileDialog(target) {
         + '<div class="cp-field"><label for="pfPath">Assigned Path (the folder the topics go to)</label><input id="pfPath" type="text" placeholder="/content/dam/customer" value="' + esc(v.path || '') + '" /></div>'
         + '<div class="cp-field"><label for="pfCatalogs">DTD catalogs (one per line, uploaded already)</label><textarea id="pfCatalogs" rows="2" class="w-full" style="border:1px solid #cbd5e1;border-radius:7px;padding:6px 10px;font-size:13px">'
         + esc((v.catalogs || []).join('\n')) + '</textarea></div>'
-        + '<div class="cp-field"><label for="pfZip">Customer DITA-OT zip (optional)</label><input id="pfZip" type="text" placeholder="/content/dam/customer-ot/dita-ot.zip" value="' + esc(v.ditaotZip || '') + '" /></div>'
+        + '<div class="cp-field"><label for="pfZip">Customer DITA-OT zip (optional)</label><input id="pfZip" type="text" placeholder="/content/dam/customer-ot/dita-ot.zip" value="' + esc(v.ditaotZip || '') + '" />'
+        + '<div class="note">The zip in DAM; the profile gets its original rendition path, and the zip is checked for a top folder named exactly DITA-OT.</div></div>'
         + credFields(target.baseUrl, target.creds || target.sessionId) + '<div id="pfResult"></div>',
     [{ label: 'Cancel', onClick: closeAemDialog }, { label: 'Check', primary: true, id: 'pfCheckBtn', onClick: () => planProfileFromDialog(target) }]);
 }
@@ -3613,8 +3650,9 @@ function createProfileForSelection() {
     const baseUrl = normalizeAemBaseUrl((document.getElementById('aemUrl').value || '').trim());
     if (!/^https?:\/\//i.test(baseUrl)) { showToast('Enter the AEM server on New upload first', 'warn'); return; }
     const cats = selectionCatalogTargets();
-    const name = (cats[0] || '').split('/').slice(-2, -1)[0] || '';
-    openProfileDialog({ baseUrl, values: { name, path: '', catalogs: cats } });
+    const zip = selectionZipTargets().find((z) => z.check.ok && z.landed);
+    const name = (cats[0] || (zip && zip.landed) || '').split('/').slice(-2, -1)[0] || '';
+    openProfileDialog({ baseUrl, values: { name, path: '', catalogs: cats, ditaotZip: zip ? zip.landed : '' } });
 }
 
 function createProfileForCopy() {
@@ -5488,9 +5526,9 @@ function renderFilteredHistory() {
         const origIdx = (window._historyData || []).indexOf(h);
         return `<tr class="hover:bg-gray-50">
             <td data-col="timestamp" class="px-4 py-3 text-gray-600 whitespace-nowrap text-xs" title="${fmtTimestamp(h.timestamp)}">${timeAgo(h.timestamp)}</td>
-            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs min-w-[150px] max-w-[230px]" title="${esc(h.baseUrl || '')}">${hostWithBreaks(hostOf(h.baseUrl))}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
-            <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-700 min-w-[180px] max-w-[320px]" title="/${esc(h.damPath)}">${pathWithBreaks('/' + h.damPath)}</td>
-            <td data-col="localPath" class="px-4 py-3 text-xs text-gray-500 min-w-[120px] max-w-[200px]" title="${esc(h.localPath||'')}">${esc(shortSource(h.localPath))}</td>
+            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs min-w-[130px] max-w-[230px]" title="${esc(h.baseUrl || '')}">${hostWithBreaks(hostOf(h.baseUrl))}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
+            <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-700 min-w-[140px] max-w-[320px]" title="/${esc(h.damPath)}">${pathWithBreaks('/' + h.damPath)}</td>
+            <td data-col="localPath" class="px-4 py-3 text-xs text-gray-500 min-w-[110px] max-w-[200px]" title="${esc(h.localPath||'')}">${esc(shortSource(h.localPath))}</td>
             <td data-col="files" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${Number(h.totalFiles || 0).toLocaleString()}${h.skippedFiles ? `<div class="text-gray-400" title="Already in AEM and unchanged">+${Number(h.skippedFiles).toLocaleString()} skipped</div>` : ''}</td>
             <td data-col="size" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${fmtBytes(h.totalBytes||0)}</td>
             <td data-col="duration" class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap tabular-nums">${fmtDuration(h.duration)}</td>

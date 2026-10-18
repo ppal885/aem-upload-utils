@@ -182,7 +182,7 @@ async def main():
             await page.set_viewport_size({'width': 1280, 'height': 900})
             await page.wait_for_timeout(300)
             fit = await page.evaluate("""() => { const sc = document.querySelector('#histPanel .overflow-x-auto'); const p = document.getElementById('histPanel');
-                return { content: sc.scrollWidth, visible: sc.clientWidth, search: document.getElementById('histSearch').getBoundingClientRect().left >= p.getBoundingClientRect().left }; }""")
+                return { content: sc.scrollWidth, visible: sc.clientWidth, search: document.getElementById('histSearch').getBoundingClientRect().left >= p.getBoundingClientRect().left, cols: [...document.querySelectorAll('#historyHead th')].map((th) => th.dataset.col + ':' + Math.round(th.getBoundingClientRect().width)).join(' ') }; }""")
             record('History fits a 1280px screen without sideways scrolling, search fully visible', fit['content'] <= fit['visible'] + 2 and fit['search'], str(fit))
             await page.evaluate("noteServerVersion('first'); noteServerVersion('second')")
             record('a newer server version shows the refresh notice', await page.is_visible('#newVersionNote') and 'new version' in (await page.inner_text('#newVersionNote')).lower(), '')
