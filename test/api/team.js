@@ -75,6 +75,12 @@ const json = async (r) => ({ status: r.status, body: await r.json().catch(() => 
     record('a role change by an admin applies to the open session at once', promote.status === 200 && meNow.body.user && meNow.body.user.isAdmin && meBack.body.user && !meBack.body.user.isAdmin,
         `admin now=${meNow.body.user && meNow.body.user.isAdmin}, after revert=${meBack.body.user && meBack.body.user.isAdmin}`);
 
+    const st = await json(await call('/api/admin/status', admin.cookie));
+    const stMember = await call('/api/admin/status', member.cookie);
+    record('server status for admins: disk, memory, backups, version; not for members', st.status === 200 && st.body.disk && st.body.disk.temp.free > 0
+        && st.body.memory && st.body.backup && st.body.version && Array.isArray(st.body.warnings) && stMember.status === 403,
+        `admin=${st.status} warnings=${JSON.stringify(st.body.warnings)} member=${stMember.status}`);
+
     const out = await call('/api/auth/logout', member.cookie, 'POST');
     const gone = await call('/api/upload/history', member.cookie);
     record('sign-out ends the session', out.status === 200 && gone.status === 401, `after=${gone.status}`);

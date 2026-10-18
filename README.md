@@ -146,6 +146,12 @@ AEM does not allow some characters in folder names, so an upload normally cleans
 
 When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog namespace), the page reads it and warns before uploading: references (`uri`, `nextCatalog`, `rewritePrefix`, …) whose folder or file name would change, with a button to keep names exactly, and referenced files missing from the selection. After the upload, add the uploaded `catalog.xml` to a DITA profile (Tools > Guides > DITA Profiles) whose paths cover the content, save it, and only then upload the topics.
 
+### Ready in AEM? and Server status
+
+**Ready in AEM?** appears under every finished upload: the same check as Check in AEM for the uploaded folder (AEM Guides processed / failed, links, DTD), refreshed every 30 seconds until Guides is done (up to an hour). It uses the AEM sign-in from New upload; for another server it offers Check in AEM.
+
+**Server status** (admins, sidebar) shows free disk for uploads and for the app, memory, running and waiting uploads per AEM server, signed-in sessions, the last backup, packages and the version, with warnings for low disk (under 10 GB or 10 %), no backup in the last day or high memory. "No uploads running" there means a deploy now interrupts nobody. Data: GET `/api/admin/status`.
+
 ### Check in AEM
 
 **Check in AEM** (History rows, and Packages after an install) shows how far AEM and AEM Guides got with a folder: DITA files processed / waiting / failed by Guides (failed ones by name), AEM processing (renditions, SHA-1), whether the links in up to 100 processed maps point at files in the folder, and whether the editor can load the DTD of a few topics. It refreshes every 30 seconds until Guides is done. On AEM as a Cloud Service, files installed from a package have no AEM processing: the dialog offers **Reprocess Assets** (Full Process + Run Post Process, as in Assets). Only reads, except Reprocess; the credentials are the ones on New upload for the same server, or typed in the dialog, and are not stored.

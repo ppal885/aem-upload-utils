@@ -901,6 +901,65 @@ app.post('/api/auth/change-password', loginLimiter, (req, res) => {
 });
 
 // ─── API: team members (admins) ───
+// ─── API: server status for admins (disk, memory, uploads, backups) ───
+const LOW_DISK_BYTES = 10 * 1024 * 1024 * 1024;
+const BACKUP_STALE_MS = 26 * 60 * 60 * 1000;
+
+async function diskInfo(dir) {
+    try {
+        const st = await fsPromises.statfs(dir);
+        return { path: dir, free: st.bavail * st.bsize, total: st.blocks * st.bsize };
+    } catch (_) {
+        return { path: dir, free: null, total: null };
+    }
+}
+
+async function lastBackupInfo() {
+    try {
+        const days = (await fsPromises.readdir(backup.BACKUP_DIR)).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
+        if (!days.length) return { dir: backup.BACKUP_DIR, last: null, count: 0 };
+        const st = await fsPromises.stat(nodePath.join(backup.BACKUP_DIR, days[days.length - 1]));
+        return { dir: backup.BACKUP_DIR, last: days[days.length - 1], at: st.mtime.toISOString(), count: days.length, keepDays: backup.KEEP_DAYS };
+    } catch (_) {
+        return { dir: backup.BACKUP_DIR, last: null, count: 0 };
+    }
+}
+
+app.get('/api/admin/status', auth.requireAdmin, async (_req, res) => {
+    const [tmp, appDisk, lastBackup] = await Promise.all([diskInfo(os.tmpdir()), diskInfo(__dirname), lastBackupInfo()]);
+    const mem = process.memoryUsage();
+    const heapLimit = require('v8').getHeapStatistics().heap_size_limit;
+    const uploads = [];
+    uploadSessions.forEach((s, id) => {
+        if (s.done) return;
+        uploads.push({ uploadId: id, owner: s.meta.ownerName || s.meta.owner, server: slotKey(s.meta.baseUrl), folder: s.meta.folder || '/' + s.meta.damPath,
+            files: s.completedFiles || 0, totalFiles: s.meta.expectedFiles || s.totalFiles || 0, startedAt: new Date(s.meta.startTime).toISOString(),
+            waiting: s.queuePosition || 0 });
+    });
+    const queues = [];
+    serverSlots.forEach((s, key) => { if (s.running.size || s.waiting.length) queues.push({ server: key, running: s.running.size, waiting: s.waiting.length }); });
+    let copying = 0;
+    browserUploadSessions.forEach((s) => { if (s.copy && ['listing', 'copying', 'checking'].includes(s.copy.state)) copying++; });
+    const pkgs = packages.list(null, true);
+    const warnings = [];
+    for (const [label, d] of [['upload temp folder', tmp], ['app folder', appDisk]]) {
+        if (d.free != null && (d.free < LOW_DISK_BYTES || d.free < d.total * 0.1)) warnings.push(`Low disk space on the ${label} (${d.path}): ${(d.free / 1073741824).toFixed(1)} GB free. Large uploads and packages may fail.`);
+    }
+    if (!lastBackup.last || Date.now() - Date.parse(lastBackup.at) > BACKUP_STALE_MS) warnings.push(`No backup in the last day (last: ${lastBackup.last || 'none'}). Accounts and history are backed up daily to ${lastBackup.dir}.`);
+    if (mem.heapUsed > heapLimit * 0.8) warnings.push(`Memory: ${(mem.heapUsed / 1048576).toFixed(0)} MB of ${(heapLimit / 1048576).toFixed(0)} MB heap in use.`);
+    if (os.freemem() < os.totalmem() * 0.05) warnings.push(`The server has only ${(os.freemem() / 1048576).toFixed(0)} MB of memory free.`);
+    res.json({
+        version: BUILD_ID, node: process.version, platform: process.platform, uptimeSeconds: Math.floor(process.uptime()), startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+        disk: { temp: tmp, app: appDisk },
+        memory: { rss: mem.rss, heapUsed: mem.heapUsed, heapLimit, systemFree: os.freemem(), systemTotal: os.totalmem(), load: os.loadavg() },
+        uploads, queues, copying, signedIn: auth.sessionCount(), interrupted: interruptedJobs.size,
+        history: uploadHistory.length, packages: { count: pkgs.length, bytes: pkgs.reduce((n, p) => n + (p.zipBytes || 0), 0) },
+        backup: lastBackup,
+        settings: { maxUploadsPerServer: MAX_UPLOADS_PER_SERVER, pipelines: DEFAULT_UPLOAD_PIPELINES, copyTargets: COPY_TARGETS },
+        warnings,
+    });
+});
+
 app.get('/api/admin/users', auth.requireAdmin, (_req, res) => {
     res.json({ users: auth.listUsers() });
 });
@@ -2287,6 +2346,7 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
                 fileErrors: uploadSession.fileErrors,
                 cancelled: result.cancelled,
                 duration,
+                baseUrl, folder: uploadSession.meta.folder,
             });
         } catch (e) { log.error('broadcast error in chunked browser .then:', e.message); }
 
