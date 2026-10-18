@@ -22,6 +22,7 @@ const guidesSetup = require('./lib/guides-setup');
 const guidesStatus = require('./lib/guides-status');
 const guidesProfile = require('./lib/guides-profile');
 const copyLog = require('./lib/copy-log');
+const csv = require('./lib/csv');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
@@ -977,12 +978,7 @@ app.post('/api/admin/drain', auth.requireAdmin, (req, res) => {
 app.get('/api/admin/copy-log', auth.requireAdmin, (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 20000);
     const entries = copyLog.read(limit);
-    if (req.query.format === 'csv') {
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="copy-log-${new Date().toISOString().slice(0, 10)}.csv"`);
-        res.setHeader('Cache-Control', 'no-store');
-        return res.send('﻿' + copyLog.toCsv(entries));
-    }
+    if (req.query.format === 'csv') return csv.send(res, `copy-log-${new Date().toISOString().slice(0, 10)}.csv`, copyLog.CSV_COLUMNS, entries);
     res.json({ entries });
 });
 
@@ -1921,7 +1917,9 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async 
     const copyBy = req.user.email || req.user.key;
     const copyTarget = session.mode === 'package' ? { package: 'new package' }
         : { targetServer: originOf(session.config.baseUrl), targetFolder: copyLanding(folder.path, session.config.damPath) };
-    copyLog.record('copy-start', { copyId: copy.id, by: copyBy, sourceServer: origin, sourceFolder: folder.path, sourceUser: username, ...copyTarget }, log);
+    // "Copy these too": a folder the content of an earlier copy needs (its DTDs, DITA-OT or linked files)
+    const relatedTo = /^[0-9a-f]{8}$/.test(String(b.relatedTo || '')) ? b.relatedTo : undefined;
+    copyLog.record('copy-start', { copyId: copy.id, by: copyBy, sourceServer: origin, sourceFolder: folder.path, sourceUser: username, ...copyTarget, relatedTo }, log);
     const logCopyEnd = () => copyLog.record('copy-end', { copyId: copy.id, by: copyBy, sourceServer: origin, sourceFolder: folder.path, ...copyTarget,
         state: copy.state, files: copy.done, bytes: copy.bytes, verified: copy.verified, failed: copy.failed.length, error: copy.error }, log);
     res.status(202).json({ copy: publicCopy(copy) });
@@ -2751,8 +2749,20 @@ app.get('/api/upload/status/:uploadId', (req, res) => {
 });
 
 // ─── API: upload history ───
+const hostOfUrl = (u) => { try { return new URL(u).host; } catch (_) { return u || ''; } };
+const HISTORY_CSV_COLUMNS = [
+    ['when', (h) => h.timestamp], ['who', (h) => h.ownerName || h.owner], ['account', (h) => h.owner], ['aemServer', (h) => hostOfUrl(h.baseUrl)],
+    ['folder', (h) => h.folder || (h.damPath ? '/' + String(h.damPath).replace(/^\/+/, '') : '')], ['source', (h) => h.localPath],
+    ['result', (h) => (h.cancelled ? 'cancelled' : h.success ? 'ok' : h.partial ? 'partial' : 'failed')],
+    ['files', (h) => h.totalFiles], ['skippedUnchanged', (h) => h.skippedFiles || 0], ['errors', (h) => h.errorCount || 0],
+    ['bytes', (h) => h.totalBytes], ['durationSeconds', (h) => (h.duration != null ? Math.round(h.duration / 1000) : '')],
+    ['firstError', (h) => (h.errors && h.errors[0]) || ''], ['uploadId', (h) => h.uploadId],
+];
+
 app.get('/api/upload/history', (req, res) => {
-    res.json(uploadHistory.filter((h) => auth.canAccess(req, h.owner)));
+    const rows = uploadHistory.filter((h) => auth.canAccess(req, h.owner));
+    if (req.query.format === 'csv') return csv.send(res, `upload-history-${new Date().toISOString().slice(0, 10)}.csv`, HISTORY_CSV_COLUMNS, rows);
+    res.json(rows);
 });
 
 app.delete('/api/upload/history/:uploadId', (req, res) => {
