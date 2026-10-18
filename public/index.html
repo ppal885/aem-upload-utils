@@ -124,6 +124,9 @@
         .catalog-note { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
         .catalog-note.bad { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
         .catalog-note.info { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+        .new-version { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: 12px;
+            padding: 8px 10px 8px 16px; border-radius: 9999px; background: #1e3a8a; color: #fff; font-size: 14px; box-shadow: 0 6px 20px rgba(15, 23, 42, .3); max-width: calc(100% - 24px); }
+        .new-version.hidden { display: none; }
         .aem-dialog { background: #fff; border-radius: 14px; box-shadow: 0 20px 50px rgba(15, 23, 42, .3); width: 100%; max-width: 640px; margin: 0 16px; max-height: 90vh; display: flex; flex-direction: column; }
         .aem-dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 8px; }
         .aem-dialog-head h3 { font-size: 18px; font-weight: 700; color: #111827; }
@@ -399,6 +402,10 @@
         <div id="aemDialogBody" class="aem-dialog-body"></div>
         <div id="aemDialogFoot" class="aem-dialog-foot"></div>
     </div>
+</div>
+<div id="newVersionNote" class="hidden new-version" role="status">
+    <span id="newVersionText">A new version of this tool is available.</span>
+    <button type="button" id="newVersionBtn" class="btn btn-accent btn-s" onclick="location.reload()">Refresh</button>
 </div>
 <div id="confirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="confirmHeadline" style="background:rgba(0,0,0,0.4);backdrop-filter:blur(2px);">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" style="animation:slide-down-in 0.2s ease-out;">
@@ -1198,7 +1205,7 @@
                 </button>
             </div>
         </div>
-        <div id="histPanel" class="relative overflow-x-auto transition-all duration-200">
+        <div id="histPanel" class="relative transition-all duration-200">
             <!-- Search and filter controls -->
             <div id="histControls" class="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
                 <div class="relative flex-1 min-w-[200px] max-w-xs">
@@ -1214,6 +1221,7 @@
                     <button type="button" class="hist-pill btn btn-secondary btn-xs btn-outline" onclick="setHistoryFilter('cancelled')" data-filter="cancelled">Cancelled</button>
                 </div>
             </div>
+            <div class="overflow-x-auto">
             <table class="w-full text-sm text-left min-w-[800px]">
                 <thead class="text-xs text-gray-500 uppercase bg-gray-50" id="historyHead">
                     <tr>
@@ -1232,6 +1240,7 @@
                     <tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">No uploads yet</td></tr>
                 </tbody>
             </table>
+            </div>
             <!-- History pagination -->
             <div id="histPagination" class="hidden px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
                 <span id="histPageInfo">Page 1 of 1</span>
@@ -2238,7 +2247,20 @@ function hostOf(url) {
 function shortSource(localPath) {
     const m = /^Browser upload \((\d+) files?/.exec(localPath || '');
     if (m) return 'Your computer · ' + Number(m[1]).toLocaleString() + ' files';
+    const c = /^Copied from ([^/\s]+)(\/\S*) \(([\d,]+) files?/.exec(localPath || '');
+    if (c) return 'Copied from ' + shortHost(c[1]) + ' · ' + c[3] + ' files';
     return localPath || '—';
+}
+
+// author-p38855-e367364-cmstg.adobeaemcloud.com -> e367364 (the full host is in the title)
+function shortHost(host) {
+    const m = /^author-p\d+-(e\d+)[^.]*\.adobeaemcloud\.com$/i.exec(host || '');
+    return m ? m[1] : host;
+}
+
+// Long host names wrap after dots instead of widening the table
+function hostWithBreaks(host) {
+    return esc(host).split('.').join('.<wbr>');
 }
 
 function updateSummaryPanel() {
@@ -3479,7 +3501,7 @@ function renderAemStatus(st, target) {
     const g = st.guides;
     const cloud = /\.adobeaemcloud\.com$/i.test(hostOf(target.baseUrl).split(':')[0]);
     const verdict = st.total === 0 ? ['warn', 'No files found in this folder.']
-        : g.failed ? ['bad', g.failed + ' file(s) failed in AEM Guides: they will not open properly (often a DTD the DITA profile cannot resolve).']
+        : g.failed ? ['bad', g.failed + ' file(s) failed in AEM Guides and will not open properly (for example invalid XML, or a DTD the DITA profile cannot resolve).']
             : !st.finished ? ['warn', 'Still processing: ' + (g.waiting + g.processing).toLocaleString() + ' file(s) to go. This refreshes every 30 seconds.']
                 : st.dtd.some((d) => !d.ok) ? ['bad', 'The editor cannot load the DTD of some topics: set up the DITA profile for this folder.']
                     : ['ok', 'Ready: AEM Guides processed every file' + (st.links.notInFolder ? '.' : ' and the links checked point at files in this folder.')];
@@ -5233,10 +5255,25 @@ function initConnectionStatus() {
     checkConnection();
     connCheckInterval = setInterval(checkConnection, 30000);
 }
+let pageVersion = null;
+
+function noteServerVersion(version) {
+    if (!version) return;
+    if (!pageVersion) { pageVersion = version; return; }
+    if (version === pageVersion) return;
+    const box = document.getElementById('newVersionNote');
+    box.classList.remove('hidden');
+    document.getElementById('newVersionText').textContent = uploading
+        ? 'A new version of this tool is available. Refresh after this upload finishes.'
+        : 'A new version of this tool is available.';
+    document.getElementById('newVersionBtn').disabled = !!uploading;
+}
+
 async function checkConnection() {
     try {
         const r = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
         if (r.ok) {
+            try { noteServerVersion((await r.clone().json()).version); } catch (_) { /* older server */ }
             if (!connHealthy) {
                 connHealthy = true;
                 showToast('Server connection restored', 'success');
@@ -5451,9 +5488,9 @@ function renderFilteredHistory() {
         const origIdx = (window._historyData || []).indexOf(h);
         return `<tr class="hover:bg-gray-50">
             <td data-col="timestamp" class="px-4 py-3 text-gray-600 whitespace-nowrap text-xs" title="${fmtTimestamp(h.timestamp)}">${timeAgo(h.timestamp)}</td>
-            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs whitespace-nowrap">${esc(hostOf(h.baseUrl))}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
+            <td data-col="target" class="px-4 py-3 font-medium text-gray-800 text-xs min-w-[150px] max-w-[230px]" title="${esc(h.baseUrl || '')}">${hostWithBreaks(hostOf(h.baseUrl))}${currentUser && currentUser.isAdmin ? `<div class="text-[11px] font-normal text-gray-400">${esc(h.ownerName || 'unknown (before sign-in)')}</div>` : ''}</td>
             <td data-col="damPath" class="px-4 py-3 font-mono text-xs text-gray-700 min-w-[180px] max-w-[320px]" title="/${esc(h.damPath)}">${pathWithBreaks('/' + h.damPath)}</td>
-            <td data-col="localPath" class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap" title="${esc(h.localPath||'')}">${esc(shortSource(h.localPath))}</td>
+            <td data-col="localPath" class="px-4 py-3 text-xs text-gray-500 min-w-[120px] max-w-[200px]" title="${esc(h.localPath||'')}">${esc(shortSource(h.localPath))}</td>
             <td data-col="files" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${Number(h.totalFiles || 0).toLocaleString()}${h.skippedFiles ? `<div class="text-gray-400" title="Already in AEM and unchanged">+${Number(h.skippedFiles).toLocaleString()} skipped</div>` : ''}</td>
             <td data-col="size" class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap tabular-nums">${fmtBytes(h.totalBytes||0)}</td>
             <td data-col="duration" class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap tabular-nums">${fmtDuration(h.duration)}</td>
@@ -5464,9 +5501,9 @@ function renderFilteredHistory() {
                     : h.cancelled
                         ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"${h.uploadedFiles != null ? ` title="${h.uploadedFiles} file(s) uploaded before cancelling"` : ''}>Cancelled</span>`
                         : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Failed</span>'}</td>
-            <td data-col="actions" class="px-4 py-3 whitespace-nowrap"><div class="flex items-center gap-2">
+            <td data-col="actions" class="px-4 py-3 whitespace-nowrap"><div class="flex items-center gap-3"><div class="flex flex-col items-start gap-1">
                 <button onclick="rerunUpload(${origIdx})" class="text-xs text-adobe-blue hover:underline">Re-run</button>
-                ${h.baseUrl && h.damPath ? `<button onclick="openAemStatus({ baseUrl: ${esc(JSON.stringify(h.baseUrl))}, folder: ${esc(JSON.stringify(h.folder || '/' + String(h.damPath).replace(/^\/+/, '')))} })" class="text-xs text-adobe-blue hover:underline">Check in AEM</button>` : ''}
+                ${h.baseUrl && h.damPath ? `<button onclick="openAemStatus({ baseUrl: ${esc(JSON.stringify(h.baseUrl))}, folder: ${esc(JSON.stringify(h.folder || '/' + String(h.damPath).replace(/^\/+/, '')))} })" class="text-xs text-adobe-blue hover:underline">Check in AEM</button>` : ''}</div>
                 <button onclick="deleteHistoryItem('${h.uploadId}')" class="text-gray-300 hover:text-red-500 transition" title="Delete" aria-label="Delete history entry"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
             </div></td></tr>`;
     }).join('');
