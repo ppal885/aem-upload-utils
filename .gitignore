@@ -9,6 +9,8 @@ upload-history.json
 users.json
 sessions.json
 sessions.json.tmp
+copy-log.jsonl
+copy-log.jsonl.1
 users.json.tmp
 packages/
 certs/
