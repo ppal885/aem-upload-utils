@@ -1,5 +1,6 @@
 """Hard-kill the server mid-upload, start it again, Resume. usage: python test/ui/resume_test.py <mock aem url>"""
 import asyncio
+import hashlib
 import json
 import os
 import subprocess
@@ -21,7 +22,7 @@ def server_env(name, port, extra=None):
     tmp = os.path.join(d, 'tmp')
     os.makedirs(tmp, exist_ok=True)
     env = dict(os.environ, PORT=str(port), TMPDIR=tmp, TEMP=tmp, TMP=tmp,
-               HISTORY_FILE=os.path.join(d, 'upload-history.json'), PACKAGES_DIR=os.path.join(d, 'packages'),
+               HISTORY_FILE=os.path.join(d, 'upload-history.json'), PACKAGES_DIR=os.path.join(d, 'packages'), SESSIONS_FILE=os.path.join(d, 'sessions.json'),
                BACKUP_DIR=os.path.join(d, 'backups'))
     env.update(extra or {})
     return env
@@ -87,7 +88,15 @@ async def main():
         record('server killed in the middle of the upload', 0 < before_kill < N, f'{before_kill} of {N} files in AEM when killed')
 
         proc = start_server()
-        await sign_in(page)
+        # Sessions survive the restart (even a hard kill): no new sign-in
+        me = await page.evaluate("fetch('/api/auth/me').then(r => r.status)")
+        record('still signed in after the server was killed and started again', me == 200, f'/api/auth/me -> {me}')
+        cookie = next((c['value'] for c in await page.context.cookies() if c['name'] == 'gus_session'), '')
+        stored = open(os.path.join(WORK, 'resume', 'sessions.json'), encoding='utf-8').read()
+        record('the session file holds only a hash of the session, not the cookie', bool(cookie) and cookie not in stored
+               and hashlib.sha256(cookie.encode()).hexdigest() in stored, f'{len(stored)} bytes')
+        await page.goto(APP, wait_until='domcontentloaded')
+        await page.wait_for_function('!!currentUser', timeout=20000)
         await page.wait_for_function("!document.getElementById('interruptedBox').classList.contains('hidden')", timeout=10000)
         text = await page.inner_text('#interruptedList')
         record('after restart the page offers Resume with the remaining count', DAM in text and 'left' in text, text.replace('\n', ' | ')[:160])

@@ -49,7 +49,8 @@ that belongs to this tool only (never their Adobe password).
 - Admins manage people on **Team members** (add, reset password, make admin, disable) or on the server with
   `node tools/manage-users.js list | add --email ... --name ... [--admin] | reset | disable | enable | role --admin|--member`.
 - Passwords are stored only as scrypt hashes in `users.json` (git-ignored, back it up). Sessions: 8 h idle, 24 h maximum;
-  a restart signs everyone out.
+  they survive a restart or deploy (`sessions.json`, or `SESSIONS_FILE`: only a SHA-256 of each session id, readable by the server user only).
+  An admin's role change applies to open sessions at once; disabling an account or resetting its password ends them.
 - AEM credentials are entered for each upload and checked against AEM before any file is sent. The AEM password is
   never stored; the AEM server URL and username are remembered per person in the browser.
 - Members see only their own uploads, history and packages; admins see everyone's. History keeps the last
