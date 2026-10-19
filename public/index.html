@@ -962,6 +962,10 @@
                         <span id="elapsedTime" class="text-sm text-gray-500">0s</span>
                         <span id="uploadSpeed" class="hidden text-sm text-gray-500">-- MB/s</span>
                         <span id="uploadEta" class="hidden text-sm font-medium text-adobe-blue">ETA --</span>
+                        <button type="button" class="btn btn-secondary btn-outline btn-s" id="bgBtnInProgress" onclick="runUploadInBackground()" style="display:none;"
+                            title="The upload keeps running on the server; this page is free for another upload">
+                            Run in background
+                        </button>
                         <button type="button" class="btn btn-negative btn-s" id="cancelBtnInProgress" onclick="cancelUpload()" style="display:none;">
                             Cancel Upload
                         </button>
@@ -4870,6 +4874,7 @@ function setUploading(state) {
     document.getElementById('uploadBtnText').textContent = state ? 'Uploading...' : 'Start Upload';
     document.getElementById('cancelBtn').style.display = state ? '' : 'none';
     document.getElementById('cancelBtnInProgress').style.display = state ? '' : 'none';
+    if (!state) document.getElementById('bgBtnInProgress').style.display = 'none';
     showMiniProgress(state);
 
     // Disable/enable all input controls during upload to prevent accidental changes
@@ -5117,6 +5122,26 @@ function finishWithoutDoneEvent() {
     showToast('The upload finished while the connection was lost. See Upload History for the result.', 'info');
 }
 
+// Leaves the upload running on the server and frees this page for the next one; the banner's
+// "View Progress" shows it again. Only once the files are on the tool's server (the stream is open).
+function runUploadInBackground() {
+    if (!uploading || !activeUploadEventSource || !currentUploadId) return;
+    const id = currentUploadId;
+    try { activeUploadEventSource.close(); } catch (_) { /* closed */ }
+    activeUploadEventSource = null;
+    if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+    setUploading(false);
+    // The files are on the server now: a second Start Upload must not send them again
+    if (uploadStartedHere) clearBrowserFiles();
+    updatePageTitle(-1);
+    resetProgress();
+    window._noAutoReconnectId = id;
+    sessionStorage.setItem('activeUploadId', id);
+    bannerDismissed = false;
+    checkForActiveUploads();
+    showToast('The upload keeps running on the server. You can start another one now; "View Progress" on the banner shows it again.', 'success');
+}
+
 async function reconnectOrFinish(uploadId) {
     const st = await fetchUploadStatus(uploadId);
     if (!uploading) return;
@@ -5142,6 +5167,10 @@ function connectSSE(uploadId, isReconnect = false) {
     etaFirstDoneAt = 0;
     etaFirstDoneCount = 0;
     uploadStartMs = uploadStartMs || Date.now();
+    // The replay delivers every file finished so far within seconds: measured from the first replayed file,
+    // that reads as hundreds of files/s. Average over the whole upload instead (start time from the server).
+    if (isReconnect || !uploadStartedHere) { etaFirstDoneAt = uploadStartMs; etaFirstDoneCount = 0; }
+    document.getElementById('bgBtnInProgress').style.display = '';
 
     // Show the AEM upload progress panel now that the server-side upload is starting
     document.getElementById('progressPanel').classList.remove('hidden');
