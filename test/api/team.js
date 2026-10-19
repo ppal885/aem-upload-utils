@@ -111,6 +111,37 @@ const json = async (r) => ({ status: r.status, body: await r.json().catch(() => 
         && /text\/csv/.test(csv.headers.get('content-type')) && /attachment/.test(csv.headers.get('content-disposition')) && csvText.replace(/^﻿/, '').startsWith('at,event,copyId,by,'),
         `member=${logMember.status} admin=${logAdmin.status} csv=${csv.headers.get('content-type')}`);
 
+    const NEW_TARGET = 'https://author-p1-e2-cmstg.adobeaemcloud.com';
+    const tMember = await call('/api/admin/copy-targets', member.cookie);
+    const tStart = await json(await call('/api/admin/copy-targets', admin.cookie));
+    try {
+        const tHttp = await json(await call('/api/admin/copy-targets', admin.cookie, 'POST', { targets: [AEM, 'http://evil.example'] }));
+        const tJunk = await json(await call('/api/admin/copy-targets', admin.cookie, 'POST', { targets: ['not a server'] }));
+        record('copy targets: admins only; https required (http only for this machine); junk refused',
+            tMember.status === 403 && tStart.status === 200 && tStart.body.source === 'environment' && JSON.stringify(tStart.body.targets) === JSON.stringify([AEM])
+            && tHttp.status === 400 && /https/.test(tHttp.body.error) && tJunk.status === 400,
+            `member=${tMember.status} start=${JSON.stringify(tStart.body.targets)} http=${tHttp.status} junk=${tJunk.status}`);
+
+        const tAdd = await json(await call('/api/admin/copy-targets', admin.cookie, 'POST', { targets: [AEM, NEW_TARGET + '/', NEW_TARGET] }));
+        const opts = await json(await call('/api/copy/options', member.cookie));
+        record('adding a server: saved by the admin, duplicates merged, Copy offers it at once',
+            tAdd.status === 200 && tAdd.body.source === 'admin' && tAdd.body.updatedBy === 'admin@test.local' && JSON.stringify(tAdd.body.targets) === JSON.stringify([AEM, NEW_TARGET])
+            && opts.body.targets.includes(NEW_TARGET), JSON.stringify(tAdd.body));
+
+        await call('/api/admin/copy-targets', admin.cookie, 'POST', { targets: [NEW_TARGET] });
+        const sess = await json(await call('/api/upload/browser/init', member.cookie, 'POST', { baseUrl: AEM, username: 'admin', password: 'admin', damPath: 'content/dam/T', totalBytes: 1, fileCount: 1 }));
+        const blocked = await json(await call(`/api/copy/${sess.body.sessionId}/start`, member.cookie, 'POST', { sourceUrl: 'http://127.0.0.1:4621', sourceUsername: 'a', sourcePassword: 'b', folder: '/content/dam/x' }));
+        if (sess.body.sessionId) await call('/api/upload/browser/cancel/' + sess.body.sessionId, member.cookie, 'POST');
+        record('a removed server is refused as a copy target at once', blocked.status === 403 && blocked.body.code === 'COPY_TARGET_NOT_ALLOWED', `${blocked.status} ${blocked.body.code}`);
+        const changes = (await json(await call('/api/admin/copy-log', admin.cookie))).body.entries.filter((e) => e.event === 'targets-change');
+        record('every change is in the Copy log (who, added, removed)', changes.some((e) => e.added === NEW_TARGET && e.by === 'admin@test.local')
+            && changes.some((e) => e.removed === AEM), JSON.stringify(changes.slice(0, 2)));
+    } finally {
+        const tReset = await json(await call('/api/admin/copy-targets', admin.cookie, 'POST', { reset: true }));
+        record('reset goes back to the server default (COPY_TARGETS)', tReset.status === 200 && tReset.body.source === 'environment' && JSON.stringify(tReset.body.targets) === JSON.stringify([AEM]),
+            JSON.stringify(tReset.body.targets));
+    }
+
     const rowsOf = (text) => text.replace(/^﻿/, '').split('\r\n').filter(Boolean);
     const hCsv = await call('/api/upload/history?format=csv', member.cookie);
     const hText = await hCsv.text();

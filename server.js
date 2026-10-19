@@ -1834,8 +1834,21 @@ app.post('/api/guides/profile/create', uploadLimiter, async (req, res) => {
 
 // ─── API: copy a folder from another AEM server (read-only on that server, see lib/copy-from-aem.js) ───
 // The copied files fill an upload or package session exactly like files sent from the browser, so the normal
-// finalize (upload) or package build runs afterwards. Copied content may only go to the servers in COPY_TARGETS.
-const COPY_TARGETS = String(process.env.COPY_TARGETS || '').split(',').map((u) => originOf(u)).filter(Boolean);
+// finalize (upload) or package build runs afterwards. Copied content may only go to the allowed target servers:
+// the list an admin saved on the Team page (copy-targets.json), else COPY_TARGETS from the environment.
+const COPY_TARGETS_ENV = String(process.env.COPY_TARGETS || '').split(',').map((u) => originOf(u)).filter(Boolean);
+const COPY_TARGETS_FILE = process.env.COPY_TARGETS_FILE ? nodePath.resolve(process.env.COPY_TARGETS_FILE) : nodePath.join(__dirname, 'copy-targets.json');
+const MAX_COPY_TARGETS = 20;
+// Changed in place (never reassigned) so every check reads the current list
+const COPY_TARGETS = [...COPY_TARGETS_ENV];
+let copyTargetsSaved = null;
+try {
+    const saved = JSON.parse(fs.readFileSync(COPY_TARGETS_FILE, 'utf8'));
+    if (saved && Array.isArray(saved.targets)) {
+        COPY_TARGETS.splice(0, COPY_TARGETS.length, ...saved.targets.map((u) => originOf(u)).filter(Boolean));
+        copyTargetsSaved = { updatedBy: saved.updatedBy || null, updatedAt: saved.updatedAt || null };
+    }
+} catch (_) { /* no list saved by an admin: COPY_TARGETS from the environment */ }
 const COPY_ALLOW_DOWNLOAD = /^(1|true|yes)$/i.test(process.env.COPY_ALLOW_DOWNLOAD || '');
 const COPY_IDLE_MS = (parseInt(process.env.COPY_IDLE_MINUTES, 10) || 60) * 60 * 1000;
 
@@ -1854,7 +1867,7 @@ function isAllowedCopyTarget(url) {
 function copyTargetError(url) {
     return COPY_TARGETS.length
         ? `Copied content can only go to the allowed servers (${COPY_TARGETS.join(', ')}); ${originOf(url) || url} is not one of them.`
-        : 'Copying from another AEM server is not set up: the admin has to list the allowed target servers in COPY_TARGETS.';
+        : 'Copying from another AEM server is not set up: an admin has to add the allowed target servers on the Team page.';
 }
 
 /** Where a copied folder lands: under damPath, or damPath itself when it already ends with the folder's name. */
@@ -1880,6 +1893,65 @@ function publicCopy(copy) {
 app.get('/api/copy/options', (_req, res) => {
     res.json({ enabled: COPY_TARGETS.length > 0, targets: COPY_TARGETS, packageDownload: COPY_ALLOW_DOWNLOAD,
         defaultConcurrency: copyFromAem.DEFAULT_CONCURRENCY, maxConcurrency: copyFromAem.MAX_CONCURRENCY });
+});
+
+// ─── Allowed copy targets (admins): where copied customer content may go ───
+const LOOPBACK = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/;
+
+function copyTargetsInfo() {
+    return { targets: COPY_TARGETS, source: copyTargetsSaved ? 'admin' : 'environment', environment: COPY_TARGETS_ENV, ...(copyTargetsSaved || {}) };
+}
+
+/** [origin] or { error }: https only (plain http just for this machine), at most MAX_COPY_TARGETS, no duplicates. */
+function parseCopyTargets(list) {
+    if (!Array.isArray(list)) return { error: 'Send the list of servers.' };
+    const out = [];
+    for (const raw of list) {
+        const text = String(raw || '').trim();
+        if (!text) continue;
+        const o = originOf(text);
+        if (!o) return { error: `${text} is not a server address (https://author-….adobeaemcloud.com).` };
+        const u = new URL(o);
+        if (u.protocol !== 'https:' && !LOOPBACK.test(u.hostname)) return { error: `${o}: use https.` };
+        if (!out.includes(o)) out.push(o);
+    }
+    if (out.length > MAX_COPY_TARGETS) return { error: `At most ${MAX_COPY_TARGETS} servers.` };
+    return { targets: out };
+}
+
+app.get('/api/admin/copy-targets', auth.requireAdmin, (_req, res) => {
+    res.json(copyTargetsInfo());
+});
+
+app.post('/api/admin/copy-targets', auth.requireAdmin, (req, res) => {
+    const b = req.body || {};
+    const before = [...COPY_TARGETS];
+    const by = req.user.email || req.user.key;
+    if (b.reset === true) {
+        try { fs.rmSync(COPY_TARGETS_FILE, { force: true }); } catch (e) { return res.status(500).json({ error: 'Could not reset the list: ' + e.message }); }
+        COPY_TARGETS.splice(0, COPY_TARGETS.length, ...COPY_TARGETS_ENV);
+        copyTargetsSaved = null;
+    } else {
+        const parsed = parseCopyTargets(b.targets);
+        if (parsed.error) return res.status(400).json({ error: parsed.error });
+        const saved = { targets: parsed.targets, updatedBy: by, updatedAt: new Date().toISOString() };
+        try {
+            const tmp = COPY_TARGETS_FILE + '.tmp';
+            fs.writeFileSync(tmp, JSON.stringify(saved, null, 2), { mode: 0o600 });
+            fs.renameSync(tmp, COPY_TARGETS_FILE);
+        } catch (e) {
+            return res.status(500).json({ error: 'Could not save the list: ' + e.message });
+        }
+        COPY_TARGETS.splice(0, COPY_TARGETS.length, ...parsed.targets);
+        copyTargetsSaved = { updatedBy: saved.updatedBy, updatedAt: saved.updatedAt };
+    }
+    const added = COPY_TARGETS.filter((t) => !before.includes(t));
+    const removed = before.filter((t) => !COPY_TARGETS.includes(t));
+    if (added.length || removed.length || b.reset === true) {
+        copyLog.record('targets-change', { by, added: added.join(' '), removed: removed.join(' '), state: b.reset === true ? 'reset to environment' : 'saved' }, log);
+        log.info(`Allowed copy targets changed by ${by}: +[${added.join(', ')}] -[${removed.join(', ')}]${b.reset === true ? ' (reset to COPY_TARGETS)' : ''}`);
+    }
+    res.json(copyTargetsInfo());
 });
 
 app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async (req, res) => {
@@ -2500,6 +2572,9 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     if (session.copy && session.copy.state !== 'done') {
         return res.status(409).json({ error: 'The copy from the source AEM has not finished yet' });
     }
+    if (session.copy && !isAllowedCopyTarget(session.config.baseUrl)) {
+        return res.status(403).json({ error: copyTargetError(session.config.baseUrl), code: 'COPY_TARGET_NOT_ALLOWED' });
+    }
     session.finalized = true;
 
     if (session.receivedFiles === 0) {
@@ -2993,6 +3068,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
         'upload-history.json': HISTORY_FILE,
         'packages.json': nodePath.join(packages.PACKAGES_DIR, 'packages.json'),
         'copy-log.jsonl': copyLog.COPY_LOG_FILE,
+        'copy-targets.json': COPY_TARGETS_FILE,
     }, log);
     const tempFree = await getTempFreeBytes();
     const tls = TLS_CERT_FILE && TLS_KEY_FILE

@@ -365,7 +365,7 @@
         .dark .cp-bar { background: #2d2d44; }
     </style>
     <!-- after the page styles, so utilities such as "hidden" win, as with the old in-browser Tailwind -->
-    <link rel="stylesheet" href="app.css?v=18b2f32662" />
+    <link rel="stylesheet" href="app.css?v=cd42db3bc3" />
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
 <div id="appRoot">
@@ -1234,6 +1234,17 @@
                 </thead>
                 <tbody id="teamBody" class="divide-y divide-gray-100"></tbody>
             </table>
+        </div>
+        <div class="card bg-white rounded-xl border border-gray-200 p-5 mt-6" id="copyTargetsCard">
+            <h3 class="text-sm font-bold text-gray-800 mb-1">Allowed copy targets</h3>
+            <p class="text-xs text-gray-500 mb-3">Copy from AEM sends customer content only to these servers (upload, package install, DITA profile). Every change is in the Copy log.</p>
+            <ul id="copyTargetsList" class="text-sm mb-3"></ul>
+            <form class="flex flex-wrap items-end gap-3" onsubmit="event.preventDefault(); addCopyTarget();" novalidate>
+                <div class="flex-1 min-w-[260px]"><label for="newCopyTarget" class="block text-xs font-semibold text-gray-600 mb-1">Add a server</label>
+                    <input id="newCopyTarget" type="url" placeholder="https://author-p00000-e000000-cmstg.adobeaemcloud.com" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                <button id="addCopyTargetBtn" type="submit" class="h-[38px] px-4 rounded-lg bg-adobe-blue text-white text-sm font-semibold hover:bg-adobe-darkBlue">Add server</button>
+            </form>
+            <p id="copyTargetsNote" class="mt-2 text-xs text-gray-500"></p>
         </div>
     </section>
 
@@ -2809,7 +2820,62 @@ async function signOut() {
 }
 
 // ═══ Team members (admins) ═══
+// ═══ Allowed copy targets (admins) ═══
+let copyTargets = null;
+
+async function loadCopyTargets() {
+    try {
+        copyTargets = await apiJson('/api/admin/copy-targets');
+        renderCopyTargets();
+    } catch (e) {
+        document.getElementById('copyTargetsNote').textContent = 'Could not load the allowed copy targets: ' + toErrorMessage(e);
+    }
+}
+
+function renderCopyTargets() {
+    const t = copyTargets;
+    document.getElementById('copyTargetsList').innerHTML = t.targets.length
+        ? t.targets.map((u, i) => '<li class="flex items-center justify-between gap-3 py-1 border-b border-gray-100"><span class="cp-mono">' + esc(u) + '</span>'
+            + '<button type="button" class="text-xs font-semibold text-red-600 underline" data-remove-target="' + i + '" onclick="removeCopyTarget(' + i + ')">Remove</button></li>').join('')
+        : '<li class="text-gray-500">None: Copy from AEM is off until a server is added.</li>';
+    document.getElementById('copyTargetsNote').innerHTML = t.source === 'admin'
+        ? 'Saved by ' + esc(t.updatedBy || '?') + ' ' + esc(timeAgo(t.updatedAt)) + '. <button type="button" class="underline" onclick="resetCopyTargets()">Reset to the server default</button> ('
+            + (t.environment.length ? esc(t.environment.join(', ')) : 'none') + ')'
+        : 'This is the server default (COPY_TARGETS). Adding or removing a server here saves your own list.';
+}
+
+async function saveCopyTargets(body, done) {
+    try {
+        copyTargets = await apiJson('/api/admin/copy-targets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        renderCopyTargets();
+        showToast(done, 'success');
+        return true;
+    } catch (e) {
+        showToast(toErrorMessage(e), 'error');
+        return false;
+    }
+}
+
+async function addCopyTarget() {
+    const input = document.getElementById('newCopyTarget');
+    const url = input.value.trim();
+    if (!url || !copyTargets) return;
+    if (await saveCopyTargets({ targets: [...copyTargets.targets, url] }, 'Server added to the allowed copy targets')) input.value = '';
+}
+
+async function removeCopyTarget(i) {
+    const url = copyTargets && copyTargets.targets[i];
+    if (!url || !confirm('Remove ' + url + '? Copied content can no longer be uploaded or installed there, including copies already made.')) return;
+    await saveCopyTargets({ targets: copyTargets.targets.filter((_, j) => j !== i) }, 'Server removed');
+}
+
+async function resetCopyTargets() {
+    if (!confirm('Use the server default list (COPY_TARGETS) again?')) return;
+    await saveCopyTargets({ reset: true }, 'Back to the server default list');
+}
+
 async function loadTeam() {
+    loadCopyTargets();
     const body = document.getElementById('teamBody');
     try {
         const r = await fetch('/api/admin/users');
@@ -3222,7 +3288,7 @@ async function cpLoadOptions() {
         const o = await apiJson('/api/copy/options');
         const box = document.getElementById('cpDisabled');
         box.classList.toggle('hidden', o.enabled);
-        if (!o.enabled) box.textContent = 'Copying from another AEM server is not set up on this tool yet: an admin has to list the allowed target servers (COPY_TARGETS).';
+        if (!o.enabled) box.textContent = 'Copying from another AEM server is not set up on this tool yet: an admin has to add the allowed target servers on the Team page.';
         document.getElementById('cpStartBtn').disabled = !o.enabled;
         const sel = document.getElementById('cpTgtUrl');
         const keep = sel.value;
@@ -3956,7 +4022,7 @@ function setDrainBanner(on) {
 
 // ═══ Copy log (admins) ═══
 const COPY_EVENTS = { 'copy-start': 'Copy started', 'copy-end': 'Copy finished', 'copy-upload': 'Uploaded to AEM', 'package-built': 'Package built',
-    'package-install': 'Package installed', 'package-download': 'Package downloaded' };
+    'package-install': 'Package installed', 'package-download': 'Package downloaded', 'targets-change': 'Allowed targets changed' };
 
 async function loadCopyLog() {
     const body = document.getElementById('copyLogBody');
@@ -3976,6 +4042,7 @@ async function loadCopyLog() {
             return '<span class="' + (ok ? 'text-green-700' : 'text-red-700') + '">' + esc(e.state) + '</span> &middot; ' + (e.files || 0).toLocaleString() + ' files'
                 + (e.bytes ? ', ' + fmtBytes(e.bytes) : '') + (e.failed ? ', ' + e.failed + ' failed' : '') + (e.error ? ' &middot; ' + esc(e.error) : '');
         }
+        if (e.event === 'targets-change') return esc(e.state || '') + (e.added ? '<div>added ' + esc(e.added) + '</div>' : '') + (e.removed ? '<div>removed ' + esc(e.removed) + '</div>' : '');
         if (e.event === 'package-install') return '<span class="' + (e.state === 'ok' ? 'text-green-700' : 'text-red-700') + '">' + esc(e.state) + '</span>' + (e.error ? ' &middot; ' + esc(e.error) : '');
         if (e.files) return (e.files || 0).toLocaleString() + ' files';
         if (e.bytes) return fmtBytes(e.bytes);
