@@ -154,11 +154,27 @@ async def main():
             record('the button warns instead of offering a plain upload', go == 'Upload anyway', go)
             record('nothing was written on the source server', json.loads(get(SOURCE + '/__writes')) == [], get(SOURCE + '/__writes').decode()[:200])
 
-            # Set the target up like an admin would: copy the DTD folder to the same path, then save a DITA profile
-            page2 = await signed_in(browser)
-            c2 = await copy(page2, '/content/dam/crown-dtd')
-            await page2.click('#cpGoBtn')
-            record('the DTD folder is copied to the same path on the target', wait_completed('/content/dam/crown-dtd/', 3), str(completed('/content/dam/crown-dtd/')))
+            # "Copy these too": the DTD folder and the linked folder, to the same path on the target
+            related = {r['folder']: r for r in setup.get('related') or []}
+            record('Copy these too lists the DTD, DITA-OT and linked folders, none on the target yet',
+                   set(related) == {'/content/dam/crown-dtd', '/content/dam/crown-ot', '/content/dam/shared'}
+                   and related['/content/dam/crown-dtd']['why'] == ['DTD catalog'] and related['/content/dam/shared']['why'] == ['linked files']
+                   and all(r.get('onTarget') is False for r in related.values()), json.dumps(list(related.values()))[:400])
+            ticked = await page.evaluate("[...document.querySelectorAll('[data-cp-rel]:checked')].map(c => c.value)")
+            record('the missing folders are ticked by default', sorted(ticked) == sorted(related), str(ticked))
+            await page.uncheck('[data-cp-rel][value="/content/dam/crown-ot"]')
+            await page.click('#cpRelBtn')
+            await page.wait_for_function("/source password/.test([...document.querySelectorAll('.toast')].map(t => t.textContent).join(' '))", timeout=10000)
+            no_pass = await page.evaluate("[...document.querySelectorAll('.toast')].map(t => t.textContent).join(' ')")
+            await page.fill('#cpRelPass', 'admin')
+            await page.click('#cpRelBtn')
+            await page.wait_for_function("!cpRelatedRunning && /Copied 2 folder/.test([...document.querySelectorAll('.toast')].map(t => t.textContent).join(' '))", timeout=60000)
+            record('without the source password nothing starts', 'source password' in no_pass, no_pass[:200])
+            record('the DTD folder and the linked folder are copied to the same path on the target',
+                   wait_completed('/content/dam/crown-dtd/', 3) and wait_completed('/content/dam/shared/', 1), str(completed('/content/dam/crown-dtd/') + completed('/content/dam/shared/')))
+            await page.wait_for_function("cpLast.setup.related.find(r => r.folder === '/content/dam/crown-dtd').onTarget === true", timeout=20000)
+            record('after copying, the check shows them on the target', True)
+            record('the main copy still waits for its own upload', await page.evaluate("cpLast.state") == 'done' and bool(await page.evaluate('cpSessionId')), '')
             # Create the DITA profile from the copy result (filled in from the source's "Crown" profile)
             await page.click('#cpProfileBtn')
             await page.wait_for_selector('#pfName', timeout=5000)
@@ -265,6 +281,10 @@ async def main():
             upload = next((e for e in crown if e['event'] == 'copy-upload'), {})
             record('copy log: the upload names the target server and folder', upload.get('targetServer') == TARGET and upload.get('targetFolder') == '/content/dam/crown',
                    json.dumps(upload)[:300])
+            dtd_start = next((e for e in entries if e['event'] == 'copy-start' and e.get('sourceFolder') == '/content/dam/crown-dtd'), {})
+            first_crown = [e for e in crown if e['event'] == 'copy-start'][-1]
+            record('copy log: Copy these too is linked to the copy it belongs to', bool(dtd_start.get('relatedTo')) and dtd_start.get('relatedTo') == first_crown.get('copyId'),
+                   json.dumps(dtd_start)[:300])
             record('copy log never holds a password', not any('password' in json.dumps(e).lower() for e in entries) and 'admin-pass' not in json.dumps(entries), '')
             await admin.evaluate("showView('copylog')")
             await admin.wait_for_selector('#copyLogTable', timeout=10000)

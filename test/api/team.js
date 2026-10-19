@@ -111,6 +111,18 @@ const json = async (r) => ({ status: r.status, body: await r.json().catch(() => 
         && /text\/csv/.test(csv.headers.get('content-type')) && /attachment/.test(csv.headers.get('content-disposition')) && csvText.replace(/^﻿/, '').startsWith('at,event,copyId,by,'),
         `member=${logMember.status} admin=${logAdmin.status} csv=${csv.headers.get('content-type')}`);
 
+    const rowsOf = (text) => text.replace(/^﻿/, '').split('\r\n').filter(Boolean);
+    const hCsv = await call('/api/upload/history?format=csv', member.cookie);
+    const hText = await hCsv.text();
+    const hJson = await json(await call('/api/upload/history', member.cookie));
+    const hAdmin = await (await call('/api/upload/history?format=csv', admin.cookie)).text();
+    const hAnon = await fetch(BASE + '/api/upload/history?format=csv');
+    record('History CSV: a download with one row per upload the person can see; not without sign-in',
+        /text\/csv/.test(hCsv.headers.get('content-type')) && /attachment; filename="upload-history-/.test(hCsv.headers.get('content-disposition'))
+        && rowsOf(hText)[0].startsWith('when,who,account,aemServer,folder,source,result,files') && rowsOf(hText).length === hJson.body.length + 1
+        && rowsOf(hAdmin).length >= rowsOf(hText).length && hAnon.status === 401,
+        `member rows=${rowsOf(hText).length - 1} json=${hJson.body.length} admin rows=${rowsOf(hAdmin).length - 1} anon=${hAnon.status}`);
+
     const out = await call('/api/auth/logout', member.cookie, 'POST');
     const gone = await call('/api/upload/history', member.cookie);
     record('sign-out ends the session', out.status === 200 && gone.status === 401, `after=${gone.status}`);

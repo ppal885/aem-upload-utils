@@ -1241,6 +1241,7 @@
         <div class="page-head">
             <h2>Upload history</h2>
             <p id="historySubtitle">Your uploads from this server.</p>
+            <a id="historyCsvLink" class="btn btn-secondary btn-outline btn-s mt-2" href="/api/upload/history?format=csv" download>Download CSV</a>
         </div>
         <div id="histStats" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div class="card stat-tile"><div class="stat-label">Uploads</div><div id="statTotalUploads" class="stat-value">0</div></div>
@@ -3412,6 +3413,7 @@ function cpRenderResult(copy) {
         + (setup.steps && setup.steps.length ? '<ol class="cp-steps">' + setup.steps.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ol>' : '')
         + (needsProfile ? dtdSetupHelp({ aemUrl: cpMode === 'package' ? '' : document.getElementById('cpTgtUrl').value,
             catalogPaths: sourceCatalogs, contentHint: setup.targetFolder || '', open: false }) : '') + '</div></div>';
+    if (cpMode === 'upload' && setup.related && setup.related.length) html += cpRelatedHtml(setup.related);
     if (d.unresolvedCount) {
         html += '<div class="cp-verdict warn"><div>' + d.unresolvedCount + ' link(s) point to a GUID that no file on the source has (already broken there), for example <span class="cp-mono">'
             + esc(d.unresolvedGuids[0]) + '</span>. They are copied as they are.</div></div>';
@@ -3439,6 +3441,80 @@ function cpRenderResult(copy) {
     go.className = 'btn btn-l ' + (setup.ready === false ? 'btn-negative' : 'btn-accent');
     document.getElementById('cpRecheckBtn').classList.toggle('hidden', cpMode === 'package' || !setup.source);
     document.getElementById('cpProfileBtn').classList.toggle('hidden', cpMode === 'package' || setup.ready !== false);
+}
+
+// ═══ "Copy these too": folders outside the copy that its content needs, copied to the same path on the target ═══
+let cpRelatedRunning = false;
+const CP_WHY = { 'DTD catalog': 'DTDs', 'DITA-OT': 'DITA-OT', 'DITA-OT catalog': 'DITA-OT catalog', 'linked files': 'linked files' };
+
+function cpRelatedHtml(related) {
+    const missing = related.filter((r) => r.onTarget !== true).length;
+    const rows = related.map((r, i) => '<label class="flex items-start gap-2 py-1"><input type="checkbox" data-cp-rel="' + i + '" value="' + esc(r.folder) + '"'
+        + (r.onTarget === true ? '' : ' checked') + ' class="mt-1"><span><span class="cp-mono">' + esc(r.folder) + '</span> <span class="text-gray-500">('
+        + esc(r.why.map((w) => CP_WHY[w] || w).join(', ')) + (r.links ? ', ' + r.links.toLocaleString() + ' link(s)' : '') + ')</span>'
+        + (r.onTarget === true ? ' <span class="cp-tag copied">already on the target</span>' : r.onTarget === false ? ' <span class="cp-tag outside">not on the target</span>' : '')
+        + '</span></label>').join('');
+    return '<div class="cp-verdict ' + (missing ? 'warn' : 'ok') + '" id="cpRelated"><div style="flex:1"><strong>Copy these too</strong> '
+        + (missing ? missing + ' folder(s) outside this copy are needed by its content and are not on the target yet.' : 'The folders this content needs are already on the target.')
+        + ' They are copied from the same source to the same path on the target, then uploaded; the source is only read.'
+        + '<div class="mt-2">' + rows + '</div>'
+        + '<div class="flex flex-wrap items-end gap-2 mt-2"><div class="cp-field" style="max-width:260px;margin:0"><label for="cpRelPass">Source password again (never stored)</label>'
+        + '<input type="password" id="cpRelPass" autocomplete="new-password"></div>'
+        + '<button type="button" id="cpRelBtn" class="btn btn-secondary btn-outline btn-s" onclick="cpCopyRelated()">Copy these too</button>'
+        + '<span id="cpRelStatus" class="text-sm text-gray-500"></span></div></div></div>';
+}
+
+async function cpWait(fn, done, ms = 1000) {
+    for (;;) {
+        const v = await fn();
+        if (done(v)) return v;
+        await new Promise((r) => setTimeout(r, ms));
+    }
+}
+
+async function cpCopyRelated() {
+    if (cpRelatedRunning) return;
+    const folders = [...document.querySelectorAll('[data-cp-rel]:checked')].map((c) => c.value);
+    const sourcePassword = document.getElementById('cpRelPass').value;
+    if (!folders.length) { showToast('Tick the folders to copy', 'error'); return; }
+    if (!sourcePassword) { showToast('Enter the source password again (it is never stored)', 'error'); return; }
+    const status = document.getElementById('cpRelStatus');
+    const btn = document.getElementById('cpRelBtn');
+    const json = (body) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const target = { baseUrl: document.getElementById('cpTgtUrl').value, username: document.getElementById('cpTgtUser').value.trim(), password: document.getElementById('cpTgtPass').value };
+    const source = { sourceUrl: normalizeAemBaseUrl(document.getElementById('cpSrcUrl').value.trim()), sourceUsername: document.getElementById('cpSrcUser').value.trim(), sourcePassword };
+    cpRelatedRunning = true;
+    btn.disabled = true;
+    const results = [];
+    try {
+        for (const [n, folder] of folders.entries()) {
+            const label = (folders.length > 1 ? (n + 1) + '/' + folders.length + ' ' : '') + folder;
+            let sessionId = null;
+            try {
+                status.textContent = 'Copying ' + label + '…';
+                ({ sessionId } = await apiJson('/api/upload/browser/init', json({ ...target, damPath: folder.slice(1, folder.lastIndexOf('/')), skipUnchanged: true })));
+                await apiJson('/api/copy/' + sessionId + '/start', json({ ...source, folder, relatedTo: cpLast && cpLast.id }));
+                const { copy } = await cpWait(() => apiJson('/api/copy/' + sessionId), (r) => ['done', 'failed', 'cancelled'].includes(r.copy.state));
+                if (copy.state !== 'done') throw new Error(copy.error || copy.state);
+                if (!copy.done) throw new Error('no files there on the source');
+                status.textContent = 'Uploading ' + label + ' (' + copy.done.toLocaleString() + ' files)…';
+                const { uploadId } = await apiJson('/api/upload/browser/finalize', json({ sessionId }));
+                sessionId = null;
+                const up = await cpWait(() => apiJson('/api/upload/status/' + uploadId), (r) => r.done, 1500);
+                results.push({ folder, ok: !up.failedFiles, text: (up.completedFiles || 0).toLocaleString() + ' uploaded' + (up.failedFiles ? ', ' + up.failedFiles + ' failed' : '') });
+            } catch (e) {
+                if (sessionId) { try { await fetch('/api/upload/browser/cancel/' + sessionId, { method: 'POST' }); } catch (_) { /* gone */ } }
+                results.push({ folder, ok: false, text: toErrorMessage(e) });
+            }
+        }
+    } finally {
+        cpRelatedRunning = false;
+    }
+    const bad = results.filter((r) => !r.ok);
+    showToast(bad.length ? bad.length + ' folder(s) not copied: ' + bad.map((r) => r.folder + ' (' + r.text + ')').join('; ') : 'Copied ' + results.length + ' folder(s) to the target', bad.length ? 'error' : 'success');
+    if (cpSessionId && cpLast && cpLast.state === 'done') await cpRecheck();
+    const after = document.getElementById('cpRelStatus');
+    if (after) after.textContent = results.map((r) => r.folder + ': ' + r.text).join(' · ');
 }
 
 async function cpRecheck() {
@@ -3909,7 +3985,7 @@ async function loadCopyLog() {
         : e.package ? 'Package ' + esc(e.package) : '';
     body.innerHTML = '<table class="cp-table" id="copyLogTable"><tr><th>When</th><th>Who</th><th>What</th><th>From</th><th>To</th><th>Result</th></tr>'
         + entries.map((e) => '<tr><td title="' + esc(e.at) + '">' + esc(new Date(e.at).toLocaleString()) + '</td><td>' + esc(e.by || '') + '</td><td>'
-            + esc(COPY_EVENTS[e.event] || e.event) + '<div class="text-xs text-gray-400 cp-mono">' + esc(e.copyId || '') + '</div></td><td>' + esc(host(e.sourceServer))
+            + esc(COPY_EVENTS[e.event] || e.event) + '<div class="text-xs text-gray-400 cp-mono">' + esc(e.copyId || '') + (e.relatedTo ? ' &middot; for ' + esc(e.relatedTo) : '') + '</div></td><td>' + esc(host(e.sourceServer))
             + ' <span class="cp-mono">' + esc(e.sourceFolder || '') + '</span>' + (e.sourceUser ? '<div class="text-xs text-gray-500">as ' + esc(e.sourceUser) + '</div>' : '')
             + '</td><td>' + target(e) + '</td><td>' + result(e) + '</td></tr>').join('') + '</table>';
 }
