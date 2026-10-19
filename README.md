@@ -150,6 +150,10 @@ When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog 
 
 AEM confirms every uploaded file with its own request, and each upload pipeline confirms one file at a time, so for small files the speed is about pipelines divided by AEM's answer time (measured on AEM as a Cloud Service: about 6 files/s with 8 pipelines). Uploads start with 8 pipelines (`UPLOAD_PIPELINES`) and, while an upload is the only one to its AEM server, add 4 every 30 seconds as long as that makes it faster, up to 24 (`UPLOAD_MAX_PIPELINES`); when more no longer helps they go back, on failed files they halve, and when a second upload to the same server starts they return to 8. Changes are logged ("Pipelines 8 -> 12") and shown on Server status. `UPLOAD_ADAPTIVE=0` turns this off.
 
+After failed files the pipelines stay below the level where they failed for 10 windows, instead of climbing straight back into the errors.
+
+**Copy from AEM speed**: **Auto** (default) starts at 8 downloads at a time and grows to at most 16 while the source answers faster; a 429/5xx that had to be retried halves it at once and it stays below that level for a while. **Gentle / Normal / Fast** are ceilings of 4 / 8 / 16 that are never passed (it can only slow down below them). Changes are in the app log (`COPY_ADAPT_WINDOW_MS`, default 15 s) and the copy progress shows "N at a time".
+
 For thousands of small files the confirm dialog suggests **Build package** with an estimate: one package is copied and installed in one go (filter mode update, so files already in the folder stay).
 
 ### Ready in AEM? and Server status

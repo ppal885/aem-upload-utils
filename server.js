@@ -1984,6 +1984,7 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async 
         id: crypto.randomUUID().slice(0, 8),
         state: 'listing', source: { baseUrl: origin, folder: folder.path, username }, startedAt: new Date().toISOString(),
         total: 0, totalBytes: 0, done: 0, bytes: 0, verified: 0, unverified: 0, failed: [], abort: new AbortController(),
+        concurrency: b.concurrency === 'auto' ? copyFromAem.DEFAULT_CONCURRENCY : Math.max(1, Math.min(copyFromAem.MAX_CONCURRENCY, parseInt(b.concurrency, 10) || copyFromAem.DEFAULT_CONCURRENCY)),
     };
     session.copy = copy;
     log.info(`Copy started by ${req.user.key}: ${origin}${folder.path} -> ${session.mode === 'package' ? 'package' : session.config.baseUrl}`);
@@ -1999,7 +2000,14 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async 
 
     const stagingDir = nodePath.join(session.tempDir, '__staging');
     copyFromAem.copyFolder({
-        baseUrl: origin, username, password, folder: folder.path, stagingDir, concurrency: b.concurrency, signal: copy.abort.signal,
+        baseUrl: origin, username, password, folder: folder.path, stagingDir, signal: copy.abort.signal,
+        // Auto: starts at the default and grows while the source keeps up; a number is a fixed ceiling it never passes
+        ...(b.concurrency === 'auto' ? { concurrency: copyFromAem.DEFAULT_CONCURRENCY, maxConcurrency: copyFromAem.MAX_CONCURRENCY }
+            : { concurrency: b.concurrency, maxConcurrency: b.concurrency }),
+        onConcurrency: ({ concurrency, reason }) => {
+            copy.concurrency = concurrency;
+            log.info(`Copy ${copy.id}: ${concurrency} downloads at a time (${reason})`);
+        },
         onListed: async ({ files, bytes }) => {
             Object.assign(copy, { state: 'copying', total: files, totalBytes: bytes });
             const spaceErr = await checkTempSpace(bytes * (session.mode === 'package' ? 2 : 1), files);

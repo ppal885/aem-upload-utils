@@ -25,6 +25,7 @@ const SUITES = {
     unit: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-package-builder.js')] },
     backup: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-backup.js')] },
     adaptive: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-adaptive.js')] },
+    'copy-adaptive': { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-copy-adaptive.js')] },
     high: ui('high_test.py', APP, AEM, fix('uifiles')),
     'high-7-8': ui('high_7_8_test.py', APP, AEM, fix('uifiles')),
     medium: ui('medium_test.py', APP, AEM, fix('medsmall'), fix('medbig')),
