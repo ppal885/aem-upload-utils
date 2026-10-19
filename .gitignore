@@ -11,6 +11,8 @@ sessions.json
 sessions.json.tmp
 copy-log.jsonl
 copy-log.jsonl.1
+copy-targets.json
+copy-targets.json.tmp
 users.json.tmp
 packages/
 certs/

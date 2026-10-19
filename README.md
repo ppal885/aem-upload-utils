@@ -166,6 +166,10 @@ When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog 
 
 **Create DITA profile** (in the "DTD catalog found" box after uploading a DTD folder, and in a not-ready Copy from AEM result) creates a new profile on the AEM server from its Global/Default profile, like Tools > Guides > DITA Profiles > Create Profile: the topics folder in Assigned Paths, the uploaded `catalog.xml` added to the built-in catalogs, optionally a customer DITA-OT zip. **Check** first shows what changes (which profile a folder uses now, or that it moves out of another profile) and refuses a duplicate name or a catalog / zip that is not on the server yet; **Create profile** saves it and reads it back to confirm there are no errors. It never edits or deletes an existing profile, works only on the `COPY_TARGETS` servers, and every change is logged. After creating, a Copy from AEM result runs **Check again** by itself.
 
+### Allowed copy targets
+
+Team page, admins: the servers Copy from AEM may send customer content to (upload, package install, Create DITA profile). Add a server (https only) or remove one; a removed server is refused at once, also for copies already made and waiting for their upload. Each change is in the Copy log (who, added, removed). The list is saved in `copy-targets.json` (readable by the server user only, in the daily backup) and replaces `COPY_TARGETS` until **Reset to the server default**.
+
 ### Copy these too
 
 After a copy, the result lists the folders outside it that its content needs: the folder of each DTD catalog and of the DITA-OT zip in the source DITA profile, and the folders of files the content links to. Each says whether the target already has it; missing ones are ticked. **Copy these too** (enter the source password again, it is never stored) copies the ticked folders from the same source to the **same path** on the target and uploads them (skipping files already there unchanged), then checks the setup again. Upload the topics after that. Each such copy is in the Copy log with the copy it belongs to.
@@ -193,7 +197,7 @@ Rules for copied content (often a customer's):
 
 | Variable | Default | Effect |
 |---|---|---|
-| `COPY_TARGETS` | (none: copying is off) | Comma-separated server URLs copied content may go to, by upload or package install. |
+| `COPY_TARGETS` | (none: copying is off) | Comma-separated server URLs copied content may go to, by upload or package install. The default list: once an admin saves a list on the Team page (**Allowed copy targets**, stored in `copy-targets.json` / `COPY_TARGETS_FILE`), that list applies until **Reset to the server default**. |
 | `COPY_IDLE_MINUTES` | `60` | Copied files nobody uploads or packages are removed after this. |
 | `COPY_PACKAGE_KEEP_HOURS` | `24` | Packages built from copied content are removed after this. |
 | `COPY_ALLOW_DOWNLOAD` | off | Packages of copied content can only be installed on a `COPY_TARGETS` server, not downloaded, unless set to `true`. |
