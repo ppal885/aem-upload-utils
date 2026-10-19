@@ -32,6 +32,7 @@ const SUITES = {
     'two-users': ui('two_users_test.py', APP, AEM, fix('uifiles')),
     review: ui('review_test.py', APP, AEM, fix('revfiles')),
     progress: ui('progress_test.py', APP, AEM, fix('revfiles')),
+    background: ui('background_test.py', APP, AEM, fix('medbig')),
     folders: ui('folder_cases_test.py', APP, AEM),
     signup: ui('signup_test.py', APP),
     package: ui('package_test.py', APP, AEM),
