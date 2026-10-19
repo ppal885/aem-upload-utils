@@ -40,6 +40,14 @@ c.next({ rate: 8 });
 record('failed files: halves at once and holds before growing again', before === 16 && afterErr === 8 && held.every((t) => t === 8) && c.target === 12,
     `before=${before} after errors=${afterErr} held=${held.join(',')} then=${c.target}`);
 
+// After failures at 16 it stays below 16 for a while instead of climbing back into them
+c = createController({ start: 8, max: 24 });
+c.next({ rate: 8 }); c.next({ rate: 12 });
+c.next({ rate: 3, errors: 2 });
+const after = [];
+for (let i = 0; i < RETRY_WINDOWS - 1; i++) { c.next({ rate: c.target }); after.push(c.target); }
+record('after failures at 16: grows back only to 15 until the retry time', Math.max(...after) === 15, after.join(','));
+
 // Another upload to the same AEM server: back to the start setting, no growth
 c = createController({ start: 8, max: 24 });
 c.next({ rate: 8 }); c.next({ rate: 12 });

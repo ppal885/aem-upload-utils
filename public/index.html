@@ -1090,7 +1090,7 @@
                     <input id="cpFolder" type="text" placeholder="/content/dam/crown" autocomplete="off" oninput="cpFolderChanged()" />
                     <div class="note">Include the folder with the DTDs too if it is separate; the check below tells you if something is missing.</div></div>
                 <div class="cp-field"><label for="cpSpeed">Speed</label>
-                    <select id="cpSpeed"><option value="4">Gentle (4 at a time)</option><option value="8" selected>Normal (8 at a time)</option><option value="16">Fast (16 at a time)</option></select>
+                    <select id="cpSpeed"><option value="auto" selected>Auto (8, up to 16 while the source keeps up)</option><option value="4">Gentle (at most 4 at a time)</option><option value="8">Normal (at most 8 at a time)</option><option value="16">Fast (at most 16 at a time)</option></select>
                     <div class="note">Use Gentle on a busy customer server.</div></div>
             </div>
         </div>
@@ -3385,7 +3385,7 @@ async function cpStart() {
         cpSessionId = sessionId;
         await apiJson('/api/copy/' + sessionId + '/start', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceUrl, sourceUsername, sourcePassword, folder, concurrency: Number(document.getElementById('cpSpeed').value) }),
+            body: JSON.stringify({ sourceUrl, sourceUsername, sourcePassword, folder, concurrency: document.getElementById('cpSpeed').value === 'auto' ? 'auto' : Number(document.getElementById('cpSpeed').value) }),
         });
         document.getElementById('cpSrcPass').value = '';
         note.textContent = '';
@@ -3434,7 +3434,7 @@ async function cpRefresh() {
         const pct = copy.total ? Math.round((copy.done * 100) / copy.total) : 0;
         bar.style.width = Math.max(2, pct) + '%';
         text.textContent = copy.done.toLocaleString() + ' of ' + copy.total.toLocaleString() + ' files (' + fmtBytes(copy.bytes) + ' of ' + fmtBytes(copy.totalBytes) + ')'
-            + (copy.failedCount ? ' - ' + copy.failedCount + ' failed so far' : '');
+            + (copy.failedCount ? ' - ' + copy.failedCount + ' failed so far' : '') + (copy.concurrency ? ' · ' + copy.concurrency + ' at a time' : '');
     } else if (copy.state === 'checking') {
         title.textContent = 'Checking the DTD and DITA-OT setup…';
         bar.style.width = '100%';
@@ -3563,7 +3563,7 @@ async function cpCopyRelated() {
             try {
                 status.textContent = 'Copying ' + label + '…';
                 ({ sessionId } = await apiJson('/api/upload/browser/init', json({ ...target, damPath: folder.slice(1, folder.lastIndexOf('/')), skipUnchanged: true })));
-                await apiJson('/api/copy/' + sessionId + '/start', json({ ...source, folder, relatedTo: cpLast && cpLast.id }));
+                await apiJson('/api/copy/' + sessionId + '/start', json({ ...source, folder, relatedTo: cpLast && cpLast.id, concurrency: document.getElementById('cpSpeed').value === 'auto' ? 'auto' : Number(document.getElementById('cpSpeed').value) }));
                 const { copy } = await cpWait(() => apiJson('/api/copy/' + sessionId), (r) => ['done', 'failed', 'cancelled'].includes(r.copy.state));
                 if (copy.state !== 'done') throw new Error(copy.error || copy.state);
                 if (!copy.done) throw new Error('no files there on the source');
