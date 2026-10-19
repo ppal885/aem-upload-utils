@@ -2,6 +2,7 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
 const AemNames = require('./public/aem-names');
+const adaptivePipelines = require('./lib/adaptive-pipelines');
 
 // @adobe/aem-upload 2.0.3 silently drops every file named TestFile*, *.tmp or starting with "~"
 // (desktop-app scratch files). Real content uses such names, so only system files are skipped;
@@ -68,6 +69,9 @@ const DEFAULT_UPLOAD_PIPELINES = 8;
 // @adobe/aem-upload cannot abort a running transfer, so each pipeline uploads in batches and
 // checks for a cancel between them; this bounds how much is still sent after Cancel.
 const PIPELINE_BATCH_SIZE = 50;
+// Adaptive pipelines (lib/adaptive-pipelines.js): measured every window, never above the max
+const MAX_UPLOAD_PIPELINES = parseInt(process.env.UPLOAD_MAX_PIPELINES, 10) || 24;
+const ADAPT_WINDOW_MS = parseInt(process.env.UPLOAD_ADAPT_WINDOW_MS, 10) || 30000;
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '::1'];
 
 function buildSelfSignedAgent(baseUrl) {
@@ -305,6 +309,10 @@ function runUpload(config, eventCallback) {
     const httpRetryDelay = config.httpRetryDelay != null ? config.httpRetryDelay : 8000;
     const httpRequestTimeout = config.httpRequestTimeout != null ? config.httpRequestTimeout : 120000;
     const uploadPipelines = config.uploadPipelines || DEFAULT_UPLOAD_PIPELINES;
+    // Grows only when the caller says this is the only upload to that AEM server (config.canGrow)
+    const pipelines = typeof config.canGrow === 'function'
+        ? adaptivePipelines.createController({ start: uploadPipelines, max: Math.max(uploadPipelines, MAX_UPLOAD_PIPELINES) })
+        : { target: uploadPipelines, next: null };
 
     const httpOptions = {
         headers: {
@@ -482,29 +490,64 @@ function runUpload(config, eventCallback) {
     // request per file) whatever maxConcurrent is, which makes it the bottleneck for many small
     // files. Running several independent pipelines over slices of the file list parallelises it.
     function uploadInPipelines(files) {
-        const pipelineCount = Math.max(1, Math.min(uploadPipelines, files.length));
-        const sliceSize = Math.ceil(files.length / pipelineCount);
-        const runs = [];
-        for (let i = 0; i < files.length; i += sliceSize) {
-            const slice = files.slice(i, i + sliceSize);
-            runs.push((async () => {
-                for (let b = 0; b < slice.length; b += PIPELINE_BATCH_SIZE) {
-                    if (cancelled) return;
-                    const batchOptions = new DirectBinaryUploadOptions()
-                        .withUrl(url)
-                        .withUploadFiles(slice.slice(b, b + PIPELINE_BATCH_SIZE))
-                        .withMaxConcurrent(maxConcurrent)
-                        .withHttpRetryCount(httpRetryCount)
-                        .withHttpRetryDelay(httpRetryDelay)
-                        .withHttpRequestTimeout(httpRequestTimeout)
-                        .withHttpOptions(httpOptions);
-                    const uploader = new DirectBinaryUpload();
-                    attachEvents(uploader);
-                    await uploader.uploadFiles(batchOptions);
+        // Batches in one queue: pipelines take the next batch when they finish one, so their number can change
+        const queue = [];
+        for (let b = 0; b < files.length; b += PIPELINE_BATCH_SIZE) queue.push(files.slice(b, b + PIPELINE_BATCH_SIZE));
+        let want = Math.max(1, Math.min(pipelines.target, queue.length));
+        let running = 0;
+        let failure = null;
+        return new Promise((resolve, reject) => {
+            let timer = null;
+            const settle = () => {
+                if (running > 0 || (queue.length && !cancelled && !failure)) return;
+                clearInterval(timer);
+                if (failure) reject(failure); else resolve();
+            };
+            const worker = async () => {
+                running++;
+                try {
+                    while (!cancelled && !failure && queue.length && running <= want) {
+                        const batchOptions = new DirectBinaryUploadOptions()
+                            .withUrl(url)
+                            .withUploadFiles(queue.shift())
+                            .withMaxConcurrent(maxConcurrent)
+                            .withHttpRetryCount(httpRetryCount)
+                            .withHttpRetryDelay(httpRetryDelay)
+                            .withHttpRequestTimeout(httpRequestTimeout)
+                            .withHttpOptions(httpOptions);
+                        const uploader = new DirectBinaryUpload();
+                        attachEvents(uploader);
+                        await uploader.uploadFiles(batchOptions);
+                    }
+                } catch (e) {
+                    failure = failure || e;
+                } finally {
+                    running--;
+                    settle();
                 }
-            })());
-        }
-        return Promise.all(runs);
+            };
+            const fill = () => { while (running < want && queue.length && !cancelled && !failure) worker(); };
+            if (pipelines.next) {
+                let lastDone = filesDone;
+                let lastErrors = errors.length;
+                let lastAt = Date.now();
+                timer = setInterval(() => {
+                    const now = Date.now();
+                    const rate = (filesDone - lastDone) / ((now - lastAt) / 1000);
+                    const d = pipelines.next({ rate, errors: errors.length - lastErrors, canGrow: config.canGrow() });
+                    lastDone = filesDone; lastErrors = errors.length; lastAt = now;
+                    if (d.changed) {
+                        svcLog.info(`Pipelines ${want} -> ${d.target}: ${d.reason}`);
+                        want = d.target;
+                        if (eventCallback) { try { eventCallback('pipelines', { pipelines: want, reason: d.reason }); } catch (_) {} }
+                        fill();
+                    }
+                }, ADAPT_WINDOW_MS);
+                if (timer.unref) timer.unref();
+            }
+            fill();
+            settle();
+        });
     }
 
     // Parents must exist before children, so folders are created level by level,
@@ -591,7 +634,7 @@ function runUpload(config, eventCallback) {
         if (cancelled || uploadFiles.length === 0) return;
 
         const filesStart = Date.now();
-        svcLog.info(`Uploading ${uploadFiles.length} files in ${Math.min(uploadPipelines, uploadFiles.length)} parallel pipelines`);
+        svcLog.info(`Uploading ${uploadFiles.length} files in ${Math.min(pipelines.target, uploadFiles.length)} parallel pipelines${pipelines.next ? ` (adaptive, up to ${MAX_UPLOAD_PIPELINES})` : ''}`);
         await uploadInPipelines(uploadFiles);
         svcLog.info(`File pass done in ${((Date.now() - filesStart) / 1000).toFixed(1)}s`);
 

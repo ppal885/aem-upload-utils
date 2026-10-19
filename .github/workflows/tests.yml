@@ -20,7 +20,7 @@ jobs:
       matrix:
         include:
           - group: api and quick UI
-            suites: unit backup low skip-top folders signup package skip-unchanged copy keep-names readiness ditaot review progress two-users team signup-api
+            suites: unit backup adaptive low skip-top folders signup package skip-unchanged copy keep-names readiness ditaot review progress two-users team signup-api
           - group: large selections
             suites: high high-7-8 medium background
           - group: restart and queue

@@ -4264,9 +4264,10 @@ async function initiateUpload() {
             + ' name' + (plan.tooLong.length !== 1 ? 's are' : ' is') + ' longer than 255 bytes</strong> and will fail:<ul class="mt-1 font-mono break-all">'
             + plan.tooLong.slice(0, 3).map((p) => '<li>' + esc(p) + '</li>').join('') + '</ul></div>';
     }
-    const largeTip = browserFileEntries.length > 5000
-        ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + ') &mdash; each of the 8 pipelines sends at most 4 files at a time.</p>'
-        : '';
+    const largeTip = packageHint(browserFileEntries.length, totalSize)
+        || (browserFileEntries.length > 5000
+            ? '<p class="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">Large upload (' + countStr + '): the tool sends more files in parallel while AEM keeps up.</p>'
+            : '');
     const overwriteNote = document.getElementById('skipUnchanged').checked
         ? '<p class="mt-2 text-xs text-gray-600 bg-gray-50 rounded p-2">Files already in AEM with the same content are skipped; new and changed files are uploaded.</p>'
         : '<p class="mt-2 text-xs text-gray-500">Files that already exist in AEM are replaced.</p>';
@@ -4297,6 +4298,30 @@ async function initiateUpload() {
     const modal = document.getElementById('confirmModal');
     modal.classList.remove('hidden');
     trapFocusInModal(modal);
+}
+
+// Many small files: AEM confirms each uploaded file separately, measured on AEM as a Cloud Service at about
+// 6 to 15 files/s, so 59,000 files take hours; one package is copied and installed in one go.
+const PACKAGE_HINT_FILES = 3000;
+const PACKAGE_HINT_AVG_BYTES = 200 * 1024;
+const CLOUD_FILES_PER_SEC = [6, 15];
+
+function packageHint(files, bytes) {
+    if (files < PACKAGE_HINT_FILES || bytes / files > PACKAGE_HINT_AVG_BYTES) return '';
+    const slow = fmtDuration((files / CLOUD_FILES_PER_SEC[0]) * 1000);
+    const fast = fmtDuration((files / CLOUD_FILES_PER_SEC[1]) * 1000);
+    return '<div id="packageHint" class="mt-2 text-xs text-blue-800 bg-blue-50 rounded p-2"><strong>Many small files: a package is much faster.</strong> '
+        + 'Uploading ' + files.toLocaleString() + ' files of ' + fmtBytes(bytes / files) + ' on average takes about ' + fast + ' to ' + slow
+        + ' on AEM as a Cloud Service, because AEM confirms every file separately. <strong>Build package</strong> makes one .zip here and installs it '
+        + 'through Package Manager in one go (files already in the folder stay, the same as an upload). AEM Guides processes the DITA files after either.'
+        + '<div class="mt-2"><button type="button" class="btn btn-secondary btn-outline btn-s" onclick="switchToPackage()">Build package instead</button></div></div>';
+}
+
+function switchToPackage() {
+    closeConfirm();
+    setWorkMode('package');
+    document.getElementById('modePackage').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('Build package is selected: check the package name and click Build package.', 'info');
 }
 
 let _modalFocusTrap = null;

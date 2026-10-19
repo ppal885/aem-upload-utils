@@ -51,6 +51,7 @@ const FILE_ERRORS_CAP = parseInt(process.env.FILE_ERRORS_CAP) || 1000;
 const TEMP_SPACE_PER_FILE_BYTES = 4096;
 // 8 pipelines x 4 transfers: 1.7x the old 4 x 2 on AEM Cloud (README, Speed) without one upload flooding a shared server
 const DEFAULT_UPLOAD_PIPELINES = parseInt(process.env.UPLOAD_PIPELINES, 10) || 8;
+const UPLOAD_ADAPTIVE = !/^(0|false|no)$/i.test(process.env.UPLOAD_ADAPTIVE || '');
 const TEMP_SPACE_MARGIN = 1.2;
 
 // ─── Multer config for browser file uploads ───
@@ -991,7 +992,7 @@ app.get('/api/admin/status', auth.requireAdmin, async (_req, res) => {
         if (s.done) return;
         uploads.push({ uploadId: id, owner: s.meta.ownerName || s.meta.owner, server: slotKey(s.meta.baseUrl), folder: s.meta.folder || '/' + s.meta.damPath,
             files: s.completedFiles || 0, totalFiles: s.meta.expectedFiles || s.totalFiles || 0, startedAt: new Date(s.meta.startTime).toISOString(),
-            waiting: s.queuePosition || 0 });
+            waiting: s.queuePosition || 0, pipelines: s.meta.pipelines || null });
     });
     const queues = [];
     serverSlots.forEach((s, key) => { if (s.running.size || s.waiting.length) queues.push({ server: key, running: s.running.size, waiting: s.waiting.length }); });
@@ -2388,6 +2389,8 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
         deleteStagedOnSuccess: true,
         keepNodeNames: keepNodeNames === true,
         ...clamped,
+        // More pipelines only while this is the only upload running to that AEM server (UPLOAD_ADAPTIVE=0 turns it off)
+        ...(UPLOAD_ADAPTIVE ? { canGrow: () => slotsFor(slotKey(baseUrl)).running.size <= 1 } : {}),
     };
 
     // Everything needed to resume after a restart, except the AEM password (never stored)
@@ -2441,6 +2444,10 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
     }
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
+        if (eventName === 'pipelines') {
+            uploadSession.meta.pipelines = data.pipelines;
+            return;
+        }
         if (eventName === 'uploadplan') {
             uploadSession.meta.expectedFiles = data.files;
             uploadSession.meta.expectedBytes = data.bytes;

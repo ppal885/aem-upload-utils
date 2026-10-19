@@ -54,16 +54,24 @@ async def main():
         await page.set_input_files('#browserFileInput', FILES)
         await page.evaluate('initiateUpload()')
         await page.wait_for_function("!document.getElementById('confirmModal').classList.contains('hidden')", timeout=20000)
+        hint = await page.inner_text('#confirmBody')
+        record('many small files: the confirm dialog suggests Build package with a time estimate',
+               'a package is much faster' in hint and re.search(r'takes about \d+m( \d+s)? to \d+m', hint) is not None, hint[hint.find('Many'):][:220])
         await page.evaluate('handleConfirmOk()')
         await page.wait_for_function("document.getElementById('bgBtnInProgress').style.display === ''", timeout=120000)
         record('Run in background appears once the files are on the server', True)
 
-        # A second tab reconnects after the upload has run a while: the replay must not read as a burst
+        # A second tab reconnects after the upload has run a while: the replay must not read as a burst.
+        # Meanwhile the pipelines grow: the only upload to this server, and the mock answers as fast with more
+        most = 0
         for _ in range(240):
             a = api('/api/upload/active')
+            st = api('/api/admin/status')
+            most = max([most] + [u.get('pipelines') or 0 for u in st.get('uploads', [])])
             if a and a[0]['elapsedMs'] > 17000 and a[0]['completedFiles'] > 300:
                 break
             await asyncio.sleep(0.25)
+        record('adaptive pipelines: more than the 8 to start with while AEM keeps up', most > 8, f'most pipelines seen={most}')
         other = await signed_in(context)
         await other.wait_for_function("!document.getElementById('activeUploadsBanner').classList.contains('hidden')", timeout=15000)
         await other.evaluate('reconnectActiveUpload()')
@@ -110,6 +118,21 @@ async def main():
         hist = api('/api/upload/history')
         row = next((h for h in hist if h.get('damPath', '').endswith(f'BgTest{RUN}')), {})
         record('the upload finishes with every file', row.get('success') is True and row.get('totalFiles') == len(FILES), json.dumps({k: row.get(k) for k in ('success', 'totalFiles')}))
+        # Build package instead: switches the page to Build package; a small selection gets no hint
+        await page.fill('#damPath', f'content/dam/BgHint{RUN}')
+        await page.set_input_files('#browserFileInput', FILES[:20])
+        await page.evaluate('initiateUpload()')
+        await page.wait_for_function("!document.getElementById('confirmModal').classList.contains('hidden')", timeout=20000)
+        small = await page.evaluate("!!document.getElementById('packageHint')")
+        await page.evaluate('closeConfirm()')
+        await page.set_input_files('#browserFileInput', FILES)
+        await page.evaluate('initiateUpload()')
+        await page.wait_for_function("!document.getElementById('confirmModal').classList.contains('hidden')", timeout=20000)
+        await page.click('#packageHint >> text=Build package instead')
+        mode = await page.evaluate("({ mode: workMode, modal: !document.getElementById('confirmModal').classList.contains('hidden'), files: browserFileEntries.length })")
+        record('Build package instead switches to Build package and keeps the selection; 20 files get no hint',
+               not small and mode['mode'] == 'package' and not mode['modal'] and mode['files'] == len(FILES), json.dumps(mode))
+        await page.evaluate("setWorkMode('upload')")
         record('no page errors', not errors, str(errors[:2]))
         await browser.close()
     print(f'\n{sum(results)}/{len(results)} passed')

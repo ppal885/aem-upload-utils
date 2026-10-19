@@ -146,6 +146,12 @@ AEM does not allow some characters in folder names, so an upload normally cleans
 
 When the selection contains a DTD catalog (`*catalog*.xml` in the OASIS catalog namespace), the page reads it and warns before uploading: references (`uri`, `nextCatalog`, `rewritePrefix`, …) whose folder or file name would change, with a button to keep names exactly, and referenced files missing from the selection. After the upload, add the uploaded `catalog.xml` to a DITA profile (Tools > Guides > DITA Profiles) whose paths cover the content, save it, and only then upload the topics.
 
+### Upload speed for many small files
+
+AEM confirms every uploaded file with its own request, and each upload pipeline confirms one file at a time, so for small files the speed is about pipelines divided by AEM's answer time (measured on AEM as a Cloud Service: about 6 files/s with 8 pipelines). Uploads start with 8 pipelines (`UPLOAD_PIPELINES`) and, while an upload is the only one to its AEM server, add 4 every 30 seconds as long as that makes it faster, up to 24 (`UPLOAD_MAX_PIPELINES`); when more no longer helps they go back, on failed files they halve, and when a second upload to the same server starts they return to 8. Changes are logged ("Pipelines 8 -> 12") and shown on Server status. `UPLOAD_ADAPTIVE=0` turns this off.
+
+For thousands of small files the confirm dialog suggests **Build package** with an estimate: one package is copied and installed in one go (filter mode update, so files already in the folder stay).
+
 ### Ready in AEM? and Server status
 
 **Ready in AEM?** appears under every finished upload: the same check as Check in AEM for the uploaded folder (AEM Guides processed / failed, links, DTD), refreshed every 30 seconds until Guides is done (up to an hour). It uses the AEM sign-in from New upload; for another server it offers Check in AEM.

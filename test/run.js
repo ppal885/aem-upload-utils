@@ -24,6 +24,7 @@ const fix = (name) => path.join(FIX, name);
 const SUITES = {
     unit: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-package-builder.js')] },
     backup: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-backup.js')] },
+    adaptive: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-adaptive.js')] },
     high: ui('high_test.py', APP, AEM, fix('uifiles')),
     'high-7-8': ui('high_7_8_test.py', APP, AEM, fix('uifiles')),
     medium: ui('medium_test.py', APP, AEM, fix('medsmall'), fix('medbig')),
@@ -83,7 +84,7 @@ function appEnv(name, port) {
     return {
         PORT: String(port), TMPDIR: tmp, TEMP: tmp, TMP: tmp,
         HISTORY_FILE: path.join(d, 'upload-history.json'), PACKAGES_DIR: path.join(d, 'packages'), BACKUP_DIR: path.join(d, 'backups'),
-        SESSIONS_FILE: path.join(d, 'sessions.json'), COPY_LOG_FILE: path.join(d, 'copy-log.jsonl'), COPY_TARGETS_FILE: path.join(d, 'copy-targets.json'),
+        SESSIONS_FILE: path.join(d, 'sessions.json'), COPY_LOG_FILE: path.join(d, 'copy-log.jsonl'), COPY_TARGETS_FILE: path.join(d, 'copy-targets.json'), UPLOAD_ADAPT_WINDOW_MS: '3000',
     };
 }
 
