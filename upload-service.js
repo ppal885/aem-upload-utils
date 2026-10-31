@@ -65,6 +65,8 @@ const ALLOW_SELF_SIGNED = /^(1|true|yes)$/i.test(process.env.AEM_ALLOW_SELF_SIGN
 const NOT_FOUND_RETRY_DELAYS_MS = [15000, 30000];
 const CREDENTIAL_CHECK_TIMEOUT_MS = 15000;
 const FOLDER_CREATE_CONCURRENCY = 5;
+// A folder that fails with 429 (AEM Cloud throttling), 5xx or a network error is tried again after these delays
+const FOLDER_RETRY_DELAYS_MS = [2000, 8000, 30000];
 const DEFAULT_UPLOAD_PIPELINES = 8;
 // @adobe/aem-upload cannot abort a running transfer, so each pipeline uploads in batches and
 // checks for a cancel between them; this bounds how much is still sent after Cancel.
@@ -318,6 +320,15 @@ function runUpload(config, eventCallback) {
         headers: {
             Authorization: `Basic ${credentials}`,
         },
+        // httptransfer drops the library's own timeout, so without this a stalled request never ends
+        timeout: httpRequestTimeout,
+        // Replaces the library's retry options (which retry only 5xx) so AEM Cloud throttling (429) is retried too
+        retryOptions: {
+            retryInitialDelay: httpRetryDelay,
+            retryMaxCount: httpRetryCount,
+            retryAllErrors: false,
+            retryOnHttpResponseError: (e) => e.status === 429 || e.status >= 500,
+        },
     };
     // Allow self-signed certs for localhost HTTPS (e.g. https://localhost:4502) when AEM_ALLOW_SELF_SIGNED=1
     const selfSignedAgent = buildSelfSignedAgent(baseUrl);
@@ -478,6 +489,22 @@ function runUpload(config, eventCallback) {
         });
     });
 
+    /**
+     * Reports a file that is not sent to AEM at all, so it is counted as failed like an upload error.
+     * Not added to startedFiles: a clashing file shares its AEM path with the one that is uploaded.
+     */
+    function reportNotUploaded(info, message) {
+        const data = { fileName: path.basename(info.filePath || ''), fileSize: info.fileSize || 0, errors: [{ message }] };
+        totalFiles++;
+        emit('filestart', data);
+        recordFileError(data);
+        emit('fileerror', data);
+    }
+
+    function decodedTarget(info) {
+        try { return decodeURIComponent(new URL(info.fileUrl).pathname); } catch (_) { return info.fileUrl; }
+    }
+
     function releaseHeldErrors() {
         heldNotFound.forEach((data) => {
             recordFileError(data);
@@ -550,9 +577,26 @@ function runUpload(config, eventCallback) {
         });
     }
 
+    async function createFolderWithRetry(fsUpload, uploadResult, dir) {
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await fsUpload.createAemFolderFromFileSystemInfo(options, uploadResult, dir);
+            } catch (e) {
+                const status = Number((/status code (\d+)/.exec(e.message || '') || [])[1]) || 0;
+                const transient = !status || status === 429 || status >= 500;
+                if (!transient || attempt >= FOLDER_RETRY_DELAYS_MS.length || cancelled) throw e;
+                svcLog.warn(`Folder ${dir.getRemotePath()} failed (${e.message}); retrying in ${FOLDER_RETRY_DELAYS_MS[attempt] / 1000}s`);
+                await new Promise((resolve) => setTimeout(resolve, FOLDER_RETRY_DELAYS_MS[attempt]));
+            }
+        }
+    }
+
     // Parents must exist before children, so folders are created level by level,
     // with each level's folders created a few at a time.
+    // Returns the remote paths of folders that could not be created; their files are not uploaded.
     async function createFolders(fsUpload, uploadResult, directories) {
+        const failed = [];
+        const underFailed = (remote) => failed.some((f) => remote.startsWith(f + '/'));
         const byDepth = new Map();
         directories.forEach((dir) => {
             const depth = dir.getRemotePath().split('/').length;
@@ -561,13 +605,38 @@ function runUpload(config, eventCallback) {
         });
         const depths = [...byDepth.keys()].sort((a, b) => a - b);
         for (const depth of depths) {
-            const level = byDepth.get(depth);
+            const level = byDepth.get(depth).filter((dir) => !underFailed(dir.getRemotePath()));
             for (let i = 0; i < level.length; i += FOLDER_CREATE_CONCURRENCY) {
-                if (cancelled) return;
-                await Promise.all(level.slice(i, i + FOLDER_CREATE_CONCURRENCY)
-                    .map((dir) => fsUpload.createAemFolderFromFileSystemInfo(options, uploadResult, dir)));
+                if (cancelled) return failed;
+                const slice = level.slice(i, i + FOLDER_CREATE_CONCURRENCY);
+                const results = await Promise.allSettled(slice.map((dir) => createFolderWithRetry(fsUpload, uploadResult, dir)));
+                results.forEach((r, k) => {
+                    if (r.status === 'fulfilled') return;
+                    const remote = slice[k].getRemotePath();
+                    const msg = (r.reason && r.reason.message) || String(r.reason);
+                    failed.push(remote);
+                    errors.push(`Folder ${remote}: ${msg}`);
+                    svcLog.error(`Folder ${remote} could not be created: ${msg}`);
+                });
             }
         }
+        return failed;
+    }
+
+    /**
+     * Two local names can clean up to the same AEM name ("a#b.dita" and "a-b.dita", or "My Folder" and "My-Folder").
+     * Uploading both would silently keep only one, so only the first is uploaded and the others are reported.
+     */
+    function dropNameClashes(uploadFiles) {
+        const byTarget = new Map();
+        const keep = [];
+        uploadFiles.forEach((info) => {
+            const target = decodedTarget(info).normalize('NFC');
+            const first = byTarget.get(target);
+            if (!first) { byTarget.set(target, info); keep.push(info); return; }
+            reportNotUploaded(info, `Not uploaded: ${info.filePath} and ${first.filePath} both become ${target} in AEM. Rename one of them.`);
+        });
+        return keep;
     }
 
     async function retryNotFoundFiles(uploadFiles) {
@@ -614,7 +683,7 @@ function runUpload(config, eventCallback) {
             svcLog.warn('Could not read local path:', msg);
             errors.push(`Could not read local path: ${msg}`);
         });
-        const uploadFiles = fsUpload.convertToUploadFilesWithUrl(options, files);
+        let uploadFiles = fsUpload.convertToUploadFilesWithUrl(options, files);
         plannedFiles = uploadFiles.length;
         if (config.deleteStagedOnSuccess) {
             uploadFiles.forEach((info) => {
@@ -628,10 +697,22 @@ function runUpload(config, eventCallback) {
             } catch (_) {}
         }
 
+        uploadFiles = dropNameClashes(uploadFiles);
+
         const foldersStart = Date.now();
-        await createFolders(fsUpload, uploadResult, directories);
-        svcLog.info(`Folders ready: ${directories.length} in ${((Date.now() - foldersStart) / 1000).toFixed(1)}s`);
-        if (cancelled || uploadFiles.length === 0) return;
+        const failedFolders = await createFolders(fsUpload, uploadResult, directories);
+        svcLog.info(`Folders ready: ${directories.length - failedFolders.length} of ${directories.length} in ${((Date.now() - foldersStart) / 1000).toFixed(1)}s`);
+        if (cancelled) return;
+        if (failedFolders.length) {
+            uploadFiles = uploadFiles.filter((info) => {
+                const target = decodedTarget(info);
+                const folder = failedFolders.find((f) => target.startsWith(f + '/'));
+                if (!folder) return true;
+                reportNotUploaded(info, `Not uploaded: AEM could not create the folder ${folder}`);
+                return false;
+            });
+        }
+        if (uploadFiles.length === 0) return;
 
         const filesStart = Date.now();
         svcLog.info(`Uploading ${uploadFiles.length} files in ${Math.min(pipelines.target, uploadFiles.length)} parallel pipelines${pipelines.next ? ` (adaptive, up to ${MAX_UPLOAD_PIPELINES})` : ''}`);
