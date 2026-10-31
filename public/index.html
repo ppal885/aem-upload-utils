@@ -1117,7 +1117,7 @@
                 <span>Skip files that are already in the target and unchanged</span></label>
             <div class="cp-safe"><svg class="h-4 w-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 <span>Copied files stay on this tool's server only until they are uploaded or packaged (unused copies are removed after an hour).
-                Packages of copied content cannot be downloaded and are removed after a day. Every copy is recorded in History.</span></div>
+                Packages of copied content <span id="cpPkgDownloadNote">cannot be downloaded</span> and are removed after a day. Every copy is recorded in History.</span></div>
             <div class="cp-actions">
                 <button type="button" class="btn btn-accent btn-l" id="cpStartBtn" onclick="cpStart()">Copy and check</button>
                 <span id="cpStartNote" class="text-sm text-gray-500"></span>
@@ -1165,7 +1165,7 @@
                 <h3 id="insecurePkgNoteTitle" class="cloud-note-title">Your browser may block package downloads on this address.</h3>
                 <p class="cloud-note-text">This page is open over plain HTTP, and Chrome and Edge block or warn about downloads from http:// addresses.</p>
                 <p id="insecurePkgNoteHttps" class="cloud-note-text mt-2 hidden">Open the <a id="insecurePkgNoteLink" class="cloud-note-link" href="#">HTTPS address of this tool</a> and download from there.</p>
-                <p id="insecurePkgNoteNoHttps" class="cloud-note-text mt-2 hidden">Ask the admin to turn on HTTPS for this tool (README, HTTPS). Until then: open the browser's Downloads list and choose <strong>Keep</strong>, or use <strong>Install on AEM</strong>, which is not affected.</p>
+                <p id="insecurePkgNoteNoHttps" class="cloud-note-text mt-2 hidden">If a download is blocked, open the browser's Downloads list and choose <strong>Keep</strong>. <strong>Install on AEM</strong> is not affected.</p>
             </div>
         </div>
         <div class="relative card bg-white rounded-xl border border-gray-200 overflow-x-auto">
@@ -3304,6 +3304,7 @@ async function cpLoadOptions() {
         box.classList.toggle('hidden', o.enabled);
         if (!o.enabled) box.textContent = 'Copying from another AEM server is not set up on this tool yet: an admin has to add the allowed target servers on the Team page.';
         document.getElementById('cpStartBtn').disabled = !o.enabled;
+        document.getElementById('cpPkgDownloadNote').textContent = o.packageDownload ? 'can be downloaded or installed' : 'cannot be downloaded';
         const sel = document.getElementById('cpTgtUrl');
         const keep = sel.value;
         sel.innerHTML = o.targets.map((t) => '<option value="' + esc(t) + '">' + esc(hostOf(t)) + '</option>').join('');
@@ -4147,16 +4148,17 @@ async function loadPackages() {
     try { if (localStorage.getItem('cloudPkgNoteDismissed') === '1') document.getElementById('cloudPkgNote').classList.add('hidden'); } catch (_) { /* show it */ }
     const body = document.getElementById('pkgBody');
     try {
-        const { packages, httpsUrl } = await apiJson('/api/packages');
+        const { packages, httpsUrl, copyDownload } = await apiJson('/api/packages');
         showInsecureDownloadNote(httpsUrl);
-        renderPackages(packages || []);
+        renderPackages(packages || [], copyDownload === true);
         if ((packages || []).some((p) => p.state === 'building')) setTimeout(() => { if (!document.getElementById('viewPackages').classList.contains('hidden')) loadPackages(); }, 1500);
     } catch (e) {
         body.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-sm text-red-600">Could not load packages: ' + esc(toErrorMessage(e)) + '</td></tr>';
     }
 }
 
-function renderPackages(list) {
+// copyDownload: the server allows downloading packages of copied content (COPY_ALLOW_DOWNLOAD)
+function renderPackages(list, copyDownload) {
     const body = document.getElementById('pkgBody');
     if (!list.length) {
         body.innerHTML = '<tr><td colspan="5" class="px-4 py-10 text-center text-sm text-gray-400">No packages yet. On New upload, choose <strong>Build package</strong>.</td></tr>';
@@ -4172,12 +4174,16 @@ function renderPackages(list) {
         const installed = last ? '<div class="text-xs mt-1 ' + (last.ok ? 'text-green-700' : 'text-red-600') + '">' + (last.ok ? 'Installed on ' : 'Install failed on ') + esc(hostOf(last.server)) + ' ' + esc(timeAgo(last.at))
             + (last.ok ? ' <button type="button" class="text-adobe-blue hover:underline font-semibold" onclick="openAemStatus({ baseUrl: ' + esc(JSON.stringify(last.server)) + ', folder: ' + esc(JSON.stringify(checkFolder)) + ' })">Check in AEM</button>' : '')
             + (cloudInstall ? '<span class="pkg-reprocess" title="AEM as a Cloud Service does not process package content: run Reprocess Assets on the folder">Reprocess needed</span>' : '') + '</div>' : '';
-        // Copied content can only be installed on an allowed server, not downloaded (see COPY_TARGETS on the server)
+        // Copied content (often a customer's) is downloadable only when the server allows it (COPY_ALLOW_DOWNLOAD);
+        // otherwise it can only be installed on an allowed server, and the row says why there is no Download
         const idArg = esc(JSON.stringify(p.id));
         const sep = '<span class="text-gray-300 mx-1">|</span>';
         const del = p.state === 'building' ? '' : '<button type="button" class="text-xs font-semibold text-red-600 hover:underline" onclick="deletePackage(' + idArg + ', ' + esc(JSON.stringify(p.downloadName)) + ')">Delete</button>';
+        const download = p.copiedFrom && !copyDownload
+            ? '<span class="text-xs text-gray-400" title="Downloading packages of copied content is turned off on this server. An admin can allow it with COPY_ALLOW_DOWNLOAD=true.">Download off</span>'
+            : '<button type="button" class="text-xs font-semibold text-adobe-blue hover:underline" onclick="downloadPackage(' + idArg + ')">Download</button>';
         const actions = (p.state !== 'ready' ? '' :
-            (p.copiedFrom ? '' : '<button type="button" class="text-xs font-semibold text-adobe-blue hover:underline" onclick="downloadPackage(' + idArg + ')">Download</button>' + sep)
+            download + sep
             + '<button type="button" class="text-xs font-semibold text-gray-700 hover:underline" onclick="installPackage(' + idArg + ')">Install on AEM</button>' + (del ? sep : '')) + del;
         return '<tr>'
             + '<td class="px-4 py-3"><div class="font-semibold text-gray-800">' + esc(p.downloadName) + '</div><div class="text-xs text-gray-500">' + esc(p.group) + (currentUser && currentUser.isAdmin && p.ownerName ? ' &middot; ' + esc(p.ownerName) : '') + '</div></td>'

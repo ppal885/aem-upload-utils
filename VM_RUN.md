@@ -50,7 +50,7 @@ pm2 save
 - From VM: `http://localhost:3000`
 - From your machine: `http://<VM_IP>:3000` (ensure port 3000 is open on the VM firewall)
 
-Over plain `http://` browsers block or warn about package downloads. Turn on HTTPS (README, HTTPS):
+Over plain `http://` browsers may warn about package downloads (choose **Keep** in the Downloads list). Optional: turn on HTTPS (README, HTTPS):
 
 ```bash
 cd ~/aem-upload-utils

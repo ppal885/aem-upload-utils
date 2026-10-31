@@ -123,9 +123,9 @@ downloaded from `/guides-upload-ca.crt` (Windows: open it → Install Certificat
 "Trusted Root Certification Authorities"). A certificate from IT later just replaces `certs/server-chain.crt`
 and `certs/server.key`.
 
-**Package downloads need HTTPS.** Chrome and Edge block or warn about file downloads from a plain `http://` address
-(the Packages page says so when it is open over HTTP). They do the same while the certificate is not trusted, so
-trust the CA as above or use a certificate from IT. On the VM, where only port 3000 is open:
+**Package downloads over plain HTTP.** Chrome and Edge may block or warn about file downloads from an `http://` address
+(the Packages page says so when it is open over HTTP); choosing **Keep** in the browser's Downloads list saves the file.
+HTTPS is optional and removes the warning (the certificate must be trusted, as above). On the VM, where only port 3000 is open:
 
 ```bash
 tools/make-cert.sh 10.42.75.146

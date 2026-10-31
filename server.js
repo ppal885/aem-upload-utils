@@ -1695,7 +1695,7 @@ function httpsAddress(req) {
 }
 
 app.get('/api/packages', (req, res) => {
-    res.json({ packages: packages.list(req.user.key, !!req.user.isAdmin), httpsUrl: httpsAddress(req) });
+    res.json({ packages: packages.list(req.user.key, !!req.user.isAdmin), httpsUrl: httpsAddress(req), copyDownload: COPY_ALLOW_DOWNLOAD });
 });
 
 function ownPackage(req, res) {
