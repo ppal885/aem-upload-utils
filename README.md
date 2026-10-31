@@ -123,6 +123,18 @@ downloaded from `/guides-upload-ca.crt` (Windows: open it → Install Certificat
 "Trusted Root Certification Authorities"). A certificate from IT later just replaces `certs/server-chain.crt`
 and `certs/server.key`.
 
+**Package downloads over plain HTTP.** Chrome and Edge may block or warn about file downloads from an `http://` address
+(the Packages page says so when it is open over HTTP); choosing **Keep** in the browser's Downloads list saves the file.
+HTTPS is optional and removes the warning (the certificate must be trusted, as above). On the VM, where only port 3000 is open:
+
+```bash
+tools/make-cert.sh 10.42.75.146
+export TLS_CERT_FILE=$PWD/certs/server-chain.crt TLS_KEY_FILE=$PWD/certs/server.key HTTPS_PORT=3000 HTTPS_ONLY=true
+pm2 restart ecosystem.config.cjs --update-env
+```
+
+People then open `https://10.42.75.146:3000`; `http://` on the same port sends them there.
+
 ### Page performance
 
 The page loads no frameworks from CDNs: buttons and toasts are plain HTML/CSS, and Tailwind is built ahead of
