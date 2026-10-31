@@ -4,7 +4,8 @@
  * Team members sign in with their work email (ALLOWED_EMAIL_DOMAINS, default adobe.com) and a password
  * for this tool. People create their own account on the sign-in page, or an admin adds them (Team
  * members page, or tools/manage-users.js) with a temporary password that must be changed at first
- * sign-in. Emails listed in ADMIN_EMAILS become admins when they create their account. Passwords are stored only as scrypt hashes in users.json.
+ * sign-in. On a new install the first account (or the first ADMIN_EMAILS account) is the admin; later ADMIN_EMAILS
+ * accounts become admins after they confirm their inbox with an emailed reset link. Passwords are stored only as scrypt hashes in users.json.
  * AEM credentials are not part of the session: they are entered with each upload.
  */
 const crypto = require('crypto');
@@ -172,8 +173,10 @@ function registerUser({ email, name, password }) {
     if (users.some((u) => u.email === e)) {
         throw Object.assign(new Error('An account with this email already exists. Sign in, or ask an admin to reset your password.'), { status: 409 });
     }
-    // ADMIN_EMAILS become admins; with none configured, the very first account runs the tool
-    const role = ADMIN_EMAILS.includes(e) || (!ADMIN_EMAILS.length && !users.some((u) => u.role === 'admin')) ? 'admin' : 'member';
+    // Sign-up does not prove the person owns the inbox, so it gives admin only to set up a new install
+    // (no admin yet). Later ADMIN_EMAILS accounts become admin once they use an emailed reset link.
+    const noAdminYet = !users.some((u) => u.role === 'admin');
+    const role = noAdminYet && (ADMIN_EMAILS.includes(e) || !ADMIN_EMAILS.length) ? 'admin' : 'member';
     const user = { email: e, name: n.slice(0, 80), role, passwordHash: hashPassword(pw), mustChangePassword: false, disabled: false,
         createdAt: new Date().toISOString(), createdBy: 'self sign-up' };
     users.push(user);
@@ -216,6 +219,8 @@ function resetPasswordWithToken(token, newPassword) {
     assertNewPassword(pw, u.email);
     u.passwordHash = hashPassword(pw);
     u.mustChangePassword = false;
+    // The emailed link proves the inbox is theirs
+    if (ADMIN_EMAILS.includes(u.email)) u.role = 'admin';
     delete u.resetTokenHash; delete u.resetExpiresAt; delete u.resetRequestedAt;
     saveUsers(users);
     endSessionsFor(u.email);

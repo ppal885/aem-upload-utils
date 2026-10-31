@@ -41,7 +41,7 @@ Team members sign in with their **Adobe email** (`ALLOWED_EMAIL_DOMAINS`, defaul
 that belongs to this tool only (never their Adobe password).
 
 - **Create account**: anyone with an allowed email creates their own account on the sign-in page.
-  Emails in `ADMIN_EMAILS` become admins when they sign up; with no `ADMIN_EMAILS`, the very first account is the admin.
+  On a new install the first account to sign up is the admin (the first `ADMIN_EMAILS` account, when that is set). Sign-up does not check the inbox, so after that an `ADMIN_EMAILS` account becomes admin only once it uses an emailed reset link (Forgot password); without email, an admin promotes it on Team members or with `tools/manage-users.js`.
   Set `SIGNUP_ENABLED=false` to allow only admin-created accounts.
 - **Forgot password**: asks for the Adobe email. With SMTP configured (`SMTP_HOST`, ...) the person gets a reset link
   (valid 1 hour). Without SMTP the request shows up on **Team members** as "Asked for password reset"; the admin
@@ -72,13 +72,15 @@ themselves: set the variables in the shell, in `ecosystem.config.cjs` (`env`) fo
 | `BROWSE_ROOTS` | _(empty)_ | Restrict file browsing to these directories (comma-separated) |
 | `AEM_ALLOW_SELF_SIGNED` | `0` | Set to `1` to allow self-signed certs for `https://localhost:4502` (dev only) |
 | `ALLOWED_EMAIL_DOMAINS` | `adobe.com` | Email domains that may sign up and sign in (comma-separated) |
-| `ADMIN_EMAILS` | _(empty)_ | Emails that become admins when they create their account |
+| `ADMIN_EMAILS` | _(empty)_ | Emails that become admins: at sign-up on a new install, later after an emailed reset link |
 | `SIGNUP_ENABLED` | `true` | `false` = only admins create accounts |
 | `MIN_PASSWORD_LENGTH` | `1` | Minimum password length (no rule by default; a password cannot be empty or the email) |
+| _(sign-in lock)_ | | 5 wrong passwords for one account lock it for 15 minutes (Forgot password still works) |
 | `USERS_FILE` | `<app>/users.json` | Team accounts (scrypt password hashes) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `MAIL_FROM` | _(empty)_ | Mail server for password-reset links; without it admins reset passwords |
-| `PUBLIC_URL` | _(request host)_ | Address used in reset links, e.g. `https://guides-upload.example.com` |
+| `PUBLIC_URL` | _(this VM's address)_ | Address used in reset links, e.g. `https://guides-upload.example.com`. Set it when people use a DNS name: without it, only the VM's own names and IPs are used |
 | `PACKAGES_DIR` / `PACKAGE_KEEP_DAYS` | `<app>/packages` / `7` | Where built content packages are kept, and for how long |
+| `TEMP_MIN_FREE_MB` | `1024` | Files sent from the browser are refused while the staging disk has less free space than this |
 | `MAX_HISTORY_PER_USER` / `MAX_HISTORY` | `200` / `5000` | History rows kept per person / in total |
 | `SESSION_IDLE_HOURS` / `SESSION_MAX_HOURS` | `8` / `24` | Sign-in session lifetime |
 | `UPLOAD_PIPELINES` | `8` | Parallel upload pipelines (1-16). Each runs `maxConcurrent` (default 4) transfers. |

@@ -53,6 +53,10 @@ const TEMP_SPACE_PER_FILE_BYTES = 4096;
 const DEFAULT_UPLOAD_PIPELINES = parseInt(process.env.UPLOAD_PIPELINES, 10) || 8;
 const UPLOAD_ADAPTIVE = !/^(0|false|no)$/i.test(process.env.UPLOAD_ADAPTIVE || '');
 const TEMP_SPACE_MARGIN = 1.2;
+// Files are refused once the staging disk gets this low, so one upload cannot fill the disk users.json, sessions and packages live on
+const TEMP_MIN_FREE_BYTES = (parseInt(process.env.TEMP_MIN_FREE_MB, 10) || 1024) * 1048576;
+// A session may send this much more than it declared at init (file sizes change, retried chunks)
+const DECLARED_SIZE_SLACK_BYTES = 256 * 1048576;
 
 // ─── Multer config for browser file uploads ───
 // Files are saved to a flat staging dir first, then rearranged into
@@ -328,6 +332,16 @@ async function getTempFreeBytes() {
         log.warn('Cannot read free space of temp dir:', os.tmpdir(), e.message);
         return null;
     }
+}
+
+/** Refuses a request that would add files while the staging disk is nearly full (before multer writes anything). */
+async function refuseWhenTempLow(_req, res, next) {
+    const free = await getTempFreeBytes();
+    if (free != null && free < TEMP_MIN_FREE_BYTES) {
+        log.warn(`Refused files: only ${Math.round(free / 1048576)} MB free in ${os.tmpdir()}`);
+        return res.status(507).json({ error: `The upload server is almost out of disk space (${Math.round(free / 1048576)} MB free). Try again later or ask an admin.`, code: 'INSUFFICIENT_SERVER_SPACE' });
+    }
+    next();
 }
 
 /**
@@ -792,12 +806,36 @@ function clampUploadParams(raw) {
     };
 }
 
+// Per-account lock: the IP limit alone lets several IPs keep guessing one password
+const LOGIN_FAILS_MAX = 5;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const loginFails = new Map();
+
+function loginLockedFor(key) {
+    const f = loginFails.get(key);
+    if (!f) return 0;
+    if (Date.now() - f.last > LOGIN_LOCK_MS) { loginFails.delete(key); return 0; }
+    return f.count >= LOGIN_FAILS_MAX ? f.last + LOGIN_LOCK_MS - Date.now() : 0;
+}
+
+function recordLoginFail(key) {
+    const now = Date.now();
+    for (const [k, f] of loginFails) if (now - f.last > LOGIN_LOCK_MS) loginFails.delete(k);
+    const f = loginFails.get(key) || { count: 0, last: 0 };
+    loginFails.set(key, { count: f.count + 1, last: now });
+}
+
 // ─── API: sign in / out (team member accounts, see auth.js) ───
 app.post('/api/auth/login', loginLimiter, (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Enter your email and password.' });
-    if (!auth.isAllowedDomain(auth.normalizeEmail(email))) {
+    const key = auth.normalizeEmail(email);
+    if (!auth.isAllowedDomain(key)) {
         return res.status(400).json({ error: `Use your Adobe email address (${auth.domainHint()}).`, code: 'EMAIL_DOMAIN' });
+    }
+    const lockedMs = loginLockedFor(key);
+    if (lockedMs) {
+        return res.status(429).json({ error: `Too many wrong passwords for this account. Try again in ${Math.ceil(lockedMs / 60000)} min, or use Forgot password.`, code: 'ACCOUNT_LOCKED' });
     }
     let u;
     try {
@@ -807,13 +845,15 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
         return res.status(500).json({ error: 'Sign-in is not available right now. Contact an admin.' });
     }
     if (!u) {
-        log.warn(`Sign-in failed for ${auth.normalizeEmail(email)}`);
+        recordLoginFail(key);
+        log.warn(`Sign-in failed for ${key}`);
         return res.status(401).json({ error: 'Wrong email or password.', code: 'AUTH_FAILED' });
     }
     if (u.disabled) {
         log.warn(`Sign-in refused for disabled account ${auth.normalizeEmail(email)}`);
         return res.status(403).json({ error: 'This account is disabled. Contact an admin.', code: 'ACCOUNT_DISABLED' });
     }
+    loginFails.delete(key);
     const s = auth.createSession(req, res, u);
     auth.recordSignIn(u.email);
     log.info(`Signed in: ${u.email}${u.role === 'admin' ? ' (admin)' : ''}${u.mustChangePassword ? ' (must change password)' : ''}`);
@@ -836,8 +876,20 @@ app.post('/api/auth/register', accountLimiter, (req, res) => {
     }
 });
 
+/** Names this machine answers to, so a reset link never points at a host taken from a forged Host header. */
+function isOwnHostname(hostname) {
+    const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+    if (h === 'localhost' || h === os.hostname().toLowerCase()) return true;
+    return Object.values(os.networkInterfaces()).flat().some((i) => i && i.address.toLowerCase() === h);
+}
+
 function appOrigin(req) {
-    return process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/+$/, '') : `${req.protocol}://${req.get('host')}`;
+    if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
+    const host = req.get('host') || '';
+    if (isOwnHostname(host.replace(/:\d+$/, ''))) return `${req.protocol}://${host}`;
+    // Unknown name (DNS alias or a forged header): use the address the request arrived on
+    const addr = String(req.socket.localAddress || '').replace(/^::ffff:/, '');
+    return `${req.protocol}://${addr.includes(':') ? `[${addr}]` : addr}:${req.socket.localPort}`;
 }
 
 // The answer is the same whether or not the account exists
@@ -1322,7 +1374,7 @@ app.post('/api/upload', uploadLimiter, auth.requireAdmin, refuseWhenDraining, as
 });
 
 // ─── API: browser-based file upload (files sent from user's browser) ───
-app.post('/api/upload/browser', uploadLimiter, browserUpload.any(), async (req, res) => {
+app.post('/api/upload/browser', uploadLimiter, refuseWhenDraining, refuseWhenTempLow, browserUpload.any(), async (req, res) => {
     const tempDir = req._tempDir;
     if (!req.files || req.files.length === 0) {
         if (tempDir) cleanupTempDir(tempDir);
@@ -1605,6 +1657,7 @@ app.post('/api/upload/browser/init', uploadLimiter, refuseWhenDraining, async (r
                   maxConcurrent, maxUploadFiles,
                   httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged: skipUnchanged === true,
                   keepNodeNames: keepNodeNames === true },
+        declaredBytes: Number.isFinite(totalBytes) && totalBytes >= 0 ? totalBytes : null,
         receivedFiles: 0,
         totalReceivedBytes: 0,
         relativePaths: [],
@@ -1644,6 +1697,7 @@ app.post('/api/packages/init', uploadLimiter, refuseWhenDraining, async (req, re
     browserUploadSessions.set(sessionId, {
         owner: req.user.key, mode: 'package', tempDir,
         config: { damPath: dam.path, packageName, version, group, description: String(b.description || '').slice(0, 500), keepNames: b.keepNames === true },
+        declaredBytes: Number.isFinite(Number(b.totalBytes)) && b.totalBytes != null ? Number(b.totalBytes) : null,
         receivedFiles: 0, totalReceivedBytes: 0, relativePaths: [], files: [], createdAt: Date.now(),
     });
     log.info(`Package session created: ${sessionId} (${packageName} ${version}) by ${req.user.key}`);
@@ -2161,15 +2215,23 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
         return res.status(409).json({ error: 'Session already finalized; no more chunks accepted' });
     }
     next();
-}, chunkUpload.any(), (req, res) => {
+}, refuseWhenTempLow, chunkUpload.any(), (req, res) => {
     const session = browserUploadSessions.get(req.params.sessionId);
+    const dropChunk = () => (req.files || []).forEach((f) => fsPromises.rm(f.path, { force: true }).catch(() => {}));
     if (!session) {
+        dropChunk();
         return res.status(404).json({ error: 'Upload session not found or expired' });
     }
     session.lastChunkAt = Date.now();
 
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No files in chunk' });
+    }
+    const incoming = req.files.reduce((n, f) => n + f.size, 0);
+    if (session.declaredBytes != null && session.totalReceivedBytes + incoming > session.declaredBytes * 1.1 + DECLARED_SIZE_SLACK_BYTES) {
+        dropChunk();
+        log.warn(`Session ${req.params.sessionId}: refused a chunk, more data than the ${Math.round(session.declaredBytes / 1048576)} MB declared`);
+        return res.status(413).json({ error: 'This upload is larger than the size given when it started. Start the upload again.', code: 'OVER_DECLARED_SIZE' });
     }
 
     // Parse relative paths for this chunk
@@ -2442,12 +2504,17 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
         ...(UPLOAD_ADAPTIVE ? { canGrow: () => slotsFor(slotKey(baseUrl)).running.size <= 1 } : {}),
     };
 
-    // Everything needed to resume after a restart, except the AEM password (never stored)
-    await writeResumeJob(tempDir, {
-        jobId: resumeOf || uploadId, owner, ownerName, targetLabel, baseUrl, damPath, username,
-        settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged, keepNodeNames },
-        contentChildren, totalFiles: totalFilesOverall || receivedFiles, startedAt: new Date(startTime).toISOString(),
-    });
+    // Everything needed to resume after a restart, except the AEM password (never stored).
+    // The upload has already been reported as started, so a failure here (full disk) only loses resume.
+    try {
+        await writeResumeJob(tempDir, {
+            jobId: resumeOf || uploadId, owner, ownerName, targetLabel, baseUrl, damPath, username,
+            settings: { maxConcurrent, maxUploadFiles, httpRetryCount, httpRetryDelay, httpRequestTimeout, skipUnchanged, keepNodeNames },
+            contentChildren, totalFiles: totalFilesOverall || receivedFiles, startedAt: new Date(startTime).toISOString(),
+        });
+    } catch (e) {
+        log.error(`Upload ${uploadId}: could not save resume data (${e.message}); it cannot be resumed after a restart`);
+    }
 
     log.info(`[${resumeOf ? 'resume' : 'finalize'}] ${resumeOf || sessionId}: starting AEM upload ${uploadId} (${contentChildren.length} top-level paths) → ${baseUrl}/${damPath}`);
 
@@ -2486,7 +2553,9 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
 
     if (skipUnchanged) {
         broadcast('skipcheck', { state: 'checking' });
-        const skip = await removeUnchangedStagedFiles({ baseUrl, damPath, username, password, contentChildren, keepNodeNames });
+        // An error here must not keep the server slot taken; it just means everything is uploaded
+        const skip = await removeUnchangedStagedFiles({ baseUrl, damPath, username, password, contentChildren, keepNodeNames })
+            .catch((e) => ({ skipped: 0, checked: 0, error: e.message }));
         uploadSession.meta.skippedFiles = skip.skipped;
         broadcast('skipcheck', { state: skip.error ? 'failed' : 'done', skipped: skip.skipped, checked: skip.checked, error: skip.error });
         log.info(`Upload ${uploadId}: skip-unchanged ${skip.error ? 'check failed (' + skip.error + '), uploading everything' : `skipped ${skip.skipped} of ${skip.checked} files already in AEM`}`);
@@ -2622,8 +2691,12 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
     const { sessionId } = req.body;
     const ownedSession = browserUploadSessions.get(sessionId);
     const session = ownedSession && auth.canAccess(req, ownedSession.owner) ? ownedSession : null;
-    if (!session) {
+    if (!session || session.mode === 'package') {
         return res.status(404).json({ error: 'Upload session not found or expired' });
+    }
+    // A second finalize (double-click, second tab) must not touch the files the first one is moving
+    if (session.finalized) {
+        return res.status(409).json({ error: 'This upload is already starting', code: 'ALREADY_FINALIZING' });
     }
     if (session.copy && session.copy.state !== 'done') {
         return res.status(409).json({ error: 'The copy from the source AEM has not finished yet' });
@@ -2675,19 +2748,26 @@ app.post('/api/upload/browser/finalize', uploadLimiter, async (req, res) => {
         return res.status(409).json({ error: 'Upload cancelled', code: 'CANCELLED' });
     }
 
-    let contentChildren = (await fsPromises.readdir(contentDir)).map(name => nodePath.join(contentDir, name));
+    let contentChildren;
+    try {
+        contentChildren = (await fsPromises.readdir(contentDir)).map(name => nodePath.join(contentDir, name));
 
-    // Prevent duplicate folder nesting: if contentChildren is a single directory
-    // whose name matches the last segment of damPath, unwrap it so the library
-    // uploads its contents directly into damPath rather than creating a duplicate subfolder.
-    if (contentChildren.length === 1) {
-        const childName = nodePath.basename(contentChildren[0]);
-        const damLastSeg = damPath.replace(/\/+$/, '').split('/').pop();
-        const childStat = await fsPromises.stat(contentChildren[0]);
-        if (childStat.isDirectory() && childName === damLastSeg) {
-            log.info(`[finalize] Unwrapping duplicate root folder "${childName}" (matches damPath tail)`);
-            contentChildren = (await fsPromises.readdir(contentChildren[0])).map(name => nodePath.join(contentChildren[0], name));
+        // Prevent duplicate folder nesting: if contentChildren is a single directory
+        // whose name matches the last segment of damPath, unwrap it so the library
+        // uploads its contents directly into damPath rather than creating a duplicate subfolder.
+        if (contentChildren.length === 1) {
+            const childName = nodePath.basename(contentChildren[0]);
+            const damLastSeg = damPath.replace(/\/+$/, '').split('/').pop();
+            const childStat = await fsPromises.stat(contentChildren[0]);
+            if (childStat.isDirectory() && childName === damLastSeg) {
+                log.info(`[finalize] Unwrapping duplicate root folder "${childName}" (matches damPath tail)`);
+                contentChildren = (await fsPromises.readdir(contentChildren[0])).map(name => nodePath.join(contentChildren[0], name));
+            }
         }
+    } catch (e) {
+        log.error(`[finalize] Session ${sessionId}: could not read the staged files: ${e.message}`);
+        cleanupTempDir(tempDir).catch(() => {});
+        return res.status(500).json({ error: 'Failed to process uploaded files: ' + e.message });
     }
 
     if (session.copy) {
