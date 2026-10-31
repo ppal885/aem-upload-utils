@@ -50,6 +50,19 @@ pm2 save
 - From VM: `http://localhost:3000`
 - From your machine: `http://<VM_IP>:3000` (ensure port 3000 is open on the VM firewall)
 
+Over plain `http://` browsers block or warn about package downloads. Turn on HTTPS (README, HTTPS):
+
+```bash
+cd ~/aem-upload-utils
+tools/make-cert.sh <VM_IP>
+export TLS_CERT_FILE=$PWD/certs/server-chain.crt TLS_KEY_FILE=$PWD/certs/server.key HTTPS_PORT=3000 HTTPS_ONLY=true
+pm2 restart ecosystem.config.cjs --update-env
+pm2 save
+```
+
+Then open `https://<VM_IP>:3000`. Each computer trusts the CA once: download `https://<VM_IP>:3000/guides-upload-ca.crt`
+and install it under "Trusted Root Certification Authorities" (Windows) or in Keychain Access, set to Always Trust (macOS).
+
 ## 6. Large uploads (50K files)
 
 For 50K file uploads, ensure `/tmp` has at least 5–10 GB (or use appropriate tmpfs sizing). This avoids rearrange failures from insufficient disk space during the finalization phase.

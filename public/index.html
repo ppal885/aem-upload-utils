@@ -1158,10 +1158,20 @@
             </div>
             <button type="button" class="cloud-note-close" onclick="dismissCloudNote()">Got it</button>
         </div>
+        <!-- Shown on a plain-HTTP page: Chrome and Edge block or warn about downloads from http:// addresses -->
+        <div id="insecurePkgNote" class="cloud-note mb-5 hidden" role="note" aria-labelledby="insecurePkgNoteTitle">
+            <svg class="cloud-note-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2L1 18h18L10 2zm1 13H9v-2h2v2zm0-4H9V8h2v3z"/></svg>
+            <div class="flex-1 min-w-0">
+                <h3 id="insecurePkgNoteTitle" class="cloud-note-title">Your browser may block package downloads on this address.</h3>
+                <p class="cloud-note-text">This page is open over plain HTTP, and Chrome and Edge block or warn about downloads from http:// addresses.</p>
+                <p id="insecurePkgNoteHttps" class="cloud-note-text mt-2 hidden">Open the <a id="insecurePkgNoteLink" class="cloud-note-link" href="#">HTTPS address of this tool</a> and download from there.</p>
+                <p id="insecurePkgNoteNoHttps" class="cloud-note-text mt-2 hidden">Ask the admin to turn on HTTPS for this tool (README, HTTPS). Until then: open the browser's Downloads list and choose <strong>Keep</strong>, or use <strong>Install on AEM</strong>, which is not affected.</p>
+            </div>
+        </div>
         <div class="relative card bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table class="w-full min-w-[760px] text-sm">
                 <thead class="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
-                    <tr><th class="px-4 py-3">Package</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Built</th><th class="px-4 py-3 text-right">Actions</th></tr>
+                    <tr><th class="px-4 py-3">Package</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Built</th><th class="px-4 py-3 text-right sticky right-0 bg-gray-50">Actions</th></tr>
                 </thead>
                 <tbody id="pkgBody" class="divide-y divide-gray-100"></tbody>
             </table>
@@ -4137,7 +4147,8 @@ async function loadPackages() {
     try { if (localStorage.getItem('cloudPkgNoteDismissed') === '1') document.getElementById('cloudPkgNote').classList.add('hidden'); } catch (_) { /* show it */ }
     const body = document.getElementById('pkgBody');
     try {
-        const { packages } = await apiJson('/api/packages');
+        const { packages, httpsUrl } = await apiJson('/api/packages');
+        showInsecureDownloadNote(httpsUrl);
         renderPackages(packages || []);
         if ((packages || []).some((p) => p.state === 'building')) setTimeout(() => { if (!document.getElementById('viewPackages').classList.contains('hidden')) loadPackages(); }, 1500);
     } catch (e) {
@@ -4162,17 +4173,66 @@ function renderPackages(list) {
             + (last.ok ? ' <button type="button" class="text-adobe-blue hover:underline font-semibold" onclick="openAemStatus({ baseUrl: ' + esc(JSON.stringify(last.server)) + ', folder: ' + esc(JSON.stringify(checkFolder)) + ' })">Check in AEM</button>' : '')
             + (cloudInstall ? '<span class="pkg-reprocess" title="AEM as a Cloud Service does not process package content: run Reprocess Assets on the folder">Reprocess needed</span>' : '') + '</div>' : '';
         // Copied content can only be installed on an allowed server, not downloaded (see COPY_TARGETS on the server)
-        const actions = p.state !== 'ready' ? '' :
-            (p.copiedFrom ? '' : '<a class="text-xs font-semibold text-adobe-blue hover:underline" href="/api/packages/' + encodeURIComponent(p.id) + '/download" download>Download</a>'
-            + '<span class="text-gray-300 mx-1">|</span>') + '<button type="button" class="text-xs font-semibold text-gray-700 hover:underline" onclick="installPackage(' + esc(JSON.stringify(p.id)) + ')">Install on AEM</button>';
+        const idArg = esc(JSON.stringify(p.id));
+        const sep = '<span class="text-gray-300 mx-1">|</span>';
+        const del = p.state === 'building' ? '' : '<button type="button" class="text-xs font-semibold text-red-600 hover:underline" onclick="deletePackage(' + idArg + ', ' + esc(JSON.stringify(p.downloadName)) + ')">Delete</button>';
+        const actions = (p.state !== 'ready' ? '' :
+            (p.copiedFrom ? '' : '<button type="button" class="text-xs font-semibold text-adobe-blue hover:underline" onclick="downloadPackage(' + idArg + ')">Download</button>' + sep)
+            + '<button type="button" class="text-xs font-semibold text-gray-700 hover:underline" onclick="installPackage(' + idArg + ')">Install on AEM</button>' + (del ? sep : '')) + del;
         return '<tr>'
             + '<td class="px-4 py-3"><div class="font-semibold text-gray-800">' + esc(p.downloadName) + '</div><div class="text-xs text-gray-500">' + esc(p.group) + (currentUser && currentUser.isAdmin && p.ownerName ? ' &middot; ' + esc(p.ownerName) : '') + '</div></td>'
             + '<td class="px-4 py-3 text-xs text-gray-600"><div class="font-mono break-all">' + esc(p.damPath) + '</div>'
             + (p.copiedFrom ? '<div class="text-gray-500">Copied from ' + esc(hostOf(p.copiedFrom.baseUrl)) + '<span class="font-mono">' + esc(p.copiedFrom.folder) + '</span> &middot; kept until ' + esc(fmtTimestamp(p.expiresAt)) + '</div>' : '') + (p.files != null ? '<div>' + p.files.toLocaleString() + ' files &middot; ' + fmtBytes(p.zipBytes || 0) + (p.skippedCount ? ' &middot; ' + p.skippedCount + ' skipped' : '') + '</div>' : '') + '</td>'
             + '<td class="px-4 py-3">' + status + installed + '</td>'
             + '<td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">' + esc(timeAgo(p.createdAt)) + '</td>'
-            + '<td class="px-4 py-3 text-right whitespace-nowrap">' + actions + '</td></tr>';
+            + '<td class="px-4 py-3 text-right whitespace-nowrap sticky right-0 bg-white">' + actions + '</td></tr>';
     }).join('');
+}
+
+// On http:// (not localhost) Chrome and Edge block or warn about downloads; say why and offer the HTTPS address
+function showInsecureDownloadNote(httpsUrl) {
+    const insecure = !window.isSecureContext;
+    document.getElementById('insecurePkgNote').classList.toggle('hidden', !insecure);
+    document.getElementById('insecurePkgNoteHttps').classList.toggle('hidden', !insecure || !httpsUrl);
+    document.getElementById('insecurePkgNoteNoHttps').classList.toggle('hidden', !insecure || !!httpsUrl);
+    if (httpsUrl) document.getElementById('insecurePkgNoteLink').href = httpsUrl + '/#packages';
+}
+
+// A plain download link fails silently (the browser saves the error or shows "Failed"); check first so the
+// reason (signed out, package gone, not ready) shows up as a message
+async function downloadPackage(id) {
+    const url = '/api/packages/' + encodeURIComponent(id) + '/download';
+    try {
+        const head = await fetch(url, { method: 'HEAD' });
+        if (!head.ok) {
+            const r = await fetch(url);
+            const j = await r.json().catch(() => ({}));
+            throw new Error(j.error || ('HTTP ' + r.status));
+        }
+    } catch (e) {
+        showToast('Download not started: ' + toErrorMessage(e), 'error');
+        loadPackages();
+        return;
+    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (!window.isSecureContext) showToast('If the browser blocks the download, open its Downloads list and choose Keep, or use the HTTPS address.', 'warn');
+}
+
+function deletePackage(id, name) {
+    showCustomConfirm('Delete package', 'Delete ' + name + ' from this tool? Content already installed in AEM is not touched.', async () => {
+        try {
+            await apiJson('/api/packages/' + encodeURIComponent(id), { method: 'DELETE' });
+            showToast('Deleted ' + name, 'success');
+        } catch (e) {
+            showToast('Not deleted: ' + toErrorMessage(e), 'error');
+        }
+        loadPackages();
+    });
 }
 
 function installPackage(id) {

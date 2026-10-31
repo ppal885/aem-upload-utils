@@ -1686,8 +1686,16 @@ app.post('/api/packages/build/:sessionId', uploadLimiter, async (req, res) => {
     res.status(202).json({ package: packages.publicPackage(record) });
 });
 
+// Browsers block or warn about downloads from a plain-HTTP page; when this server also speaks HTTPS, the
+// Packages page offers that address instead
+function httpsAddress(req) {
+    if (req.secure || !TLS_CERT_FILE || !TLS_KEY_FILE) return null;
+    const host = String(req.headers.host || 'localhost').replace(/:\d+$/, '');
+    return `https://${host}${HTTPS_PORT === 443 ? '' : ':' + HTTPS_PORT}`;
+}
+
 app.get('/api/packages', (req, res) => {
-    res.json({ packages: packages.list(req.user.key, !!req.user.isAdmin) });
+    res.json({ packages: packages.list(req.user.key, !!req.user.isAdmin), httpsUrl: httpsAddress(req) });
 });
 
 function ownPackage(req, res) {
@@ -1696,29 +1704,59 @@ function ownPackage(req, res) {
     return p;
 }
 
+/** A ready package whose zip is on disk, or null after answering with the reason. */
+function readyPackage(req, res) {
+    const p = ownPackage(req, res);
+    if (!p) return null;
+    if (p.state !== 'ready') { res.status(409).json({ error: p.state === 'failed' ? (p.error || 'The package could not be built') : 'The package is not ready yet' }); return null; }
+    if (!packages.fileExists(p)) {
+        log.warn(`Package file missing: ${packages.fileOf(p)}`);
+        packages.markMissing(p);
+        res.status(410).json({ error: p.error });
+        return null;
+    }
+    return p;
+}
+
+// Package ids being installed: a second install or a delete waits until the first has finished
+const installingPackages = new Set();
+
 app.get('/api/packages/:id', (req, res) => {
     const p = ownPackage(req, res);
     if (p) res.json({ package: packages.publicPackage(p) });
 });
 
-app.get('/api/packages/:id/download', (req, res) => {
+app.delete('/api/packages/:id', async (req, res) => {
     const p = ownPackage(req, res);
     if (!p) return;
-    if (p.state !== 'ready') return res.status(409).json({ error: 'The package is not ready yet' });
+    if (p.state === 'building') return res.status(409).json({ error: 'The package is still being built' });
+    if (installingPackages.has(p.id)) return res.status(409).json({ error: 'The package is being installed on AEM' });
+    await packages.remove(p);
+    log.info(`Package deleted: ${p.downloadName} (${p.id}) by ${req.user.key}`);
+    res.json({ ok: true });
+});
+
+app.get('/api/packages/:id/download', (req, res) => {
+    const p = readyPackage(req, res);
+    if (!p) return;
     if (p.copiedFrom && !COPY_ALLOW_DOWNLOAD) {
         return res.status(403).json({ error: 'Packages made from content copied from another AEM server can only be installed on an allowed server, not downloaded.' });
     }
-    if (p.copiedFrom) {
+    // HEAD is the page checking the download before it starts; only the real download is logged
+    if (p.copiedFrom && req.method === 'GET') {
         copyLog.record('package-download', { copyId: p.copiedFrom.copyId, by: req.user.email || req.user.key, package: p.downloadName,
             sourceServer: p.copiedFrom.baseUrl, sourceFolder: p.copiedFrom.folder, bytes: p.zipBytes }, log);
     }
-    res.download(packages.fileOf(p), p.downloadName, { headers: { 'Cache-Control': 'no-store' } });
+    res.download(packages.fileOf(p), p.downloadName, { headers: { 'Cache-Control': 'no-store' } }, (err) => {
+        if (err && !res.headersSent) res.status(500).json({ error: 'Could not send the package: ' + err.message });
+        else if (err && err.code !== 'ECONNABORTED') log.warn(`Package download of ${p.downloadName} stopped: ${err.message}`);
+    });
 });
 
 app.post('/api/packages/:id/install', uploadLimiter, refuseWhenDraining, async (req, res) => {
-    const p = ownPackage(req, res);
+    const p = readyPackage(req, res);
     if (!p) return;
-    if (p.state !== 'ready') return res.status(409).json({ error: 'The package is not ready yet' });
+    if (installingPackages.has(p.id)) return res.status(409).json({ error: 'This package is already being installed' });
     const { baseUrl, username, password } = auth.resolveAemTarget(req);
     if (!baseUrl || !username || !password) return res.status(400).json({ error: 'Enter the AEM server, username and password' });
     const target = normalizeAemBaseUrl(baseUrl);
@@ -1731,14 +1769,17 @@ app.post('/api/packages/:id/install', uploadLimiter, refuseWhenDraining, async (
     const cred = await checkAemCredentials(target, username, password);
     if (!cred.ok) return res.status(400).json({ error: cred.error, code: cred.code });
     log.info(`Installing package ${p.downloadName} on ${target} as ${username} (by ${req.user.key})`);
+    if (installingPackages.has(p.id)) return res.status(409).json({ error: 'This package is already being installed' });
     let result;
     installsRunning++;
+    installingPackages.add(p.id);
     try {
         result = await packages.install(p, { baseUrl: target, username, password });
     } catch (e) {
         result = { ok: false, message: e.name === 'AbortError' ? 'AEM did not answer within 30 minutes.' : 'Could not reach AEM: ' + e.message };
     } finally {
         installsRunning--;
+        installingPackages.delete(p.id);
     }
     packages.recordInstall(p, { at: new Date().toISOString(), server: target, by: req.user.key, ok: result.ok, message: result.message });
     if (p.copiedFrom) {
