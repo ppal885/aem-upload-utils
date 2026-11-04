@@ -23,6 +23,7 @@ const guidesStatus = require('./lib/guides-status');
 const guidesProfile = require('./lib/guides-profile');
 const copyLog = require('./lib/copy-log');
 const csv = require('./lib/csv');
+const { aemAuthorization } = require('./lib/aem-auth');
 const { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials } = require('./upload-service');
 
 const app = express();
@@ -1993,12 +1994,14 @@ app.get('/api/copy/options', (_req, res) => {
 
 // ─── Allowed copy targets (admins): where copied customer content may go ───
 const LOOPBACK = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/;
+// On-prem AEM (for example http://10.42.35.172:4502) often has no https: plain http is allowed on private networks
+const PRIVATE_IPV4 = /^(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/;
 
 function copyTargetsInfo() {
     return { targets: COPY_TARGETS, source: copyTargetsSaved ? 'admin' : 'environment', environment: COPY_TARGETS_ENV, ...(copyTargetsSaved || {}) };
 }
 
-/** [origin] or { error }: https only (plain http just for this machine), at most MAX_COPY_TARGETS, no duplicates. */
+/** [origin] or { error }: https, or plain http on this machine or a private network address; at most MAX_COPY_TARGETS, no duplicates. */
 function parseCopyTargets(list) {
     if (!Array.isArray(list)) return { error: 'Send the list of servers.' };
     const out = [];
@@ -2008,7 +2011,9 @@ function parseCopyTargets(list) {
         const o = originOf(text);
         if (!o) return { error: `${text} is not a server address (https://author-….adobeaemcloud.com).` };
         const u = new URL(o);
-        if (u.protocol !== 'https:' && !LOOPBACK.test(u.hostname)) return { error: `${o}: use https.` };
+        if (u.protocol !== 'https:' && !LOOPBACK.test(u.hostname) && !PRIVATE_IPV4.test(u.hostname)) {
+            return { error: `${o}: use https (plain http only for a private network IP such as http://10.0.0.5:4502).` };
+        }
         if (!out.includes(o)) out.push(o);
     }
     if (out.length > MAX_COPY_TARGETS) return { error: `At most ${MAX_COPY_TARGETS} servers.` };
@@ -2137,6 +2142,7 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async 
         Object.assign(copy, { state: copy.spaceError ? 'failed' : e.cancelled ? 'cancelled' : 'failed', error: copy.spaceError || e.message, finishedAt: Date.now() });
         logCopyEnd();
         log.warn(`Copy ${copy.state}: ${origin}${folder.path}: ${copy.error}`);
+        rememberEndedCopy(req.params.sessionId, session.owner, copy);
         if (browserUploadSessions.get(req.params.sessionId) === session) {
             browserUploadSessions.delete(req.params.sessionId);
             cleanupTempDir(session.tempDir).catch(() => {});
@@ -2164,10 +2170,23 @@ app.post('/api/copy/:sessionId/recheck', uploadLimiter, async (req, res) => {
     res.json({ copy: publicCopy(copy) });
 });
 
+// A failed or cancelled copy loses its session (and files) at once; its last state is kept a while so the page
+// can still show why it ended instead of "No copy for this session"
+const endedCopies = new Map();
+const ENDED_COPY_KEEP_MS = 10 * 60 * 1000;
+
+function rememberEndedCopy(sessionId, owner, copy) {
+    const now = Date.now();
+    for (const [k, v] of endedCopies) if (now - v.at > ENDED_COPY_KEEP_MS) endedCopies.delete(k);
+    endedCopies.set(sessionId, { owner, copy: publicCopy(copy), at: now });
+}
+
 app.get('/api/copy/:sessionId', (req, res) => {
     const session = browserUploadSessions.get(req.params.sessionId);
-    if (!session || !session.copy || !auth.canAccess(req, session.owner)) return res.status(404).json({ error: 'No copy for this session' });
-    res.json({ copy: publicCopy(session.copy) });
+    if (session && session.copy && auth.canAccess(req, session.owner)) return res.json({ copy: publicCopy(session.copy) });
+    const ended = endedCopies.get(req.params.sessionId);
+    if (ended && Date.now() - ended.at < ENDED_COPY_KEEP_MS && auth.canAccess(req, ended.owner)) return res.json({ copy: ended.copy });
+    res.status(404).json({ error: 'No copy for this session' });
 });
 
 setInterval(() => {
@@ -2319,7 +2338,7 @@ async function aemAssetHashes(baseUrl, damPath, username, password) {
     const timer = setTimeout(() => ac.abort(), SKIP_QUERY_TIMEOUT_MS);
     try {
         const r = await fetch(`${baseUrl.replace(/\/+$/, '')}/bin/querybuilder.json?${q}`, {
-            headers: { Authorization: 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64') }, signal: ac.signal,
+            headers: { Authorization: aemAuthorization(username, password) }, signal: ac.signal,
         });
         if (!r.ok) throw new Error(`AEM search answered HTTP ${r.status}`);
         const j = await r.json();

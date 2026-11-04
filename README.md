@@ -192,7 +192,7 @@ For thousands of small files the confirm dialog suggests **Build package** with 
 
 ### Allowed copy targets
 
-Team page, admins: the servers Copy from AEM may send customer content to (upload, package install, Create DITA profile). Add a server (https only) or remove one; a removed server is refused at once, also for copies already made and waiting for their upload. Each change is in the Copy log (who, added, removed). The list is saved in `copy-targets.json` (readable by the server user only, in the daily backup) and replaces `COPY_TARGETS` until **Reset to the server default**.
+Team page, admins: the servers Copy from AEM may send customer content to (upload, package install, Create DITA profile). Add a server (https; plain http only for a private network IP such as an on-prem `http://10.42.35.172:4502`) or remove one; a removed server is refused at once, also for copies already made and waiting for their upload. Each change is in the Copy log (who, added, removed). The list is saved in `copy-targets.json` (readable by the server user only, in the daily backup) and replaces `COPY_TARGETS` until **Reset to the server default**.
 
 ### Copy these too
 
@@ -210,7 +210,7 @@ Checked in the Guides code and on AEM as a Cloud Service; the tool checks these 
 
 ### Copy from AEM
 
-**Copy from AEM** copies a folder from another AEM Guides server (for example a customer's stage) to one of our servers, by upload or as a package. The source is only read: one QueryBuilder search, then the original renditions (8 at a time by default; Gentle 4 or Fast 16). Nothing is created, changed or locked there, and its password is used only during the copy.
+**Copy from AEM** copies a folder from another AEM Guides server (for example a customer's stage) to one of our servers, by upload or as a package. It works between AEM as a Cloud Service and on-prem AEM in any direction. For AEM Cloud, sign in with a local user, or paste an access token (Developer Console > Integrations > Local token) as the password with any username; the same works on the Upload page. The source is only read: one QueryBuilder search, then the original renditions (8 at a time by default; Gentle 4 or Fast 16). Nothing is created, changed or locked there, and its password is used only during the copy.
 
 - **Links keep working.** On UUID-based Guides servers files point at each other by GUID (`href="GUID-….dita"`), and GUIDs are given out per server. The copy turns every GUID link back into a relative path; the target's Guides converts those to its own GUIDs. Links to files outside the folder are resolved on the source and reported; GUIDs that no file has (already broken on the source) are reported and left as they are.
 - **Names are kept exactly** (a folder `v1.2` stays `v1.2`), and the target folder defaults to the same path as on the source: Guides DITA profiles point at absolute paths.

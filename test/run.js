@@ -48,6 +48,7 @@ const SUITES = {
     // last: they try wrong passwords on purpose, and the sign-in limit (10 failures a minute) would block the next suites
     team: api('team.js'),
     'signup-api': api('signup.js'),
+    'copy-api': api('copy.js'),
 };
 
 function writeFixtures() {

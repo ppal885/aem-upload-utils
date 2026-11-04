@@ -760,13 +760,14 @@
                         <p id="usernameErr" class="text-xs text-red-500 mt-1 hidden"></p>
                     </div>
                     <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">AEM password <span class="text-red-400">*</span></label>
+                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">AEM password or access token <span class="text-red-400">*</span></label>
                         <div class="relative">
                             <input id="password" type="password" placeholder="********"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-adobe-blue focus:border-transparent outline-none pr-14 transition" />
                             <button type="button" onclick="togglePassword()" id="pwToggle"
                                 class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs select-none px-1">Show</button>
                         </div>
+                        <p class="text-xs text-gray-400 mt-1">AEM Cloud: paste an access token from Developer Console (any username).</p>
                         <p id="passwordErr" class="text-xs text-red-500 mt-1 hidden"></p>
                     </div>
                 </div>
@@ -1085,8 +1086,8 @@
                 <div class="cp-field wide"><label for="cpSrcUrl">Source AEM server</label>
                     <input id="cpSrcUrl" type="text" placeholder="https://author-p12345-e67890.adobeaemcloud.com" autocomplete="off" /></div>
                 <div class="cp-field"><label for="cpSrcUser">Username</label><input id="cpSrcUser" type="text" autocomplete="off" /></div>
-                <div class="cp-field"><label for="cpSrcPass">Password</label><input id="cpSrcPass" type="password" autocomplete="new-password" />
-                    <div class="note">Used only during the copy, never stored.</div></div>
+                <div class="cp-field"><label for="cpSrcPass">Password or access token</label><input id="cpSrcPass" type="password" autocomplete="new-password" />
+                    <div class="note">Used only during the copy, never stored. AEM Cloud: an access token from Developer Console works (any username).</div></div>
                 <div class="cp-field wide"><label for="cpFolder">Folder to copy</label>
                     <input id="cpFolder" type="text" placeholder="/content/dam/crown" autocomplete="off" oninput="cpFolderChanged()" />
                     <div class="note">Include the folder with the DTDs too if it is separate; the check below tells you if something is missing.</div></div>
@@ -1107,7 +1108,7 @@
                     <select id="cpTgtUrl"></select>
                     <div class="note">Only the servers the admin allowed for copied content are listed.</div></div>
                 <div class="cp-field" data-cp-upload><label for="cpTgtUser">Username</label><input id="cpTgtUser" type="text" autocomplete="off" /></div>
-                <div class="cp-field" data-cp-upload><label for="cpTgtPass">Password</label><input id="cpTgtPass" type="password" autocomplete="new-password" /></div>
+                <div class="cp-field" data-cp-upload><label for="cpTgtPass">Password or access token</label><input id="cpTgtPass" type="password" autocomplete="new-password" /></div>
                 <div class="cp-field wide"><label for="cpTgtDam" id="cpTgtDamLabel">Into this DAM folder</label>
                     <input id="cpTgtDam" type="text" placeholder="content/dam" autocomplete="off" oninput="this.dataset.auto = '0'; cpFolderChanged(true)" />
                     <div class="note" id="cpLandNote"></div></div>
@@ -1256,7 +1257,7 @@
             <ul id="copyTargetsList" class="text-sm mb-3"></ul>
             <form class="flex flex-wrap items-end gap-3" onsubmit="event.preventDefault(); addCopyTarget();" novalidate>
                 <div class="flex-1 min-w-[260px]"><label for="newCopyTarget" class="block text-xs font-semibold text-gray-600 mb-1">Add a server</label>
-                    <input id="newCopyTarget" type="url" placeholder="https://author-p00000-e000000-cmstg.adobeaemcloud.com" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+                    <input id="newCopyTarget" type="url" placeholder="https://author-p00000-e000000-cmstg.adobeaemcloud.com or http://10.42.35.172:4502" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                 <button id="addCopyTargetBtn" type="submit" class="h-[38px] px-4 rounded-lg bg-adobe-blue text-white text-sm font-semibold hover:bg-adobe-darkBlue">Add server</button>
             </form>
             <p id="copyTargetsNote" class="mt-2 text-xs text-gray-500"></p>
@@ -3297,6 +3298,9 @@ let cpMode = 'upload';
 let cpSessionId = null;
 let cpPoll = null;
 let cpLast = null;
+// Status checks that may fail in a row (network blip, busy server, rate limit) before the page gives up on a job
+const CP_POLL_MAX_FAILS = 5;
+let cpPollFails = 0;
 
 async function cpLoadOptions() {
     try {
@@ -3304,7 +3308,7 @@ async function cpLoadOptions() {
         const box = document.getElementById('cpDisabled');
         box.classList.toggle('hidden', o.enabled);
         if (!o.enabled) box.textContent = 'Copying from another AEM server is not set up on this tool yet: an admin has to add the allowed target servers on the Team page.';
-        document.getElementById('cpStartBtn').disabled = !o.enabled;
+        document.getElementById('cpStartBtn').disabled = !o.enabled || !!cpSessionId;
         document.getElementById('cpPkgDownloadNote').textContent = o.packageDownload ? 'can be downloaded or installed' : 'cannot be downloaded';
         const sel = document.getElementById('cpTgtUrl');
         const keep = sel.value;
@@ -3402,7 +3406,7 @@ async function cpStart() {
         document.getElementById('cpSrcPass').value = '';
         note.textContent = '';
         cpShowRun();
-        cpPoll = setInterval(cpRefresh, 1000);
+        cpPollFails = 0;
         cpRefresh();
     } catch (e) {
         if (cpSessionId) { try { await fetch('/api/upload/browser/cancel/' + cpSessionId, { method: 'POST' }); } catch (_) { /* gone */ } }
@@ -3423,16 +3427,23 @@ function cpShowRun() {
     run.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// One request at a time: the next check is scheduled when this one has answered
 async function cpRefresh() {
-    if (!cpSessionId) return;
+    cpPoll = null;
+    const sid = cpSessionId;
+    if (!sid) return;
     let copy;
     try {
-        ({ copy } = await apiJson('/api/copy/' + cpSessionId));
+        ({ copy } = await apiJson('/api/copy/' + sid));
+        cpPollFails = 0;
     } catch (e) {
-        clearInterval(cpPoll);
+        if (sid !== cpSessionId) return;
+        // The copy keeps running on the server, so a failed check is tried again before giving up
+        if (++cpPollFails < CP_POLL_MAX_FAILS) { cpPoll = setTimeout(cpRefresh, 2000 * cpPollFails); return; }
         cpEnd('The copy is gone: ' + toErrorMessage(e));
         return;
     }
+    if (sid !== cpSessionId) return;
     cpLast = copy;
     const title = document.getElementById('cpRunTitle');
     const text = document.getElementById('cpProgressText');
@@ -3451,8 +3462,10 @@ async function cpRefresh() {
         title.textContent = 'Checking the DTD and DITA-OT setup…';
         bar.style.width = '100%';
         text.textContent = 'All files are here. Reading the DITA profiles on both servers.';
+    }
+    if (['listing', 'copying', 'checking'].includes(copy.state)) {
+        cpPoll = setTimeout(cpRefresh, 1000);
     } else {
-        clearInterval(cpPoll);
         if (copy.state === 'done') cpRenderResult(copy);
         else cpEnd(copy.state === 'cancelled' ? 'Copy cancelled.' : 'Copy failed: ' + (copy.error || 'unknown error'));
     }
@@ -3547,8 +3560,18 @@ function cpRelatedHtml(related) {
 }
 
 async function cpWait(fn, done, ms = 1000) {
+    let fails = 0;
     for (;;) {
-        const v = await fn();
+        let v;
+        try {
+            v = await fn();
+            fails = 0;
+        } catch (e) {
+            // The job keeps running on the server: only several failed checks in a row end the wait
+            if (++fails >= CP_POLL_MAX_FAILS) throw e;
+            await new Promise((r) => setTimeout(r, 2000 * fails));
+            continue;
+        }
         if (done(v)) return v;
         await new Promise((r) => setTimeout(r, ms));
     }
@@ -3627,11 +3650,12 @@ async function cpGo() {
             go.textContent = 'Building…';
             let { package: pkg } = await apiJson('/api/packages/build/' + cpSessionId, { method: 'POST' });
             cpSessionId = null;
-            while (pkg.state === 'building') {
-                await new Promise((r) => setTimeout(r, 800));
-                ({ package: pkg } = await apiJson('/api/packages/' + pkg.id));
-                const pr = pkg.progress || {};
-                go.textContent = 'Building… ' + (pr.files || 0).toLocaleString() + ' / ' + (pr.totalFiles || 0).toLocaleString();
+            if (pkg.state === 'building') {
+                ({ package: pkg } = await cpWait(() => apiJson('/api/packages/' + pkg.id), (r) => {
+                    const pr = r.package.progress || {};
+                    go.textContent = 'Building… ' + (pr.files || 0).toLocaleString() + ' / ' + (pr.totalFiles || 0).toLocaleString();
+                    return r.package.state !== 'building';
+                }, 800));
             }
             if (pkg.state !== 'ready') throw new Error(pkg.error || 'The package could not be built');
             showToast('Package ready: ' + pkg.downloadName + '. Install it from the Packages page.', 'success');
@@ -3651,6 +3675,8 @@ async function cpGo() {
         }
     } catch (e) {
         showToast(toErrorMessage(e), 'error');
+        // The files were already handed over (build or upload started): there is nothing to retry here
+        if (!cpSessionId) { cpReset(); showView(cpMode === 'package' ? 'packages' : 'upload'); return; }
         go.disabled = false;
         if (cpLast) cpRenderResult(cpLast);
     }
@@ -3659,14 +3685,14 @@ async function cpGo() {
 async function cpCancel() {
     if (cpSessionId) {
         if (cpLast && cpLast.state === 'done' && !confirm('Discard the copied files?')) return;
-        clearInterval(cpPoll);
+        clearTimeout(cpPoll);
         try { await fetch('/api/upload/browser/cancel/' + cpSessionId, { method: 'POST' }); } catch (_) { /* gone */ }
     }
     cpReset();
 }
 
 function cpReset() {
-    clearInterval(cpPoll);
+    clearTimeout(cpPoll);
     cpSessionId = null;
     cpLast = null;
     document.getElementById('cpRunStep').classList.add('hidden');

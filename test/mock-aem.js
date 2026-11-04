@@ -12,7 +12,13 @@ const DEFAULT_PROFILE = { id: 'b1aad0a7-9079-e56c-1ed8-6fcababe8166', name: 'Def
 let profiles = SEED.profiles || [DEFAULT_PROFILE];
 const writes = [];
 const USERS = { admin: 'Admin User', qeuser: 'QE User' };
-const userFor = (h) => { const m = Object.keys(USERS).find((u) => h === 'Basic ' + Buffer.from(u + ':' + u).toString('base64')); return m || null; };
+// An AEM Cloud style access token (a JWT) signs in as admin, like a Developer Console token
+const MOCK_TOKEN = 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJhZG1pbiJ9.mock';
+const userFor = (h) => {
+    if (h === 'Bearer ' + MOCK_TOKEN) return 'admin';
+    const m = Object.keys(USERS).find((u) => h === 'Basic ' + Buffer.from(u + ':' + u).toString('base64'));
+    return m || null;
+};
 const folders = new Set(['/content/dam']);
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const completedPaths = [];

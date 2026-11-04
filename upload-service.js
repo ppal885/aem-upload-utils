@@ -3,6 +3,7 @@ const fsPromises = require('fs').promises;
 const path = require('path');
 const AemNames = require('./public/aem-names');
 const adaptivePipelines = require('./lib/adaptive-pipelines');
+const { aemAuthorization } = require('./lib/aem-auth');
 
 // @adobe/aem-upload 2.0.3 silently drops every file named TestFile*, *.tmp or starting with "~"
 // (desktop-app scratch files). Real content uses such names, so only system files are skipped;
@@ -234,7 +235,7 @@ function checkAemCredentialsOnce(rawBaseUrl, username, password) {
         method: 'GET',
         timeout: CREDENTIAL_CHECK_TIMEOUT_MS,
         headers: {
-            Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`,
+            Authorization: aemAuthorization(username, password),
             Accept: 'application/json',
         },
     };
@@ -299,7 +300,6 @@ function runUpload(config, eventCallback) {
     const { damPath, localPaths, username, password } = config;
 
     const url = `${baseUrl.replace(/\/+$/, '')}/${damPath.replace(/^\/+/, '')}`;
-    const credentials = Buffer.from(`${username}:${password}`).toString('base64');
 
     svcLog.info(`Upload starting → ${url}`);
     svcLog.info(`  Local paths: ${localPaths.join(', ')}`);
@@ -318,7 +318,7 @@ function runUpload(config, eventCallback) {
 
     const httpOptions = {
         headers: {
-            Authorization: `Basic ${credentials}`,
+            Authorization: aemAuthorization(username, password),
         },
         // httptransfer drops the library's own timeout, so without this a stalled request never ends
         timeout: httpRequestTimeout,
