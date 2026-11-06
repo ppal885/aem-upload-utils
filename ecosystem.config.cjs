@@ -13,6 +13,8 @@ module.exports = {
     autorestart: true,
     watch: false,
     max_memory_restart: '4500M',
+    // shutdown() saves history and removes staging folders (SHUTDOWN_TIMEOUT_MS, 10 s): PM2's 1.6 s default cut it off
+    kill_timeout: 15000,
     // Many VMs mount /tmp as a small RAM-backed tmpfs; stage uploads on the app's disk instead
     // Account and mail settings are taken from the shell that runs `pm2 start` (see README, Configuration)
     env: {
@@ -22,7 +24,8 @@ module.exports = {
         'SMTP_USER', 'SMTP_PASS', 'SMTP_SECURE', 'MAIL_FROM', 'PACKAGES_DIR', 'PACKAGE_KEEP_DAYS', 'UPLOAD_PIPELINES',
         'TLS_CERT_FILE', 'TLS_KEY_FILE', 'HTTPS_PORT', 'HTTPS_ONLY', 'MIN_PASSWORD_LENGTH',
         'BACKUP_DIR', 'BACKUP_KEEP_DAYS', 'MAX_UPLOADS_PER_SERVER',
-        'COPY_TARGETS', 'COPY_ALLOW_DOWNLOAD', 'COPY_IDLE_MINUTES', 'COPY_PACKAGE_KEEP_HOURS', 'SESSIONS_FILE']
+        'COPY_TARGETS', 'COPY_ALLOW_DOWNLOAD', 'COPY_IDLE_MINUTES', 'COPY_PACKAGE_KEEP_HOURS', 'SESSIONS_FILE',
+        'BROWSE_ROOTS', 'API_KEY', 'LOG_FILE', 'LOG_LEVEL', 'SESSION_IDLE_HOURS', 'SESSION_MAX_HOURS', 'COPY_TARGETS_FILE', 'TEMP_MIN_FREE_MB']
         .filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])),
     },
     merge_logs: true,

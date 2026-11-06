@@ -828,6 +828,7 @@
                         <div id="browserFolderInfo" class="hidden flex items-center gap-1.5 mt-2 text-sm"></div>
                         <div id="systemFilesNote" class="hidden mt-2 text-xs text-gray-500"></div>
                         <div id="catalogNote" class="hidden catalog-note" role="alert"></div>
+                        <div id="linkNote" class="hidden catalog-note" role="status"></div>
                         <div id="skipTopFolderRow" class="hidden mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
                             <label for="skipLevels" class="block text-sm font-medium text-gray-700">Start the upload from</label>
                             <select id="skipLevels" class="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-800" onchange="updateSkipTopFolderHint()"></select>
@@ -1419,6 +1420,17 @@ let uploading = false;
 let currentUploadId = null;
 /** Chunked browser→server transfer (before finalize); cancel uses this when currentUploadId is not set yet */
 let chunkSessionId = null;
+// Package built from the selection: its session while files are still being sent
+let packageSessionId = null;
+
+// Files still on their way from this browser (upload transfer, package files) or a copy waiting on this page
+// cannot be picked up again after a reload: ask before leaving. The AEM upload itself can be reconnected.
+window.addEventListener('beforeunload', (e) => {
+    const sending = (chunkSessionId && !currentUploadId) || packageBuilding;
+    if (!sending && !(typeof cpSessionId !== 'undefined' && cpSessionId)) return;
+    e.preventDefault();
+    e.returnValue = '';
+});
 let chunkTransferAbort = false;
 const activeChunkXhrs = new Set();
 /** Active SSE for AEM upload progress (set in connectSSE) */
@@ -1928,6 +1940,72 @@ function selectNewFiles(entries) {
     if (sel) sel.value = '0';
     setBrowserFileEntries(kept);
     scanCatalogs(kept);
+    scanLinks(kept);
+}
+
+// ─── DITA links in the selection (see AemNames.ditaLinkProblems) ───
+// Maps are always read; topics while the total stays small, so a 50K-file selection is not read in full
+const LINK_SCAN_MAX_FILES = 20000;
+const LINK_SCAN_MAX_BYTES = 64 * 1024 * 1024;
+let selectionLinks = null;
+let linkScanToken = 0;
+
+async function scanLinks(entries) {
+    const token = ++linkScanToken;
+    selectionLinks = null;
+    renderLinkNote();
+    const dita = entries.filter((e) => AemNames.isDitaLinkFile(e.file.name) && e.file.size < 4 * 1024 * 1024);
+    if (!dita.length) return;
+    const maps = dita.filter((e) => /\.(ditamap|bookmap)$/i.test(e.file.name));
+    const topics = dita.filter((e) => !/\.(ditamap|bookmap)$/i.test(e.file.name));
+    const pick = [...maps];
+    let bytes = maps.reduce((n, e) => n + e.file.size, 0);
+    for (const t of topics) {
+        if (pick.length >= LINK_SCAN_MAX_FILES || bytes + t.file.size > LINK_SCAN_MAX_BYTES) break;
+        pick.push(t);
+        bytes += t.file.size;
+    }
+    const files = [];
+    let next = 0;
+    const read = async () => {
+        while (next < pick.length && token === linkScanToken) {
+            const e = pick[next++];
+            try { files.push({ relPath: (e.relativePath || e.file.name), text: await e.file.text() }); } catch (_) { /* unreadable: not checked */ }
+        }
+    };
+    await Promise.all([read(), read(), read(), read(), read(), read(), read(), read()]);
+    if (token !== linkScanToken) return;
+    selectionLinks = { ...AemNames.ditaLinkProblems(files, relPathsOf(entries)), total: dita.length };
+    renderLinkNote();
+}
+
+function linkWarningText() {
+    const r = selectionLinks;
+    if (!r || (!r.guidCount && !r.missingCount)) return '';
+    return (r.guidCount ? r.guidCount.toLocaleString() + ' link(s) in ' + r.guidFiles.toLocaleString() + ' file(s) point at GUID file names (GUID-….dita) that are not in the selection. ' : '')
+        + (r.missingCount ? r.missingCount.toLocaleString() + ' link(s) point at files that are not in the selection. ' : '')
+        + 'They will be broken in AEM.';
+}
+
+function renderLinkNote() {
+    const box = document.getElementById('linkNote');
+    if (!box) return;
+    const r = selectionLinks;
+    if (!r || !r.links) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    const partial = r.files < r.total ? ' (checked ' + r.files.toLocaleString() + ' of ' + r.total.toLocaleString() + ' DITA files: all maps, then topics)' : '';
+    box.classList.remove('hidden');
+    const bad = r.guidCount || r.missingCount;
+    box.classList.toggle('bad', !!bad);
+    box.classList.toggle('info', !bad);
+    if (!bad) { box.innerHTML = '<strong>Links checked.</strong> All ' + r.links.toLocaleString() + ' hrefs and conrefs point at files in the selection' + esc(partial) + '.'; return; }
+    const li = (x) => '<li><code>' + esc(x.from.split('/').slice(-2).join('/')) + '</code> &rarr; <code>' + esc(x.ref) + '</code></li>';
+    let html = '<strong>Broken links found</strong>' + esc(partial) + '. ' + esc(linkWarningText());
+    if (r.guidCount) {
+        html += '<p class="mt-1">GUID file names come from another UUID-based Guides server (GUIDs are given out per server). Copy the content with <strong>Copy from AEM</strong>, which turns them back into paths, or export it from the source with paths.</p>'
+            + '<ul>' + r.guid.slice(0, 5).map(li).join('') + '</ul>';
+    }
+    if (r.missingCount) html += '<p class="mt-1">Not in the selection:</p><ul>' + r.missing.slice(0, 5).map(li).join('') + '</ul>';
+    box.innerHTML = html;
 }
 
 // ─── DTD catalogs in the selection (see AemNames.catalogProblems) ───
@@ -1976,7 +2054,7 @@ function catalogRenames() {
 function selectionZipTargets() {
     const dam = AemNames.normalizeDamPath(val('damPath')).path;
     const rel = relPathsOf(browserFileEntries);
-    const plan = dam ? AemNames.planUpload(rel, dam, skipLevels(), keepNamesOn()) : null;
+    const plan = dam ? AemNames.planUpload(rel, dam, skipLevels(), keepNamesOn(), workMode !== 'package') : null;
     return selectionZips.map((z) => ({ ...z, landed: plan ? plan.landed[rel.indexOf(z.relPath)] : '' }));
 }
 
@@ -2014,7 +2092,7 @@ function selectionCatalogTargets() {
     const dam = AemNames.normalizeDamPath(val('damPath')).path;
     if (!dam) return [];
     const rel = relPathsOf(browserFileEntries);
-    const plan = AemNames.planUpload(rel, dam, skipLevels(), keepNamesOn());
+    const plan = AemNames.planUpload(rel, dam, skipLevels(), keepNamesOn(), workMode !== 'package');
     const roots = selectionCatalogs.map((c) => plan.landed[rel.indexOf(c.relPath)]).filter(Boolean);
     const top = roots.length ? Math.min(...roots.map((p) => p.split('/').length)) : 0;
     return roots.filter((p) => p.split('/').length === top);
@@ -2130,6 +2208,9 @@ function clearBrowserFiles() {
     if (folderInfoEl) folderInfoEl.classList.add('hidden');
     document.getElementById('folderTreeContainer').classList.add('hidden');
     document.getElementById('browserFileInput').value = '';
+    linkScanToken++;
+    selectionLinks = null;
+    renderLinkNote();
 }
 
 // ═══ Background Upload Recovery ═══
@@ -3513,6 +3594,10 @@ function cpRenderResult(copy) {
         html += '<div class="cp-verdict warn"><div>' + d.unresolvedCount + ' link(s) point to a GUID that no file on the source has (already broken there), for example <span class="cp-mono">'
             + esc(d.unresolvedGuids[0]) + '</span>. They are copied as they are.</div></div>';
     }
+    if (d.unreadable && d.unreadable.length) {
+        html += '<div class="cp-verdict warn"><div>' + d.unreadable.length + ' DITA file(s) are not UTF-8 (UTF-16, or another encoding declared in the file), for example <span class="cp-mono">'
+            + esc(d.unreadable[0]) + '</span>. They are copied byte for byte, but their GUID links are not turned into paths: check those links after the upload.</div></div>';
+    }
     const src = setup.source;
     if (src || (setup.doctypes && setup.doctypes.length)) {
         html += '<details class="cp-details"><summary>Details: DITA profile, DTDs and DITA-OT</summary>';
@@ -3725,7 +3810,7 @@ function setAemDialogButtons(buttons) {
 }
 
 function closeAemDialog() {
-    clearInterval(aemDialogTimer);
+    clearTimeout(aemDialogTimer);
     aemDialogTimer = null;
     document.getElementById('aemDialog').classList.add('hidden');
 }
@@ -3768,13 +3853,20 @@ async function runAemStatus(target, quiet) {
         const { status } = await apiJson('/api/guides/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...auth, folder }) });
         target.creds = target.creds || (auth.username ? { username: auth.username, password: auth.password } : null);
         out.innerHTML = renderAemStatus(status, target);
-        clearInterval(aemDialogTimer);
-        if (!status.finished && !document.getElementById('aemDialog').classList.contains('hidden')) {
-            aemDialogTimer = setInterval(() => runAemStatus(target, true), 30000);
-        }
+        // The next check starts 30 s after this one answered: a check can take a minute, so a fixed interval overlapped
+        if (!status.finished) scheduleAemStatus(target, 30000);
     } catch (e) {
         out.innerHTML = '<p class="text-sm text-red-600 mt-2">' + esc(toErrorMessage(e)) + '</p>';
+        // An automatic refresh that fails tries again later instead of stopping for good
+        if (quiet) scheduleAemStatus(target, 60000);
     }
+}
+
+function scheduleAemStatus(target, ms) {
+    clearTimeout(aemDialogTimer);
+    aemDialogTimer = null;
+    if (document.getElementById('aemDialog').classList.contains('hidden')) return;
+    aemDialogTimer = setTimeout(() => runAemStatus(target, true), ms);
 }
 
 function renderAemStatus(st, target) {
@@ -3815,8 +3907,7 @@ async function reprocessFromDialog() {
     try {
         const r = await apiJson('/api/guides/reprocess', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dialogCredentials(target), folder }) });
         showToast('Reprocess started: ' + (r.message || ''), 'success');
-        clearInterval(aemDialogTimer);
-        aemDialogTimer = setInterval(() => runAemStatus(target, true), 30000);
+        scheduleAemStatus(target, 30000);
     } catch (e) {
         showToast('Reprocess not started: ' + toErrorMessage(e), 'error');
     }
@@ -3951,6 +4042,8 @@ async function runReadyCheck(target, open) {
             body: JSON.stringify({ baseUrl: target.baseUrl, ...target.creds, folder: target.folder }) }));
     } catch (e) {
         if (!box.classList.contains('hidden')) box.innerHTML = '<p class="text-sm text-gray-500"><strong class="text-gray-800">Ready in AEM?</strong> Could not check: ' + esc(toErrorMessage(e)) + ' ' + open + '</p>';
+        // Tried again later (AEM busy, network blip) instead of stopping after one failed request
+        if (!box.classList.contains('hidden') && Date.now() < readyStopAt) readyTimer = setTimeout(() => runReadyCheck(target, open), 60000);
         return;
     }
     if (box.classList.contains('hidden')) return;
@@ -4113,6 +4206,7 @@ async function buildPackageFromSelection() {
     const plan = AemNames.planUpload(relPathsOf(entries), dam.path, skipLevels(), keepNamesOn());
     if (catalogRenames().length && !confirm('DTD catalog paths would break because names change (see the warning). Build anyway?')) return;
     if (plan.clashes.length && !confirm(plan.clashes.length + ' file(s) would overwrite another file after renaming. Build anyway?')) return;
+    if (linkWarningText() && !confirm(linkWarningText() + ' Build anyway?')) return;
     const totalBytes = entries.reduce((n, e) => n + e.file.size, 0);
 
     packageBuilding = true;
@@ -4124,34 +4218,54 @@ async function buildPackageFromSelection() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ damPath: dam.path, packageName, version, group, totalBytes, fileCount: entries.length, keepNames: keepNamesOn() }),
         });
+        packageSessionId = sessionId;
         const CHUNK = 500;
         const chunks = [];
         for (let i = 0; i < entries.length; i += CHUNK) chunks.push(i);
         let sentBytes = 0;
         let next = 0;
+        let sendFailed = false;
         const sendNext = async () => {
-            while (next < chunks.length) {
-                const start = chunks[next++];
+            while (next < chunks.length && !sendFailed) {
+                const idx = next++;
+                const start = chunks[idx];
                 const slice = entries.slice(start, start + CHUNK);
                 const fd = new FormData();
+                // The index lets the server ignore a retried chunk it already stored (the first answer was lost)
+                fd.append('chunkIndex', String(idx));
+                fd.append('totalChunks', String(chunks.length));
                 slice.forEach((e) => fd.append('files', e.file, e.file.name));
                 fd.append('_relativePaths', JSON.stringify(paths.slice(start, start + CHUNK)));
                 let ok = false;
-                for (let attempt = 0; attempt < 3 && !ok; attempt++) {
-                    try { await apiJson('/api/upload/browser/chunk/' + sessionId, { method: 'POST', body: fd }); ok = true; } catch (e) { if (attempt === 2) throw e; }
+                for (let attempt = 0; attempt < 3 && !ok && !sendFailed; attempt++) {
+                    try { await apiJson('/api/upload/browser/chunk/' + sessionId, { method: 'POST', body: fd }); ok = true; } catch (e) { if (attempt === 2) { sendFailed = true; throw e; } }
                 }
                 sentBytes += slice.reduce((n, e) => n + e.file.size, 0);
                 setPackageProgress('Sending files to the server… ' + fmtBytes(sentBytes) + ' of ' + fmtBytes(totalBytes), totalBytes ? (sentBytes * 60) / totalBytes : 30);
             }
         };
-        await Promise.all([sendNext(), sendNext(), sendNext(), sendNext()]);
+        try {
+            await Promise.all([sendNext(), sendNext(), sendNext(), sendNext()]);
+        } catch (e) {
+            sendFailed = true;
+            // Nothing will be built from a half-sent selection: free its files on the server now, not in 8 hours
+            fetch('/api/upload/browser/cancel/' + sessionId, { method: 'POST' }).catch(() => {});
+            throw e;
+        }
         let { package: pkg } = await apiJson('/api/packages/build/' + sessionId, { method: 'POST' });
-        while (pkg.state === 'building') {
-            await new Promise((r) => setTimeout(r, 800));
-            ({ package: pkg } = await apiJson('/api/packages/' + pkg.id));
-            const pr = pkg.progress || {};
-            setPackageProgress('Building package… ' + (pr.files || 0).toLocaleString() + ' of ' + (pr.totalFiles || entries.length).toLocaleString() + ' files',
-                60 + (pr.totalFiles ? (pr.files * 40) / pr.totalFiles : 0));
+        packageSessionId = null;
+        if (pkg.state === 'building') {
+            try {
+                ({ package: pkg } = await cpWait(() => apiJson('/api/packages/' + pkg.id), (r) => {
+                    const pr = r.package.progress || {};
+                    setPackageProgress('Building package… ' + (pr.files || 0).toLocaleString() + ' of ' + (pr.totalFiles || entries.length).toLocaleString() + ' files',
+                        60 + (pr.totalFiles ? (pr.files * 40) / pr.totalFiles : 0));
+                    return r.package.state !== 'building';
+                }, 800));
+            } catch (e) {
+                // The build goes on on the server; the Packages page shows how it ends
+                throw new Error('Lost track of the build (' + toErrorMessage(e) + '). It may still finish: see the Packages page.');
+            }
         }
         if (pkg.state !== 'ready') throw new Error(pkg.error || 'The package could not be built');
         setPackageProgress('Package ready: ' + pkg.downloadName + ' (' + fmtBytes(pkg.zipBytes) + ')', 100);
@@ -4162,6 +4276,7 @@ async function buildPackageFromSelection() {
         showToast('Package not built: ' + toErrorMessage(e), 'error');
     } finally {
         packageBuilding = false;
+        packageSessionId = null;
         btn.removeAttribute('disabled');
     }
 }
@@ -4171,6 +4286,8 @@ function dismissCloudNote() {
     try { localStorage.setItem('cloudPkgNoteDismissed', '1'); } catch (_) { /* per-browser only */ }
 }
 
+let packagesTimer = null;
+
 async function loadPackages() {
     try { if (localStorage.getItem('cloudPkgNoteDismissed') === '1') document.getElementById('cloudPkgNote').classList.add('hidden'); } catch (_) { /* show it */ }
     const body = document.getElementById('pkgBody');
@@ -4178,7 +4295,9 @@ async function loadPackages() {
         const { packages, httpsUrl, copyDownload } = await apiJson('/api/packages');
         showInsecureDownloadNote(httpsUrl);
         renderPackages(packages || [], copyDownload === true);
-        if ((packages || []).some((p) => p.state === 'building')) setTimeout(() => { if (!document.getElementById('viewPackages').classList.contains('hidden')) loadPackages(); }, 1500);
+        // One refresh timer: every visit to Packages used to start its own 1.5 s chain while a build ran
+        clearTimeout(packagesTimer);
+        if ((packages || []).some((p) => p.state === 'building')) packagesTimer = setTimeout(() => { if (!document.getElementById('viewPackages').classList.contains('hidden')) loadPackages(); }, 1500);
     } catch (e) {
         body.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-sm text-red-600">Could not load packages: ' + esc(toErrorMessage(e)) + '</td></tr>';
     }
@@ -4324,7 +4443,7 @@ async function initiateUpload() {
         return;
     }
 
-    const plan = AemNames.planUpload(relPathsOf(browserFileEntries), damPath, skipLevels(), keepNamesOn());
+    const plan = AemNames.planUpload(relPathsOf(browserFileEntries), damPath, skipLevels(), keepNamesOn(), true);
     const skippedFolders = commonSelectedFolders().slice(0, skipLevels());
     const exampleIdx = plan.landed.findIndex((p) => p.split('/').length === Math.max(...plan.landed.slice(0, 200).map((x) => x.split('/').length)));
     let folderNote = '<p class="mt-2 text-xs text-gray-500">Example: <span class="font-mono break-all">' + esc(plan.landed[Math.max(0, exampleIdx)] || '') + '</span></p>';
@@ -4351,6 +4470,9 @@ async function initiateUpload() {
         folderNote += '<div class="mt-2 text-xs text-red-700 bg-red-50 rounded p-2"><strong>' + plan.clashes.length
             + ' file' + (plan.clashes.length !== 1 ? 's' : '') + ' would overwrite another file</strong> after renaming:<ul class="mt-1 font-mono break-all">'
             + plan.clashes.slice(0, 3).map((c) => '<li>' + esc(c.a) + ' + ' + esc(c.b) + '</li>').join('') + '</ul></div>';
+    }
+    if (linkWarningText()) {
+        folderNote += '<div class="mt-2 text-xs text-red-700 bg-red-50 rounded p-2"><strong>Broken links</strong>: ' + esc(linkWarningText()) + ' See the note under the file list.</div>';
     }
     if (plan.tooLong.length) {
         folderNote += '<div class="mt-2 text-xs text-red-700 bg-red-50 rounded p-2"><strong>' + plan.tooLong.length
@@ -4475,8 +4597,16 @@ async function confirmUpload() {
         }
         Logger.error('Upload failed:', toErrorMessage(e));
         if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
-        showUploadStartError(toErrorMessage(e));
-        setUploading(false);
+        if (e.mayHaveStarted) {
+            chunkSessionId = null;
+            showUploadStartError(toErrorMessage(e), 'The answer from the server was lost, so the AEM upload may have started anyway. Check the banner above or Upload History before starting it again.');
+            setUploading(false);
+            bannerDismissed = false;
+            checkForActiveUploads();
+        } else {
+            showUploadStartError(toErrorMessage(e));
+            setUploading(false);
+        }
     }
     pendingUploadBody = null;
 }
@@ -4660,6 +4790,9 @@ async function doBrowserUpload(config) {
         hideTransferPanel();
         const ce = toErrorMessage(chunkError);
         if (/cancel/i.test(ce)) throw new Error('TRANSFER_CANCELLED');
+        // The half-sent files would stay on the server until the 8-hour clean-up
+        fetch('/api/upload/browser/cancel/' + sessionId, { method: 'POST' }).catch(() => {});
+        chunkSessionId = null;
         throw new Error('Failed to send chunks: ' + ce);
     }
 
@@ -4693,7 +4826,11 @@ async function doBrowserUpload(config) {
     }
     if (!finalRes.ok) {
         hideTransferPanel();
-        throw new Error(toErrorMessage(finalRes.data.error || 'Failed to finalize upload'));
+        const err = new Error(toErrorMessage(finalRes.data.error || 'Failed to finalize upload'));
+        // No answer (network, laptop asleep) or a gateway error: the server may well have started the upload
+        if (finalRes.status === 0 || finalRes.status >= 502) err.mayHaveStarted = true;
+        else chunkSessionId = null;
+        throw err;
     }
 
     const { uploadId } = finalRes.data;
@@ -5221,6 +5358,8 @@ async function fetchUploadStatus(uploadId) {
     try {
         const r = await fetch('/api/upload/status/' + uploadId);
         if (r.status === 404) return { gone: true };
+        // Signed out (session ended, account disabled): reconnecting cannot work until the person signs in again
+        if (r.status === 401 || r.status === 403) return { authLost: true };
         if (!r.ok) return null;
         return await r.json();
     } catch (_) {
@@ -5228,15 +5367,24 @@ async function fetchUploadStatus(uploadId) {
     }
 }
 
-// The done event can be missed (stream lost, or the server's replay buffer already cleared)
-function finishWithoutDoneEvent() {
+// The done event can be missed (stream lost, or the server's replay buffer already cleared).
+// gone: the server no longer knows the upload: it finished, or a restart interrupted it (then it is under
+// Interrupted uploads with a Resume button), so the page must not claim it finished.
+function finishWithoutDoneEvent(gone) {
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
     if (activeUploadEventSource) { try { activeUploadEventSource.close(); } catch (_) {} activeUploadEventSource = null; }
     setUploading(false);
     updatePageTitle(-1);
     sessionStorage.removeItem('activeUploadId');
-    document.getElementById('progressLabel').textContent = 'Upload finished — see Upload History for the result';
+    sseReconnects.delete(currentUploadId);
     loadHistory();
+    if (gone) {
+        document.getElementById('progressLabel').textContent = 'The upload is no longer running on the server: see Upload History, or Interrupted uploads to resume it';
+        loadInterrupted();
+        showToast('The connection was lost and the upload is no longer running: it finished, or a server restart interrupted it. Upload History has the result; an interrupted upload can be resumed above.', 'info');
+        return;
+    }
+    document.getElementById('progressLabel').textContent = 'Upload finished — see Upload History for the result';
     showToast('The upload finished while the connection was lost. See Upload History for the result.', 'info');
 }
 
@@ -5260,10 +5408,28 @@ function runUploadInBackground() {
     showToast('The upload keeps running on the server. You can start another one now; "View Progress" on the banner shows it again.', 'success');
 }
 
+// Reconnect attempts per upload: kept outside connectSSE, whose every reconnect would otherwise start again at 0
+const sseReconnects = new Map();
+const SSE_MAX_RECONNECTS = 10;
+
+/** Stops following an upload on this page; it keeps running on the server and the banner offers it again. */
+function stopFollowingUpload(uploadId, message) {
+    sseReconnects.delete(uploadId);
+    showToast(message, 'info');
+    if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+    setUploading(false);
+    updatePageTitle(-1);
+    // Do not auto-reconnect to this upload again; the banner offers it instead
+    window._noAutoReconnectId = uploadId;
+    bannerDismissed = false;
+    checkForActiveUploads();
+}
+
 async function reconnectOrFinish(uploadId) {
     const st = await fetchUploadStatus(uploadId);
     if (!uploading) return;
-    if (st && (st.gone || st.done)) { finishWithoutDoneEvent(); return; }
+    if (st && (st.gone || st.done)) { finishWithoutDoneEvent(!!st.gone); return; }
+    if (st && st.authLost) { stopFollowingUpload(uploadId, 'You were signed out. The upload continues on the server: sign in again and use "View Progress" on the banner.'); return; }
     connectSSE(uploadId, true);
 }
 
@@ -5296,7 +5462,9 @@ function connectSSE(uploadId, isReconnect = false) {
 
     const es = new EventSource('/api/upload/stream/' + uploadId);
     activeUploadEventSource = es;
-    let reconnects = 0;
+    if (!isReconnect) sseReconnects.set(uploadId, 0);
+    // A connection that stays up for a while earns its reconnect attempts back (long uploads see the odd blip)
+    es.addEventListener('open', () => setTimeout(() => { if (activeUploadEventSource === es) sseReconnects.set(uploadId, 0); }, 30000));
     let _doneReceived = false;
 
     es.addEventListener('queued', (e) => {
@@ -5480,25 +5648,19 @@ function connectSSE(uploadId, isReconnect = false) {
     es.onerror = () => {
         es.close();
         if (activeUploadEventSource === es) activeUploadEventSource = null;
-        if (_doneReceived) return;
-        if (uploading && reconnects < 10) {
-            reconnects++;
-            const delay = Math.min(2000 * reconnects, 15000);
-            Logger.warn('SSE connection lost, reconnecting in', delay + 'ms (attempt', reconnects + '/10)');
+        if (_doneReceived) { sseReconnects.delete(uploadId); return; }
+        const reconnects = sseReconnects.get(uploadId) || 0;
+        if (uploading && reconnects < SSE_MAX_RECONNECTS) {
+            sseReconnects.set(uploadId, reconnects + 1);
+            const delay = Math.min(2000 * (reconnects + 1), 15000);
+            Logger.warn('SSE connection lost, reconnecting in', delay + 'ms (attempt', (reconnects + 1) + '/' + SSE_MAX_RECONNECTS + ')');
             setTimeout(() => { if (uploading) reconnectOrFinish(uploadId); }, delay);
         } else if (uploading) {
             fetchUploadStatus(uploadId).then((st) => {
                 if (!uploading) return;
-                if (st && (st.gone || st.done)) { finishWithoutDoneEvent(); return; }
+                if (st && (st.gone || st.done)) { finishWithoutDoneEvent(!!st.gone); return; }
                 Logger.warn('SSE reconnection exhausted — upload continues in background');
-                showToast('Connection lost — the upload continues on the server. Use "View Progress" on the banner to reconnect.', 'info');
-                if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
-                setUploading(false);
-                updatePageTitle(-1);
-                // Do not auto-reconnect to this upload again; the banner offers it instead
-                window._noAutoReconnectId = uploadId;
-                bannerDismissed = false;
-                checkForActiveUploads();
+                stopFollowingUpload(uploadId, 'Connection lost — the upload continues on the server. Use "View Progress" on the banner to reconnect.');
             });
         }
     };
@@ -5507,7 +5669,7 @@ function connectSSE(uploadId, isReconnect = false) {
 // ═══ Summary ═══
 // Failures before the AEM upload starts (credentials, server space, chunk transfer). resetProgress()
 // hides #progressPanel, which contains #summaryBar, so it must be shown again here.
-function showUploadStartError(message) {
+function showUploadStartError(message, note = 'No files were sent to AEM.') {
     hideTransferPanel();
     const panel = document.getElementById('progressPanel');
     panel.classList.remove('hidden');
@@ -5518,7 +5680,7 @@ function showUploadStartError(message) {
     bar.innerHTML = `<div role="alert" class="flex items-start gap-3 text-red-700 bg-red-50 rounded-lg p-4 dark:bg-red-900/30 dark:text-red-300">
         <svg class="h-6 w-6 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         <div><div class="font-semibold">Upload did not start</div><div class="text-sm">${esc(message)}</div>
-        <div class="text-xs mt-1">No files were sent to AEM.</div></div></div>`;
+        <div class="text-xs mt-1">${esc(note)}</div></div></div>`;
     panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
     showToast(message, 'error');
 }

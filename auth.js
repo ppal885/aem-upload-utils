@@ -186,6 +186,13 @@ function registerUser({ email, name, password }) {
 
 const RESET_TOKEN_MS = 60 * 60 * 1000;
 
+/** Constant-time comparison, so response timing does not reveal how much of the API key was right. */
+function sameSecret(a, b) {
+    const x = crypto.createHash('sha256').update(String(a)).digest();
+    const y = crypto.createHash('sha256').update(String(b)).digest();
+    return crypto.timingSafeEqual(x, y);
+}
+
 function tokenHash(token) {
     return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -392,7 +399,7 @@ function requireAuth(log) {
         }
         if (API_KEY) {
             const provided = req.headers['x-api-key'] || req.query.apiKey;
-            if (provided === API_KEY) {
+            if (sameSecret(provided, API_KEY)) {
                 req.user = { id: 'api-key', email: 'api-key', key: 'api-key', name: 'API key', role: 'admin', isAdmin: true, viaApiKey: true };
                 return next();
             }

@@ -461,11 +461,11 @@ async function buildPackage({
                 skipped.push({ path: abs, reason: `cannot map to a valid JCR name ("${jcrName}")` });
                 continue;
             }
-            // FileVault reads "<x>.dir/" as the extended serialization of sibling node "<x>"; an asset node
-            // literally named "*.dir" would be misread on install. Folder names cannot end in ".dir" (the
-            // folder cleaning turns "." into "-").
-            if (!isDir && jcrName.endsWith('.dir')) {
-                skipped.push({ path: abs, reason: 'asset name ending in ".dir" collides with FileVault .dir syntax' });
+            // FileVault reads "<x>.dir/" as the extended serialization of sibling node "<x>"; a node literally
+            // named "*.dir" would be misread on install. Cleaned folder names cannot end in ".dir" ("." becomes "-"),
+            // but kept names (Keep names exactly, copies from AEM) can, for folders as well as assets.
+            if ((!isDir || keepNames) && jcrName.endsWith('.dir')) {
+                skipped.push({ path: abs, reason: `${isDir ? 'folder' : 'asset'} name ending in ".dir" collides with FileVault .dir syntax` });
                 continue;
             }
             if (used.has(jcrName)) {
