@@ -905,7 +905,8 @@ app.post('/api/auth/forgot', accountLimiter, async (req, res) => {
         return res.status(429).json({ error: 'A reset was already requested several times for this email. Try again in an hour, or ask an admin.' });
     }
     recent.push(now);
-    if (forgotByEmail.size > 10000) forgotByEmail.clear();
+    // Drop only the entries whose hour has passed: clearing everything would reset the limit for every email
+    if (forgotByEmail.size > 10000) for (const [k, times] of forgotByEmail) if (!times.some((t) => now - t < 60 * 60 * 1000)) forgotByEmail.delete(k);
     forgotByEmail.set(key, recent);
     let request;
     try {
@@ -2058,7 +2059,7 @@ app.post('/api/admin/copy-targets', auth.requireAdmin, (req, res) => {
 app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async (req, res) => {
     const session = browserUploadSessions.get(req.params.sessionId);
     if (!session || !auth.canAccess(req, session.owner)) return res.status(404).json({ error: 'Session not found or expired' });
-    if (session.copy || session.finalized || session.files.length) return res.status(409).json({ error: 'This session already has files' });
+    if (session.copy || session.copyStarting || session.finalized || session.files.length) return res.status(409).json({ error: 'This session already has files' });
     if (session.mode !== 'package' && !isAllowedCopyTarget(session.config.baseUrl)) {
         return res.status(403).json({ error: copyTargetError(session.config.baseUrl), code: 'COPY_TARGET_NOT_ALLOWED' });
     }
@@ -2077,7 +2078,10 @@ app.post('/api/copy/:sessionId/start', uploadLimiter, refuseWhenDraining, async 
             return res.status(409).json({ error: `The copy would land on ${landing}, inside the folder it is copied from on the same server. Choose another target folder.`, code: 'COPY_ONTO_SOURCE' });
         }
     }
+    // Claimed before the await: two Start clicks would otherwise run two copies into the same staging folder
+    session.copyStarting = true;
     const cred = await checkAemCredentials(origin, username, password);
+    session.copyStarting = false;
     if (!cred.ok) return res.status(400).json({ error: 'Source AEM: ' + cred.error, code: cred.code });
 
     const copy = {
@@ -2246,12 +2250,23 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No files in chunk' });
     }
+    // A retried chunk the server already stored (the browser lost the first answer) must not be added twice
+    if (req.body.chunkIndex !== undefined) {
+        session.chunksReceived = session.chunksReceived || new Set();
+        const idx = String(req.body.chunkIndex);
+        if (session.chunksReceived.has(idx)) {
+            dropChunk();
+            log.info(`Chunk ${Number(idx) + 1} for session ${req.params.sessionId} arrived again; kept the first copy`);
+            return res.json({ received: session.receivedFiles, receivedBytes: session.totalReceivedBytes, chunkIndex: Number(idx), duplicate: true });
+        }
+    }
     const incoming = req.files.reduce((n, f) => n + f.size, 0);
     if (session.declaredBytes != null && session.totalReceivedBytes + incoming > session.declaredBytes * 1.1 + DECLARED_SIZE_SLACK_BYTES) {
         dropChunk();
         log.warn(`Session ${req.params.sessionId}: refused a chunk, more data than the ${Math.round(session.declaredBytes / 1048576)} MB declared`);
         return res.status(413).json({ error: 'This upload is larger than the size given when it started. Start the upload again.', code: 'OVER_DECLARED_SIZE' });
     }
+    if (req.body.chunkIndex !== undefined) session.chunksReceived.add(String(req.body.chunkIndex));
 
     // Parse relative paths for this chunk
     let chunkRelPaths = [];
@@ -2296,8 +2311,8 @@ app.post('/api/upload/browser/chunk/:sessionId', (req, res, next) => {
 const SKIP_QUERY_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function stagedTargets(contentChildren, damPath, keepNodeNames) {
-    const fName = keepNodeNames ? AemNames.keepNodeName : AemNames.folderNodeName;
-    const aName = keepNodeNames ? AemNames.keepNodeName : AemNames.assetNodeName;
+    const fName = keepNodeNames ? AemNames.keepUploadFolderName : AemNames.folderNodeName;
+    const aName = keepNodeNames ? AemNames.keepUploadAssetName : AemNames.assetNodeName;
     const out = [];
     const base = '/' + String(damPath).replace(/^\/+|\/+$/g, '');
     const walk = async (abs, remote) => {
@@ -2446,7 +2461,7 @@ function landedFolder(damPath, contentChildren, keepNames) {
     try { st = fs.statSync(contentChildren[0]); } catch (_) { return root; }
     if (!st.isDirectory()) return root;
     const name = nodePath.basename(contentChildren[0]);
-    return `${root}/${keepNames ? AemNames.keepNodeName(name) : AemNames.folderNodeName(name)}`;
+    return `${root}/${keepNames ? AemNames.keepUploadFolderName(name) : AemNames.folderNodeName(name)}`;
 }
 
 async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, password, settings, tempDir, contentChildren,
@@ -2819,8 +2834,12 @@ app.post('/api/upload/interrupted/:id/resume', uploadLimiter, refuseWhenDraining
     const password = (req.body || {}).password;
     const username = ((req.body || {}).username || job.username || '').trim();
     if (!password) return res.status(400).json({ error: 'Enter the AEM password to resume' });
+    // Claimed before the first await: a second click must not start the same files twice (or let Discard delete them)
+    if (job.resuming) return res.status(409).json({ error: 'This upload is already being resumed' });
+    job.resuming = true;
+    const release = () => { job.resuming = false; };
     const cred = await checkAemCredentials(job.baseUrl, username, password);
-    if (!cred.ok) return res.status(400).json({ error: cred.error, code: cred.code });
+    if (!cred.ok) { release(); return res.status(400).json({ error: cred.error, code: cred.code }); }
     const contentChildren = [];
     for (const p of job.contentChildren || []) { try { await fsPromises.stat(p); contentChildren.push(p); } catch (_) { /* finished */ } }
     const remaining = await countFiles(contentChildren);
@@ -2838,6 +2857,7 @@ app.post('/api/upload/interrupted/:id/resume', uploadLimiter, refuseWhenDraining
         onStarted: (uploadId) => { answered = true; res.json({ uploadId, remaining }); },
     });
     if (started.error) {
+        release();
         interruptedJobs.set(job.jobId, job);
         if (!answered) res.status(started.status || 500).json({ error: started.error });
         return;
@@ -2848,6 +2868,7 @@ app.post('/api/upload/interrupted/:id/resume', uploadLimiter, refuseWhenDraining
 app.post('/api/upload/interrupted/:id/discard', (req, res) => {
     const job = interruptedJobs.get(req.params.id);
     if (!job || !auth.canAccess(req, job.owner)) return res.status(404).json({ error: 'Interrupted upload not found' });
+    if (job.resuming) return res.status(409).json({ error: 'This upload is being resumed right now' });
     interruptedJobs.delete(job.jobId);
     cleanupTempDir(job.tempDir).catch(() => {});
     log.info(`Interrupted upload ${job.jobId} discarded by ${req.user.key}`);

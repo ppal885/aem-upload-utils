@@ -37,6 +37,20 @@
         return String(name).normalize('NFC').replace(INVALID_ANY, '-');
     }
 
+    // A direct upload cannot carry every name a package can: AEM's initiateUpload refuses these in file names,
+    // and @adobe/aem-upload puts folder names in the URL with encodeURI, which leaves # and ? as they are
+    // (the folder would be created as "f " for "f #2"). Kept names lose these characters on a direct upload only.
+    const UPLOAD_REFUSED_ASSET = /[{}&?#%]/g;
+    const UPLOAD_REFUSED_FOLDER = /[?#]/g;
+
+    function keepUploadFolderName(name) {
+        return keepNodeName(name).replace(UPLOAD_REFUSED_FOLDER, '-');
+    }
+
+    function keepUploadAssetName(name) {
+        return keepNodeName(name).replace(UPLOAD_REFUSED_ASSET, '-');
+    }
+
     // Same split as Node's path.parse: the extension is kept as it is, only the base name is cleaned
     function assetNodeName(name) {
         const n = String(name).normalize('NFC');
@@ -87,8 +101,9 @@
         return String(relPath).split('/').slice(levels).join('/');
     }
 
-    // Where each file lands in AEM, which names change, which clash and which are too long
-    function planUpload(relPaths, damPath, levels, keepNames) {
+    // Where each file lands in AEM, which names change, which clash and which are too long.
+    // directUpload: kept names follow the direct upload limits (a package keeps them exactly).
+    function planUpload(relPaths, damPath, levels, keepNames, directUpload) {
         const dam = '/' + String(damPath || '').replace(/^\/+|\/+$/g, '');
         const damTail = dam.split('/').pop();
         let paths = relPaths.map((p) => stripLevels(String(p).normalize('NFC'), levels || 0));
@@ -110,7 +125,9 @@
             const segs = p.split('/');
             const out = segs.map((s, j) => {
                 const isFile = j === segs.length - 1;
-                const node = keepNames ? keepNodeName(s) : isFile ? assetNodeName(s) : folderNodeName(s);
+                const node = keepNames
+                    ? (directUpload ? (isFile ? keepUploadAssetName(s) : keepUploadFolderName(s)) : keepNodeName(s))
+                    : isFile ? assetNodeName(s) : folderNodeName(s);
                 if (node !== s) {
                     const key = segs.slice(0, j + 1).join('/');
                     if (!renamed.has(key)) renamed.set(key, { from: s, to: node, folder: !isFile });
@@ -266,8 +283,69 @@
         return out;
     }
 
+    // ─── DITA links in the selection ───
+    // hrefs, conrefs and conrefends that point at files which are not in the selection break in AEM. GUID file names
+    // (href="GUID-….dita") come from another UUID-based Guides server: GUIDs are given out per server.
+    const DITA_LINK_FILE = /\.(dita|ditamap|bookmap)$/i;
+    const TAG = /<[A-Za-z_][\w:.-]*\s[^>]*>/g;
+    const LINK_ATTR = /\s(href|conref|conrefend|scope|format)\s*=\s*(["'])([^"']*)\2/g;
+    const GUID_NAME = /^GUID-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\.[A-Za-z0-9]+)?$/i;
+    const NON_FILE_FORMAT = /^(html|pdf|txt|zip|htm|url|external)$/i;
+
+    function isDitaLinkFile(name) {
+        return DITA_LINK_FILE.test(name || '');
+    }
+
+    function resolveRel(fromRel, ref) {
+        const parts = String(fromRel).split('/').slice(0, -1);
+        for (const seg of ref.split('/')) {
+            if (!seg || seg === '.') continue;
+            if (seg === '..') { if (!parts.length) return null; parts.pop(); } else parts.push(seg);
+        }
+        return parts.join('/');
+    }
+
+    /**
+     * files: [{ relPath, text }] (relPath as in the selection), relPaths: every path in the selection.
+     * Returns { links, missing: [{ from, ref }], guid: [{ from, ref }], missingCount, guidCount, files }: links to
+     * files not in the selection, the GUID ones apart. External links, key references and same-file
+     * fragments are not checked; examples are capped at 20 each.
+     */
+    function ditaLinkProblems(files, relPaths) {
+        const have = new Set((relPaths || []).map((p) => String(p).normalize('NFC')));
+        const out = { links: 0, missing: [], guid: [], missingCount: 0, guidCount: 0, files: 0 };
+        const guidFiles = new Set();
+        for (const f of files || []) {
+            out.files++;
+            const from = String(f.relPath).normalize('NFC');
+            let fileHasGuid = false;
+            for (const tag of String(f.text).matchAll(TAG)) {
+                const attrs = {};
+                for (const a of tag[0].matchAll(LINK_ATTR)) attrs[a[1]] = a[3].trim();
+                if (attrs.scope === 'external' || attrs.scope === 'peer' || (attrs.format && NON_FILE_FORMAT.test(attrs.format))) continue;
+                for (const kind of ['href', 'conref', 'conrefend']) {
+                    const raw = attrs[kind];
+                    if (!raw || raw.startsWith('#') || raw.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
+                    let ref = raw.split('#')[0];
+                    try { ref = decodeURIComponent(ref); } catch (_) { /* keep as written */ }
+                    if (!ref) continue;
+                    out.links++;
+                    const target = resolveRel(from, ref.normalize('NFC'));
+                    if (target !== null && have.has(target)) continue;
+                    const isGuid = GUID_NAME.test(ref.split('/').pop());
+                    if (isGuid) { out.guidCount++; fileHasGuid = true; if (out.guid.length < 20) out.guid.push({ from, ref: raw }); }
+                    else { out.missingCount++; if (out.missing.length < 20) out.missing.push({ from, ref: raw }); }
+                }
+            }
+            if (fileHasGuid) guidFiles.add(from);
+        }
+        out.guidFiles = guidFiles.size;
+        return out;
+    }
+
     return {
-        isSystemName, isSystemPath, folderNodeName, assetNodeName, keepNodeName, normalizeDamPath,
+        isDitaLinkFile, ditaLinkProblems,
+        isSystemName, isSystemPath, folderNodeName, assetNodeName, keepNodeName, keepUploadFolderName, keepUploadAssetName, normalizeDamPath,
         commonFolders, stripLevels, planUpload, isCatalogFile, catalogProblems, catalogEscapes, listZipEntries, checkDitaOtZip, MAX_NAME_BYTES,
     };
 }));

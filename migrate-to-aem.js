@@ -55,7 +55,13 @@ if (configErr) { console.error('Configuration error:', configErr); process.exit(
     });
 
     // Allow Ctrl+C to request cancel
-    process.on('SIGINT', () => { console.log('\nCancel requested...'); cancel(); });
+    // The cancel is checked between batches, which can take minutes: a second Ctrl+C stops at once
+    let interrupts = 0;
+    process.on('SIGINT', () => {
+        if (++interrupts > 1) { console.log('\nStopped.'); process.exit(130); }
+        console.log('\nCancel requested (press Ctrl+C again to stop at once)...');
+        cancel();
+    });
 
     promise.then((result) => {
         console.log(`\nUpload finished: ${result.totalFiles} files, ${result.errors.length} error(s)`);

@@ -39,8 +39,9 @@ aemUtils.walkDirectory = async function walkDirectory(rootDir, maximumPaths = 50
                     totalSize += item.stat.size;
                 }
             }
-            if (directories.length + files.length > maximumPaths) {
-                throw new UploadError(`Walked directory exceeded the maximum number of ${maximumPaths} paths`, ErrorCodes.TOO_LARGE);
+            // The limit is on files (maxUploadFiles): 49,500 files in 600 folders is a 49,500-file upload
+            if (files.length > maximumPaths) {
+                throw new UploadError(`The upload has more than the maximum of ${maximumPaths} files`, ErrorCodes.TOO_LARGE);
             }
         }
         pending = next;
@@ -347,8 +348,8 @@ function runUpload(config, eventCallback) {
         .withHttpRequestTimeout(httpRequestTimeout)
         .withHttpOptions(httpOptions)
         // A copy from another AEM keeps the source's node names exactly: links and DITA profile paths use them
-        .withFolderNodeNameProcessor(async (folderName) => (config.keepNodeNames ? AemNames.keepNodeName(folderName) : AemNames.folderNodeName(folderName)))
-        .withAssetNodeNameProcessor(async (assetName) => (config.keepNodeNames ? AemNames.keepNodeName(assetName) : AemNames.assetNodeName(assetName)));
+        .withFolderNodeNameProcessor(async (folderName) => (config.keepNodeNames ? AemNames.keepUploadFolderName(folderName) : AemNames.folderNodeName(folderName)))
+        .withAssetNodeNameProcessor(async (assetName) => (config.keepNodeNames ? AemNames.keepUploadAssetName(assetName) : AemNames.assetNodeName(assetName)));
 
     const errors = [];
     let totalFiles = 0;
@@ -422,10 +423,10 @@ function runUpload(config, eventCallback) {
                 svcLog.debug(`filestart: ${data.fileName} (${((data.fileSize || 0) / 1024).toFixed(1)} KB)`);
             }
             if (evt === 'fileprogress') {
-                const prev = fileBytes[data.fileName] || 0;
+                const prev = fileBytes[fileKey(data)] || 0;
                 const curr = data.transferred || 0;
                 transferredBytes += (curr - prev);
-                fileBytes[data.fileName] = curr;
+                fileBytes[fileKey(data)] = curr;
                 const now = Date.now();
                 if (now - lastProgressLog > 5000) {
                     const pct = totalBytes > 0 ? ((transferredBytes / totalBytes) * 100).toFixed(1) : '0.0';
@@ -446,10 +447,10 @@ function runUpload(config, eventCallback) {
                 return;
             }
             if (evt === 'fileend') {
-                const prev = fileBytes[data.fileName] || 0;
+                const prev = fileBytes[fileKey(data)] || 0;
                 const fileSize = data.fileSize || 0;
                 transferredBytes += (fileSize - prev);
-                delete fileBytes[data.fileName];
+                delete fileBytes[fileKey(data)];
                 svcLog.debug(`fileend: ${data.fileName} (${((fileSize) / 1024).toFixed(1)} KB)`);
                 filesDone++;
                 const staged = data.targetFile && stagedByTarget.get(data.targetFile);
@@ -471,8 +472,8 @@ function runUpload(config, eventCallback) {
                     totalBytes += (data.fileSize || 0);
                     emit('filestart', data);
                 }
-                transferredBytes -= (fileBytes[data.fileName] || 0);
-                delete fileBytes[data.fileName];
+                transferredBytes -= (fileBytes[fileKey(data)] || 0);
+                delete fileBytes[fileKey(data)];
                 if (!cancelled && retryPassesLeft > 0 && isNotFound(data)) {
                     heldNotFound.set(fileKey(data), data);
                     svcLog.warn(`fileerror (404, will retry): ${data.fileName}`);
@@ -482,7 +483,7 @@ function runUpload(config, eventCallback) {
             }
             if (evt === 'filecancelled') {
                 cancelled = true;
-                delete fileBytes[data.fileName];
+                delete fileBytes[fileKey(data)];
                 svcLog.warn(`filecancelled: ${data.fileName}`);
             }
             emit(evt, data);
