@@ -26,6 +26,7 @@ const SUITES = {
     backup: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-backup.js')] },
     adaptive: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-adaptive.js')] },
     names: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-names.js')] },
+    'dita-order': { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-dita-order.js')] },
     'copy-adaptive': { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-copy-adaptive.js')] },
     high: ui('high_test.py', APP, AEM, fix('uifiles')),
     'high-7-8': ui('high_7_8_test.py', APP, AEM, fix('uifiles')),

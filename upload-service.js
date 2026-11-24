@@ -4,6 +4,7 @@ const path = require('path');
 const AemNames = require('./public/aem-names');
 const adaptivePipelines = require('./lib/adaptive-pipelines');
 const { aemAuthorization } = require('./lib/aem-auth');
+const ditaOrder = require('./lib/dita-order');
 
 // @adobe/aem-upload 2.0.3 silently drops every file named TestFile*, *.tmp or starting with "~"
 // (desktop-app scratch files). Real content uses such names, so only system files are skipped;
@@ -77,6 +78,16 @@ const PIPELINE_BATCH_SIZE = 50;
 const MAX_UPLOAD_PIPELINES = parseInt(process.env.UPLOAD_MAX_PIPELINES, 10) || 24;
 const ADAPT_WINDOW_MS = parseInt(process.env.UPLOAD_ADAPT_WINDOW_MS, 10) || 30000;
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '::1'];
+// Uploads with DITA maps go in waves (lib/dita-order.js); before each map wave, the files of the previous waves
+// must be processed by AEM Guides, or the maps get GUIDs no file has. Files Guides processes:
+const GUIDES_FILE = /\.(dita|ditamap|bookmap|xml)$/i;
+const GUIDES_WAIT_POLL_MS = parseInt(process.env.GUIDES_WAIT_POLL_MS, 10) || 3000;
+// Larger uploads are checked less often: every check lists the whole upload folder
+const GUIDES_WAIT_POLL_LARGE_MS = 15000;
+// No Guides state on any file after this long: Guides does not process this folder (or is not installed)
+const GUIDES_WAIT_GRACE_MS = parseInt(process.env.GUIDES_WAIT_GRACE_MS, 10) || 60000;
+const GUIDES_WAIT_MAX_MS = parseInt(process.env.GUIDES_WAIT_MAX_MS, 10) || 15 * 60 * 1000;
+const GUIDES_QUERY_TIMEOUT_MS = 2 * 60 * 1000;
 
 function buildSelfSignedAgent(baseUrl) {
     if (!ALLOW_SELF_SIGNED) return null;
@@ -371,6 +382,10 @@ function runUpload(config, eventCallback) {
     // AEM path -> staged local file, so a finished file can be removed (what is left after a restart is
     // exactly the unfinished work; see the resume job in server.js)
     const stagedByTarget = new Map();
+    // AEM paths of the files that finished uploading
+    const uploadedTargets = new Set();
+    // false once AEM Guides is seen not to process this upload: later waves do not wait
+    let guidesProcessing = true;
 
     let lastProgressBroadcast = 0;
     let pendingProgressData = null;
@@ -453,6 +468,7 @@ function runUpload(config, eventCallback) {
                 delete fileBytes[fileKey(data)];
                 svcLog.debug(`fileend: ${data.fileName} (${((fileSize) / 1024).toFixed(1)} KB)`);
                 filesDone++;
+                if (data.targetFile) uploadedTargets.add(String(data.targetFile).normalize('NFC'));
                 const staged = data.targetFile && stagedByTarget.get(data.targetFile);
                 if (staged) {
                     stagedByTarget.delete(data.targetFile);
@@ -674,6 +690,91 @@ function runUpload(config, eventCallback) {
         return { success, partial, totalFiles, totalBytes, transferredBytes, errors, cancelled };
     }
 
+    /** Guides state of every asset under root: Map(path -> { state, uuid }). Rejects on any HTTP or network error. */
+    function guidesStates(root) {
+        const q = new URLSearchParams({
+            path: root, type: 'dam:Asset', 'p.limit': '-1', 'p.hits': 'selective',
+            'p.properties': 'jcr:path jcr:content/fmUuid jcr:content/guides:assetState',
+        });
+        const target = new URL(`${baseUrl.replace(/\/+$/, '')}/bin/querybuilder.json?${q}`);
+        const client = target.protocol === 'https:' ? https : http;
+        const requestOptions = { method: 'GET', timeout: GUIDES_QUERY_TIMEOUT_MS, headers: { Authorization: aemAuthorization(username, password), Accept: 'application/json' } };
+        if (selfSignedAgent) requestOptions.agent = selfSignedAgent;
+        return new Promise((resolve, reject) => {
+            const req = client.request(target, requestOptions, (res) => {
+                const chunks = [];
+                res.on('data', (c) => chunks.push(c));
+                res.on('error', reject);
+                res.on('end', () => {
+                    if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+                    try {
+                        const out = new Map();
+                        for (const h of JSON.parse(Buffer.concat(chunks).toString('utf8')).hits || []) {
+                            const c = h['jcr:content'] || {};
+                            if (typeof h['jcr:path'] === 'string') out.set(h['jcr:path'].normalize('NFC'), { state: String(c['guides:assetState'] || '').toUpperCase(), uuid: c.fmUuid || null });
+                        }
+                        resolve(out);
+                    } catch (e) { reject(e); }
+                });
+            });
+            req.on('timeout', () => req.destroy(new Error('timed out')));
+            req.on('error', reject);
+            req.end();
+        });
+    }
+
+    /**
+     * Waits until AEM Guides has processed the DITA files of `items` that were uploaded (guides:assetState set and
+     * not PROCESSING), so the next wave's maps link to their GUIDs. Never fails the upload: when AEM cannot be
+     * asked, Guides shows no state at all, or it takes longer than GUIDES_WAIT_MAX_MS, the upload goes on.
+     */
+    async function waitForGuides(items) {
+        if (!guidesProcessing || cancelled) return;
+        const targets = items.map((i) => decodedTarget(i).normalize('NFC')).filter((t) => uploadedTargets.has(t) && GUIDES_FILE.test(t));
+        if (!targets.length) return;
+        let root;
+        try { root = decodeURIComponent(new URL(url).pathname).replace(/\/+$/, ''); } catch (_) { return; }
+        const pollMs = plannedFiles > 5000 ? Math.max(GUIDES_WAIT_POLL_MS, GUIDES_WAIT_POLL_LARGE_MS) : GUIDES_WAIT_POLL_MS;
+        const started = Date.now();
+        let pending = targets;
+        let seen = false;
+        let lastLog = started;
+        svcLog.info(`Waiting for AEM Guides to process ${targets.length} file(s) before uploading the maps that link to them`);
+        while (!cancelled) {
+            let states;
+            try {
+                states = await guidesStates(root);
+            } catch (e) {
+                svcLog.warn(`Could not read the AEM Guides state of ${root} (${e.message}); uploading the next maps without waiting`);
+                return;
+            }
+            pending = pending.filter((t) => {
+                const s = states.get(t);
+                if (s && (s.state || s.uuid)) seen = true;
+                return !(s && s.state && s.state !== 'PROCESSING');
+            });
+            const secs = Math.round((Date.now() - started) / 1000);
+            if (!pending.length) {
+                svcLog.info(`AEM Guides processed them in ${secs}s`);
+                return;
+            }
+            if (!seen && Date.now() - started >= GUIDES_WAIT_GRACE_MS) {
+                guidesProcessing = false;
+                svcLog.warn(`AEM Guides shows no processing state on these files after ${secs}s (Guides does not process ${root}?); uploading the rest without waiting`);
+                return;
+            }
+            if (Date.now() - started >= GUIDES_WAIT_MAX_MS) {
+                svcLog.warn(`AEM Guides has not finished ${pending.length} file(s) after ${secs}s (for example ${pending[0]}); uploading the next maps anyway. Check their links with Check in AEM.`);
+                return;
+            }
+            if (Date.now() - lastLog >= 60000) {
+                lastLog = Date.now();
+                svcLog.info(`Still waiting for AEM Guides: ${pending.length} of ${targets.length} file(s) not processed after ${secs}s`);
+            }
+            await new Promise((resolve) => setTimeout(resolve, pollMs));
+        }
+    }
+
     async function uploadAll() {
         const fsUpload = new FileSystemUpload();
         const uploadResult = new UploadResult(fsUpload.getOptions(), options);
@@ -717,10 +818,21 @@ function runUpload(config, eventCallback) {
 
         const filesStart = Date.now();
         svcLog.info(`Uploading ${uploadFiles.length} files in ${Math.min(pipelines.target, uploadFiles.length)} parallel pipelines${pipelines.next ? ` (adaptive, up to ${MAX_UPLOAD_PIPELINES})` : ''}`);
-        await uploadInPipelines(uploadFiles);
+        const waves = await ditaOrder.uploadWaves(uploadFiles);
+        if (waves.length > 1) {
+            svcLog.info(`DITA maps found: uploading in ${waves.length} waves (${waves.map((w) => w.length).join(' + ')} files): other files first, `
+                + 'then the maps from the innermost submaps up to the top map, each after AEM Guides has processed the files it links to');
+        }
+        for (let w = 0; w < waves.length && !cancelled; w++) {
+            if (w > 0) {
+                await waitForGuides(waves.slice(0, w).flat());
+                if (cancelled) break;
+                retryPassesLeft = NOT_FOUND_RETRY_DELAYS_MS.length;
+            }
+            await uploadInPipelines(waves[w]);
+            if (heldNotFound.size > 0) await retryNotFoundFiles(waves[w]);
+        }
         svcLog.info(`File pass done in ${((Date.now() - filesStart) / 1000).toFixed(1)}s`);
-
-        if (heldNotFound.size > 0) await retryNotFoundFiles(uploadFiles);
     }
 
     const promise = uploadAll()
