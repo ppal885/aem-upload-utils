@@ -700,20 +700,30 @@ function runUpload(config, eventCallback) {
      * link to their GUIDs (lib/guides-wait.js). Never fails the upload: when AEM cannot be asked, Guides shows no
      * state at all, or it takes longer than GUIDES_WAIT_MAX_MS, the upload goes on.
      */
-    async function waitForGuides(items) {
+    /** Tells the caller (the page) what the upload waits for: { state: 'waiting' | 'again' | 'done', ... }. */
+    function guidesEvent(data) {
+        if (eventCallback) { try { eventCallback('guideswait', data); } catch (_) {} }
+    }
+
+    async function waitForGuides(items, step = {}) {
         if (!guidesProcessing || cancelled) return;
         const targets = items.map((i) => decodedTarget(i).normalize('NFC')).filter((t) => uploadedTargets.has(t) && (GUIDES_FILE.test(t) || linkedTargets.has(t)));
         if (!targets.length) return;
         let root;
         try { root = decodeURIComponent(new URL(url).pathname).replace(/\/+$/, ''); } catch (_) { return; }
-        svcLog.info(`Waiting for AEM Guides to process ${targets.length} file(s) before uploading the maps that link to them`);
+        svcLog.info(`Waiting for AEM Guides to process ${targets.length} file(s) before uploading the files that link to them`);
+        // step: { wave, waves } (the next wave and how many there are) or { again: n } (before the second upload)
+        const event = (pending, secs) => ({ state: 'waiting', files: targets.length, processed: targets.length - pending, secs, ...step });
+        guidesEvent(event(targets.length, 0));
         const r = await guidesWait.waitForGuides({
             server: { baseUrl, username, password, agent: selfSignedAgent }, roots: [root], targets,
             graceMs: GUIDES_WAIT_GRACE_MS, maxMs: GUIDES_WAIT_MAX_MS,
             pollMs: plannedFiles > 5000 ? Math.max(GUIDES_WAIT_POLL_MS, GUIDES_WAIT_POLL_LARGE_MS) : GUIDES_WAIT_POLL_MS,
             isCancelled: () => cancelled,
             onWaiting: ({ pending, secs }) => svcLog.info(`Still waiting for AEM Guides: ${pending} of ${targets.length} file(s) not processed after ${secs}s`),
+            onPoll: ({ pending, secs }) => guidesEvent(event(pending, secs)),
         });
+        guidesEvent({ state: 'done', outcome: r.outcome, secs: r.secs, files: targets.length, processed: targets.length - r.pending.length });
         if (r.outcome === 'done') svcLog.info(`AEM Guides processed them in ${r.secs}s`);
         else if (r.outcome === 'error') svcLog.warn(`Could not read the AEM Guides state of ${root} (${r.message}); uploading the next maps without waiting`);
         else if (r.outcome === 'no-guides') {
@@ -784,7 +794,7 @@ function runUpload(config, eventCallback) {
         }
         for (let w = 0; w < waves.length && !cancelled; w++) {
             if (w > 0) {
-                await waitForGuides(waves.slice(0, w).flat());
+                await waitForGuides(waves.slice(0, w).flat(), { wave: w + 1, waves: waves.length });
                 if (cancelled) break;
                 retryPassesLeft = NOT_FOUND_RETRY_DELAYS_MS.length;
             }
@@ -811,10 +821,11 @@ function runUpload(config, eventCallback) {
             if (staged) { stagedByTarget.delete(t); fsPromises.unlink(staged).catch(() => {}); }
         });
         if (cancelled || !files.length) { if (!cancelled) removeStaged(); return; }
-        await waitForGuides(all);
+        await waitForGuides(all, { again: files.length });
         if (cancelled) return;
         if (!guidesProcessing) { removeStaged(); return; }
         svcLog.info(`Sending ${files.length} file(s) once more so AEM Guides links them to the GUIDs of the files they point at`);
+        guidesEvent({ state: 'again', files: files.length });
         const uploader = new DirectBinaryUpload();
         uploader.on('fileerror', (data) => {
             const e = data.errors && data.errors[0];
@@ -834,6 +845,7 @@ function runUpload(config, eventCallback) {
         } catch (e) {
             errors.push(`Links of ${files.length} file(s) not refreshed: ${e.message || e}`);
         }
+        guidesEvent({ state: 'done', outcome: 'again', files: files.length });
         removeStaged();
     }
 
