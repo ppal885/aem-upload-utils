@@ -33,6 +33,10 @@ const assetGuid = new Map();
 const assetGuides = new Map();
 const assetDam = new Map();
 const reprocessed = [];
+// MOCK_GUIDES_DELAY_MS: Guides shows PROCESSING this long after an upload; MOCK_GUIDES=off: no Guides at all
+const GUIDES_DELAY_MS = parseInt(process.env.MOCK_GUIDES_DELAY_MS, 10) || 0;
+const GUIDES_OFF = process.env.MOCK_GUIDES === 'off';
+const timeline = {};
 const DITA_FILE = /\.(dita|ditamap|xml|bookmap)$/i;
 const sha1 = (b) => crypto.createHash('sha1').update(b).digest('hex');
 for (const [p, a] of Object.entries(SEED.assets || {})) {
@@ -53,6 +57,7 @@ const server = http.createServer((req, res) => {
         const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
         if (p === '/__installs') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(installs)); }
         if (p === '/__folders') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(titles)); }
+        if (p === '/__timeline') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(timeline)); }
         if (p === '/__completed') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(completedPaths)); }
         if (p === '/__reprocessed') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(reprocessed)); }
         if (p === '/__writes') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(writes)); }
@@ -164,7 +169,15 @@ const server = http.createServer((req, res) => {
             if (blobData.has(done)) assetData.set(done, blobData.get(done));
             // an upload is processed by AEM and by Guides (DITA files get a GUID)
             assetDam.set(done, 'processed');
-            if (DITA_FILE.test(done)) { assetGuides.set(done, 'SUCCESS'); if (!assetGuid.has(done)) assetGuid.set(done, 'GUID-' + crypto.randomUUID()); }
+            timeline[done] = { completed: Date.now() };
+            const processed = () => {
+                assetGuides.set(done, 'SUCCESS');
+                if (!assetGuid.has(done)) assetGuid.set(done, 'GUID-' + crypto.randomUUID());
+                timeline[done].processed = Date.now();
+            };
+            if (DITA_FILE.test(done) && !GUIDES_OFF) {
+                if (GUIDES_DELAY_MS) { assetGuides.set(done, 'PROCESSING'); setTimeout(processed, GUIDES_DELAY_MS); } else processed();
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{}');
         }
         if (req.method === 'POST' && p === '/crx/packmgr/service.jsp') {

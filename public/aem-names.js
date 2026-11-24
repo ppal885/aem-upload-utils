@@ -306,6 +306,27 @@
     }
 
     /**
+     * The file links (href, conref, conrefend) in DITA text: [{ raw, ref }], ref decoded and without its #fragment.
+     * External links, key references, absolute paths and same-file fragments are left out.
+     */
+    function ditaFileRefs(text) {
+        const refs = [];
+        for (const tag of String(text).matchAll(TAG)) {
+            const attrs = {};
+            for (const a of tag[0].matchAll(LINK_ATTR)) attrs[a[1]] = a[3].trim();
+            if (attrs.scope === 'external' || attrs.scope === 'peer' || (attrs.format && NON_FILE_FORMAT.test(attrs.format))) continue;
+            for (const kind of ['href', 'conref', 'conrefend']) {
+                const raw = attrs[kind];
+                if (!raw || raw.startsWith('#') || raw.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
+                let ref = raw.split('#')[0];
+                try { ref = decodeURIComponent(ref); } catch (_) { /* keep as written */ }
+                if (ref) refs.push({ raw, ref });
+            }
+        }
+        return refs;
+    }
+
+    /**
      * files: [{ relPath, text }] (relPath as in the selection), relPaths: every path in the selection.
      * Returns { links, missing: [{ from, ref }], guid: [{ from, ref }], missingCount, guidCount, files }: links to
      * files not in the selection, the GUID ones apart. External links, key references and same-file
@@ -319,23 +340,13 @@
             out.files++;
             const from = String(f.relPath).normalize('NFC');
             let fileHasGuid = false;
-            for (const tag of String(f.text).matchAll(TAG)) {
-                const attrs = {};
-                for (const a of tag[0].matchAll(LINK_ATTR)) attrs[a[1]] = a[3].trim();
-                if (attrs.scope === 'external' || attrs.scope === 'peer' || (attrs.format && NON_FILE_FORMAT.test(attrs.format))) continue;
-                for (const kind of ['href', 'conref', 'conrefend']) {
-                    const raw = attrs[kind];
-                    if (!raw || raw.startsWith('#') || raw.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
-                    let ref = raw.split('#')[0];
-                    try { ref = decodeURIComponent(ref); } catch (_) { /* keep as written */ }
-                    if (!ref) continue;
-                    out.links++;
-                    const target = resolveRel(from, ref.normalize('NFC'));
-                    if (target !== null && have.has(target)) continue;
-                    const isGuid = GUID_NAME.test(ref.split('/').pop());
-                    if (isGuid) { out.guidCount++; fileHasGuid = true; if (out.guid.length < 20) out.guid.push({ from, ref: raw }); }
-                    else { out.missingCount++; if (out.missing.length < 20) out.missing.push({ from, ref: raw }); }
-                }
+            for (const { raw, ref } of ditaFileRefs(f.text)) {
+                out.links++;
+                const target = resolveRel(from, ref.normalize('NFC'));
+                if (target !== null && have.has(target)) continue;
+                const isGuid = GUID_NAME.test(ref.split('/').pop());
+                if (isGuid) { out.guidCount++; fileHasGuid = true; if (out.guid.length < 20) out.guid.push({ from, ref: raw }); }
+                else { out.missingCount++; if (out.missing.length < 20) out.missing.push({ from, ref: raw }); }
             }
             if (fileHasGuid) guidFiles.add(from);
         }
@@ -344,7 +355,7 @@
     }
 
     return {
-        isDitaLinkFile, ditaLinkProblems,
+        isDitaLinkFile, ditaLinkProblems, ditaFileRefs,
         isSystemName, isSystemPath, folderNodeName, assetNodeName, keepNodeName, keepUploadFolderName, keepUploadAssetName, normalizeDamPath,
         commonFolders, stripLevels, planUpload, isCatalogFile, catalogProblems, catalogEscapes, listZipEntries, checkDitaOtZip, MAX_NAME_BYTES,
     };
