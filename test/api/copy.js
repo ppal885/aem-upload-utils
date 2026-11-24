@@ -101,6 +101,14 @@ async function startCopy(sessionId, source) {
     const installed = inst.status === 202 ? await waitFor(() => call(`/api/packages/${pkg.id}`), (r) => (r.body.package.installs || []).length > 0) : inst;
     const last = installed.body.package && installed.body.package.installs[0];
     record('copy -> package: installs on the allowed server', inst.status < 300 && last && last.ok, `${inst.status} ${JSON.stringify(last || inst.body).slice(0, 200)}`);
+    // The package has a map: after the install its maps are linked again in order in the background. The mock's
+    // Package Manager does not create the files, so Guides never processes them and the maps are left as installed.
+    const busy = await call(`/api/packages/${pkg.id}`, 'DELETE');
+    const linked = await waitFor(() => call(`/api/packages/${pkg.id}`), (r) => r.body.package.installs[0].maps && r.body.package.installs[0].maps.state !== 'running');
+    const maps = linked.body.package.installs[0].maps || {};
+    record('copy -> package with a map: the install says the map is linked in order, and the package stays until that ends',
+        /1 DITA map\(s\) in order/.test(inst.body.message || '') && busy.status === 409 && maps.state === 'skipped' && !('mapWaves' in linked.body.package),
+        `${busy.status} ${JSON.stringify(maps)} ${inst.body.message}`);
 
     // A copy that fails still says why (it used to answer "No copy for this session")
     const fi = await call('/api/upload/browser/init', 'POST', { ...target, damPath: 'content/dam/copydst2' });

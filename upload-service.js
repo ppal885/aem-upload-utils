@@ -5,6 +5,7 @@ const AemNames = require('./public/aem-names');
 const adaptivePipelines = require('./lib/adaptive-pipelines');
 const { aemAuthorization } = require('./lib/aem-auth');
 const ditaOrder = require('./lib/dita-order');
+const guidesWait = require('./lib/guides-wait');
 
 // @adobe/aem-upload 2.0.3 silently drops every file named TestFile*, *.tmp or starting with "~"
 // (desktop-app scratch files). Real content uses such names, so only system files are skipped;
@@ -87,7 +88,6 @@ const GUIDES_WAIT_POLL_LARGE_MS = 15000;
 // No Guides state on any file after this long: Guides does not process this folder (or is not installed)
 const GUIDES_WAIT_GRACE_MS = parseInt(process.env.GUIDES_WAIT_GRACE_MS, 10) || 60000;
 const GUIDES_WAIT_MAX_MS = parseInt(process.env.GUIDES_WAIT_MAX_MS, 10) || 15 * 60 * 1000;
-const GUIDES_QUERY_TIMEOUT_MS = 2 * 60 * 1000;
 
 function buildSelfSignedAgent(baseUrl) {
     if (!ALLOW_SELF_SIGNED) return null;
@@ -690,43 +690,10 @@ function runUpload(config, eventCallback) {
         return { success, partial, totalFiles, totalBytes, transferredBytes, errors, cancelled };
     }
 
-    /** Guides state of every asset under root: Map(path -> { state, uuid }). Rejects on any HTTP or network error. */
-    function guidesStates(root) {
-        const q = new URLSearchParams({
-            path: root, type: 'dam:Asset', 'p.limit': '-1', 'p.hits': 'selective',
-            'p.properties': 'jcr:path jcr:content/fmUuid jcr:content/guides:assetState',
-        });
-        const target = new URL(`${baseUrl.replace(/\/+$/, '')}/bin/querybuilder.json?${q}`);
-        const client = target.protocol === 'https:' ? https : http;
-        const requestOptions = { method: 'GET', timeout: GUIDES_QUERY_TIMEOUT_MS, headers: { Authorization: aemAuthorization(username, password), Accept: 'application/json' } };
-        if (selfSignedAgent) requestOptions.agent = selfSignedAgent;
-        return new Promise((resolve, reject) => {
-            const req = client.request(target, requestOptions, (res) => {
-                const chunks = [];
-                res.on('data', (c) => chunks.push(c));
-                res.on('error', reject);
-                res.on('end', () => {
-                    if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-                    try {
-                        const out = new Map();
-                        for (const h of JSON.parse(Buffer.concat(chunks).toString('utf8')).hits || []) {
-                            const c = h['jcr:content'] || {};
-                            if (typeof h['jcr:path'] === 'string') out.set(h['jcr:path'].normalize('NFC'), { state: String(c['guides:assetState'] || '').toUpperCase(), uuid: c.fmUuid || null });
-                        }
-                        resolve(out);
-                    } catch (e) { reject(e); }
-                });
-            });
-            req.on('timeout', () => req.destroy(new Error('timed out')));
-            req.on('error', reject);
-            req.end();
-        });
-    }
-
     /**
-     * Waits until AEM Guides has processed the DITA files of `items` that were uploaded (guides:assetState set and
-     * not PROCESSING), so the next wave's maps link to their GUIDs. Never fails the upload: when AEM cannot be
-     * asked, Guides shows no state at all, or it takes longer than GUIDES_WAIT_MAX_MS, the upload goes on.
+     * Waits until AEM Guides has processed the DITA files of `items` that were uploaded, so the next wave's maps
+     * link to their GUIDs (lib/guides-wait.js). Never fails the upload: when AEM cannot be asked, Guides shows no
+     * state at all, or it takes longer than GUIDES_WAIT_MAX_MS, the upload goes on.
      */
     async function waitForGuides(items) {
         if (!guidesProcessing || cancelled) return;
@@ -734,44 +701,21 @@ function runUpload(config, eventCallback) {
         if (!targets.length) return;
         let root;
         try { root = decodeURIComponent(new URL(url).pathname).replace(/\/+$/, ''); } catch (_) { return; }
-        const pollMs = plannedFiles > 5000 ? Math.max(GUIDES_WAIT_POLL_MS, GUIDES_WAIT_POLL_LARGE_MS) : GUIDES_WAIT_POLL_MS;
-        const started = Date.now();
-        let pending = targets;
-        let seen = false;
-        let lastLog = started;
         svcLog.info(`Waiting for AEM Guides to process ${targets.length} file(s) before uploading the maps that link to them`);
-        while (!cancelled) {
-            let states;
-            try {
-                states = await guidesStates(root);
-            } catch (e) {
-                svcLog.warn(`Could not read the AEM Guides state of ${root} (${e.message}); uploading the next maps without waiting`);
-                return;
-            }
-            pending = pending.filter((t) => {
-                const s = states.get(t);
-                if (s && (s.state || s.uuid)) seen = true;
-                return !(s && s.state && s.state !== 'PROCESSING');
-            });
-            const secs = Math.round((Date.now() - started) / 1000);
-            if (!pending.length) {
-                svcLog.info(`AEM Guides processed them in ${secs}s`);
-                return;
-            }
-            if (!seen && Date.now() - started >= GUIDES_WAIT_GRACE_MS) {
-                guidesProcessing = false;
-                svcLog.warn(`AEM Guides shows no processing state on these files after ${secs}s (Guides does not process ${root}?); uploading the rest without waiting`);
-                return;
-            }
-            if (Date.now() - started >= GUIDES_WAIT_MAX_MS) {
-                svcLog.warn(`AEM Guides has not finished ${pending.length} file(s) after ${secs}s (for example ${pending[0]}); uploading the next maps anyway. Check their links with Check in AEM.`);
-                return;
-            }
-            if (Date.now() - lastLog >= 60000) {
-                lastLog = Date.now();
-                svcLog.info(`Still waiting for AEM Guides: ${pending.length} of ${targets.length} file(s) not processed after ${secs}s`);
-            }
-            await new Promise((resolve) => setTimeout(resolve, pollMs));
+        const r = await guidesWait.waitForGuides({
+            server: { baseUrl, username, password, agent: selfSignedAgent }, roots: [root], targets,
+            graceMs: GUIDES_WAIT_GRACE_MS, maxMs: GUIDES_WAIT_MAX_MS,
+            pollMs: plannedFiles > 5000 ? Math.max(GUIDES_WAIT_POLL_MS, GUIDES_WAIT_POLL_LARGE_MS) : GUIDES_WAIT_POLL_MS,
+            isCancelled: () => cancelled,
+            onWaiting: ({ pending, secs }) => svcLog.info(`Still waiting for AEM Guides: ${pending} of ${targets.length} file(s) not processed after ${secs}s`),
+        });
+        if (r.outcome === 'done') svcLog.info(`AEM Guides processed them in ${r.secs}s`);
+        else if (r.outcome === 'error') svcLog.warn(`Could not read the AEM Guides state of ${root} (${r.message}); uploading the next maps without waiting`);
+        else if (r.outcome === 'no-guides') {
+            guidesProcessing = false;
+            svcLog.warn(`AEM Guides shows no processing state on these files after ${r.secs}s (Guides does not process ${root}?); uploading the rest without waiting`);
+        } else if (r.outcome === 'timeout') {
+            svcLog.warn(`AEM Guides has not finished ${r.pending.length} file(s) after ${r.secs}s (for example ${r.pending[0]}); uploading the next maps anyway. Check their links with Check in AEM.`);
         }
     }
 
@@ -858,4 +802,53 @@ function runUpload(config, eventCallback) {
     return { promise, cancel };
 }
 
-module.exports = { TARGETS, runUpload, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials };
+/**
+ * Sends local files to exact AEM asset paths in folders that already exist: the maps of a package, over the copies
+ * the package installed (lib/package-maps.js). No replace and no new version is asked for, so AEM updates the
+ * binary of an existing asset in place and the asset keeps its node and its Guides GUID.
+ * files: [{ localPath, aemPath }]. Resolves to { ok, uploaded: [aemPath], errors: [string] }; never rejects.
+ */
+async function uploadToPaths({ baseUrl: rawBaseUrl, username, password, maxConcurrent = 4 }, files) {
+    const baseUrl = normalizeAemBaseUrl(rawBaseUrl).replace(/\/+$/, '');
+    const encode = (p) => p.split('/').map(encodeURIComponent).join('/');
+    const errors = [];
+    const uploaded = [];
+    const uploadFiles = [];
+    for (const f of files) {
+        const name = path.posix.basename(f.aemPath);
+        // AEM's initiateUpload refuses these characters in a file name (see public/aem-names.js)
+        if (/[{}&?#%]/.test(name)) { errors.push(`${f.aemPath}: AEM's direct upload does not accept this file name`); continue; }
+        let size;
+        try { size = (await fsPromises.stat(f.localPath)).size; } catch (e) { errors.push(`${f.aemPath}: ${e.message}`); continue; }
+        uploadFiles.push({ fileUrl: `${baseUrl}${encode(path.posix.dirname(f.aemPath))}/${encodeURIComponent(name)}`, filePath: f.localPath, fileSize: size });
+    }
+    if (!uploadFiles.length) return { ok: errors.length === 0, uploaded, errors };
+    const httpOptions = {
+        headers: { Authorization: aemAuthorization(username, password) },
+        timeout: 120000,
+        retryOptions: { retryInitialDelay: 8000, retryMaxCount: 5, retryAllErrors: false, retryOnHttpResponseError: (e) => e.status === 429 || e.status >= 500 },
+    };
+    const agent = buildSelfSignedAgent(baseUrl);
+    if (agent) httpOptions.agent = agent;
+    const uploader = new DirectBinaryUpload();
+    uploader.on('fileend', (d) => uploaded.push(String(d.targetFile || '').normalize('NFC')));
+    uploader.on('fileerror', (d) => {
+        const e = d.errors && d.errors[0];
+        errors.push(`${d.targetFile || d.fileName}: ${(e && e.message) || e || 'upload failed'}`);
+    });
+    try {
+        await uploader.uploadFiles(new DirectBinaryUploadOptions()
+            .withUrl(`${baseUrl}/content/dam`)
+            .withUploadFiles(uploadFiles)
+            .withMaxConcurrent(maxConcurrent)
+            .withHttpRetryCount(5)
+            .withHttpRetryDelay(8000)
+            .withHttpRequestTimeout(120000)
+            .withHttpOptions(httpOptions));
+    } catch (e) {
+        errors.push(e.message || String(e));
+    }
+    return { ok: errors.length === 0, uploaded, errors };
+}
+
+module.exports = { TARGETS, runUpload, uploadToPaths, scanDirectory, validateUploadConfig, normalizeAemBaseUrl, checkAemCredentials };

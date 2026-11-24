@@ -36,8 +36,8 @@ const reprocessed = [];
 // MOCK_GUIDES_DELAY_MS: Guides shows PROCESSING this long after an upload; MOCK_GUIDES=off: no Guides at all
 const GUIDES_DELAY_MS = parseInt(process.env.MOCK_GUIDES_DELAY_MS, 10) || 0;
 const GUIDES_OFF = process.env.MOCK_GUIDES === 'off';
-const timeline = {};
 const DITA_FILE = /\.(dita|ditamap|xml|bookmap)$/i;
+const timeline = {};
 const sha1 = (b) => crypto.createHash('sha1').update(b).digest('hex');
 for (const [p, a] of Object.entries(SEED.assets || {})) {
     const buf = Buffer.from(a.text != null ? a.text : a.base64 || '', a.text != null ? 'utf8' : 'base64');
@@ -45,6 +45,11 @@ for (const [p, a] of Object.entries(SEED.assets || {})) {
     assetSha.set(p, a.staleSha1 ? sha1(Buffer.from('older version')) : sha1(buf));
     if (a.guid) assetGuid.set(p, a.guid);
     if (a.guidesState) assetGuides.set(p, a.guidesState);
+    // processMs: Guides finishes this seeded file (PROCESSING -> SUCCESS) that long after the mock starts, like content a package just installed
+    if (a.processMs) {
+        assetGuides.set(p, 'PROCESSING');
+        setTimeout(() => { assetGuides.set(p, 'SUCCESS'); if (!assetGuid.has(p)) assetGuid.set(p, 'GUID-' + crypto.randomUUID()); timeline[p] = { ...(timeline[p] || {}), seededProcessed: Date.now() }; }, a.processMs);
+    }
     if (a.damState) assetDam.set(p, a.damState);
     for (let d = path.posix.dirname(p); d.startsWith('/content/dam/'); d = path.posix.dirname(d)) folders.add(d);
 }
@@ -169,7 +174,7 @@ const server = http.createServer((req, res) => {
             if (blobData.has(done)) assetData.set(done, blobData.get(done));
             // an upload is processed by AEM and by Guides (DITA files get a GUID)
             assetDam.set(done, 'processed');
-            timeline[done] = { completed: Date.now() };
+            timeline[done] = { ...(timeline[done] || {}), completed: Date.now() };
             const processed = () => {
                 assetGuides.set(done, 'SUCCESS');
                 if (!assetGuid.has(done)) assetGuid.set(done, 'GUID-' + crypto.randomUUID());

@@ -65,6 +65,8 @@ function toPlatformName(repoName) {
 
 // --- XML helpers -------------------------------------------------------------------------------
 // eslint-disable-next-line no-control-regex
+const MAP_FILE = /\.(ditamap|bookmap)$/i;
+const DITA_FILE = /\.(dita|ditamap|bookmap|xml)$/i;
 const XML_INVALID_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/;
 
 function xmlEscape(value) {
@@ -289,6 +291,8 @@ async function buildPackage({
     }
 
     const skipped = [];
+    const maps = [];
+    const dita = [];
 
     // Pass 1: count files for progress reporting. Dirent types avoid a stat per file (stat is only
     // needed to resolve symlinks, which are followed like @adobe/aem-upload's fs.stat does).
@@ -505,6 +509,8 @@ async function buildPackage({
                 }
                 // eslint-disable-next-line no-await-in-loop
                 await addAsset(it.abs, loaded, childZip, it.n);
+                if (MAP_FILE.test(it.n)) maps.push({ jcrPath: `${jcrPath}/${it.jcrName}`, absPath: it.abs });
+                if (DITA_FILE.test(it.n)) dita.push(`${jcrPath}/${it.jcrName}`);
             }
         }
     };
@@ -543,6 +549,10 @@ async function buildPackage({
             entries: res.entries,
             zip64: res.zip64,
             skipped,
+            // DITA maps in the package: [{ jcrPath, absPath }] (lib/package-maps.js links them in order after an install)
+            maps,
+            // AEM paths of the DITA files in the package (what Guides processes)
+            dita,
         };
     } catch (e) {
         await zip.abort();
