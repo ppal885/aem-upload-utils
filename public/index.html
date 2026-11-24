@@ -4297,10 +4297,18 @@ async function loadPackages() {
         renderPackages(packages || [], copyDownload === true);
         // One refresh timer: every visit to Packages used to start its own 1.5 s chain while a build ran
         clearTimeout(packagesTimer);
-        if ((packages || []).some((p) => p.state === 'building')) packagesTimer = setTimeout(() => { if (!document.getElementById('viewPackages').classList.contains('hidden')) loadPackages(); }, 1500);
+        const linking = (p) => { const last = (p.installs || [])[0]; return !!(last && last.maps && last.maps.state === 'running'); };
+        if ((packages || []).some((p) => p.state === 'building' || linking(p))) packagesTimer = setTimeout(() => { if (!document.getElementById('viewPackages').classList.contains('hidden')) loadPackages(); }, 1500);
     } catch (e) {
         body.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-sm text-red-600">Could not load packages: ' + esc(toErrorMessage(e)) + '</td></tr>';
     }
+}
+
+// After an install from here, the DITA maps of the package are linked again in order (lib/package-maps.js)
+function mapsLine(m) {
+    if (!m) return '';
+    const cls = m.state === 'done' ? 'text-green-700' : m.state === 'running' ? 'text-blue-700' : m.state === 'skipped' ? 'text-gray-500' : 'text-red-600';
+    return '<div class="text-xs mt-1 ' + cls + '">' + (m.state === 'running' ? 'Maps: ' : '') + esc(m.message || '') + '</div>';
 }
 
 // copyDownload: the server allows downloading packages of copied content (COPY_ALLOW_DOWNLOAD)
@@ -4319,7 +4327,8 @@ function renderPackages(list, copyDownload) {
         const checkFolder = (p.filterRoots && p.filterRoots.length === 1) ? p.filterRoots[0] : p.damPath;
         const installed = last ? '<div class="text-xs mt-1 ' + (last.ok ? 'text-green-700' : 'text-red-600') + '">' + (last.ok ? 'Installed on ' : 'Install failed on ') + esc(hostOf(last.server)) + ' ' + esc(timeAgo(last.at))
             + (last.ok ? ' <button type="button" class="text-adobe-blue hover:underline font-semibold" onclick="openAemStatus({ baseUrl: ' + esc(JSON.stringify(last.server)) + ', folder: ' + esc(JSON.stringify(checkFolder)) + ' })">Check in AEM</button>' : '')
-            + (cloudInstall ? '<span class="pkg-reprocess" title="AEM as a Cloud Service does not process package content: run Reprocess Assets on the folder">Reprocess needed</span>' : '') + '</div>' : '';
+            + (cloudInstall && !(last.maps && (last.maps.state === 'running' || last.maps.state === 'done')) ? '<span class="pkg-reprocess" title="AEM as a Cloud Service does not process package content: run Reprocess Assets on the folder">Reprocess needed</span>' : '') + '</div>'
+            + mapsLine(last.maps) : '';
         // Copied content (often a customer's) is downloadable only when the server allows it (COPY_ALLOW_DOWNLOAD);
         // otherwise it can only be installed on an allowed server, and the row says why there is no Download
         const idArg = esc(JSON.stringify(p.id));

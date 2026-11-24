@@ -1837,7 +1837,18 @@ app.post('/api/packages/:id/install', uploadLimiter, refuseWhenDraining, async (
         installsRunning--;
         installingPackages.delete(p.id);
     }
-    packages.recordInstall(p, { at: new Date().toISOString(), server: target, by: req.user.key, ok: result.ok, message: result.message });
+    const installEntry = { at: new Date().toISOString(), server: target, by: req.user.key, ok: result.ok, message: result.message };
+    packages.recordInstall(p, installEntry);
+    // Guides processes installed files in any order; maps are sent again in order so they link to the real GUIDs
+    // (lib/package-maps.js). Until that finishes the package cannot be deleted or installed again.
+    if (result.ok && p.mapWaves && p.mapWaves.length) {
+        result.message += ` Linking its ${p.maps} DITA map(s) in order after AEM Guides has processed the files: the Packages page shows when it is done.`;
+        installsRunning++;
+        installingPackages.add(p.id);
+        packages.linkMaps(p, installEntry, { baseUrl: target, username, password })
+            .then((s) => log.info(`Package ${p.downloadName} on ${target}: maps ${s.state}: ${s.message}`))
+            .finally(() => { installsRunning--; installingPackages.delete(p.id); });
+    }
     if (p.copiedFrom) {
         copyLog.record('package-install', { copyId: p.copiedFrom.copyId, by: req.user.email || req.user.key, package: p.downloadName,
             sourceServer: p.copiedFrom.baseUrl, sourceFolder: p.copiedFrom.folder, targetServer: target, state: result.ok ? 'ok' : 'failed',

@@ -26,6 +26,7 @@ const SUITES = {
     backup: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-backup.js')] },
     adaptive: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-adaptive.js')] },
     names: { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-names.js')] },
+    'package-maps': { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-package-maps.js')] },
     'dita-order': { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-dita-order.js')] },
     'copy-adaptive': { cmd: process.execPath, args: [path.join(HERE, '..', 'tools', 'test-copy-adaptive.js')] },
     high: ui('high_test.py', APP, AEM, fix('uifiles')),
@@ -89,7 +90,7 @@ function appEnv(name, port) {
     return {
         PORT: String(port), TMPDIR: tmp, TEMP: tmp, TMP: tmp,
         HISTORY_FILE: path.join(d, 'upload-history.json'), PACKAGES_DIR: path.join(d, 'packages'), BACKUP_DIR: path.join(d, 'backups'),
-        SESSIONS_FILE: path.join(d, 'sessions.json'), COPY_LOG_FILE: path.join(d, 'copy-log.jsonl'), COPY_TARGETS_FILE: path.join(d, 'copy-targets.json'), UPLOAD_ADAPT_WINDOW_MS: '3000',
+        SESSIONS_FILE: path.join(d, 'sessions.json'), COPY_LOG_FILE: path.join(d, 'copy-log.jsonl'), COPY_TARGETS_FILE: path.join(d, 'copy-targets.json'), UPLOAD_ADAPT_WINDOW_MS: '3000', PACKAGE_MAPS_GRACE_MS: '3000',
     };
 }
 
