@@ -107,7 +107,7 @@ async function startCopy(sessionId, source) {
     const linked = await waitFor(() => call(`/api/packages/${pkg.id}`), (r) => r.body.package.installs[0].maps && r.body.package.installs[0].maps.state !== 'running');
     const maps = linked.body.package.installs[0].maps || {};
     record('copy -> package with a map: the install says the map is linked in order, and the package stays until that ends',
-        /1 DITA map\(s\) in order/.test(inst.body.message || '') && busy.status === 409 && maps.state === 'skipped' && !('mapWaves' in linked.body.package),
+        /1 DITA file\(s\) with links \(maps and topics\) in order/.test(inst.body.message || '') && busy.status === 409 && maps.state === 'skipped' && !('mapWaves' in linked.body.package),
         `${busy.status} ${JSON.stringify(maps)} ${inst.body.message}`);
 
     // A copy that fails still says why (it used to answer "No copy for this session")

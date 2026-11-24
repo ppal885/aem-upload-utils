@@ -25,8 +25,9 @@ const BOOK = {
     'maps/gateway.ditamap': MAP('<topicref href="../topics/t1.dita"/>', '<mapref href="inner/deep.ditamap"/>'),
     'maps/redis-cache.ditamap': MAP('<topicref href="../topics/t2.dita"/>'),
     'maps/inner/deep.ditamap': MAP('<topicref href="../../topics/t2.dita"/>'),
-    'topics/t1.dita': '<topic id="t1"><title>t1</title></topic>',
-    'topics/t2.dita': '<topic id="t2"><title>t2</title></topic>',
+    // t1 conrefs t2: a topic link, linked again like the maps
+    'topics/t1.dita': '<topic id="t1"><title>t1</title><body><p conref="t2.dita#t2/p1"/></body></topic>',
+    'topics/t2.dita': '<topic id="t2"><title>t2</title><body><p id="p1">x</p></body></topic>',
     'images/a.png': 'png',
 };
 const ROOT = '/content/dam/k8s';
@@ -73,10 +74,14 @@ function installedSeed(res, processMs) {
 
     const waves = await packageMaps.prepare(res, work);
     const order = waves.map((w) => w.map((m) => m.path.slice(ROOT.length + 1)).sort());
-    record('maps are kept in order: innermost first, the top map last and alone',
-        JSON.stringify(order) === JSON.stringify([['maps/inner/deep.ditamap', 'maps/redis-cache.ditamap'], ['maps/gateway.ditamap'], ['kubernetes-master.ditamap']]), JSON.stringify(order));
+    record('the files with links are kept in order (topic and innermost maps first, the top map last and alone); files without links are not',
+        JSON.stringify(order) === JSON.stringify([['maps/inner/deep.ditamap', 'maps/redis-cache.ditamap', 'topics/t1.dita'], ['maps/gateway.ditamap'], ['kubernetes-master.ditamap']]), JSON.stringify(order));
     record('each kept map is the source file', waves.flat().every((m) => fs.readFileSync(path.join(work, m.file), 'utf8') === BOOK[m.path.slice(ROOT.length + 1)]), waves.flat().map((m) => m.file).join(','));
-    record('a package without maps keeps nothing', (await packageMaps.prepare({ maps: [], dita: [] }, work)) === null, 'null');
+    record('a package without maps keeps nothing', (await packageMaps.prepare({ maps: [], dita: [], all: [] }, work)) === null, 'null');
+    const flat = tree({ 'a.dita': '<topic id="a"/>', 'b.png': 'png' });
+    const none = await packageMaps.prepare({ all: ['a.dita', 'b.png'].map((f) => ({ jcrPath: `${ROOT}/${f}`, absPath: path.join(flat, f) })), dita: [`${ROOT}/a.dita`] }, work);
+    record('a package whose files link to nothing keeps nothing', none === null, String(none));
+    fs.rmSync(flat, { recursive: true, force: true });
 
     // Installed content that Guides finishes after 800 ms; re-sent maps take 500 ms each
     const seed = installedSeed(res, 800);
@@ -94,7 +99,8 @@ function installedSeed(res, processMs) {
             && at('maps/gateway.ditamap').processed <= at('kubernetes-master.ditamap').completed
             && at('maps/redis-cache.ditamap').processed <= at('kubernetes-master.ditamap').completed, JSON.stringify(t[`${ROOT}/kubernetes-master.ditamap`]));
         const completed = await (await fetch(`${aem}/__completed`)).json();
-        record('only the maps are sent again, once each', completed.length === 4 && new Set(completed).size === 4 && completed.every((p) => /\.ditamap$/.test(p)), completed.join(', '));
+        record('only the files with links are sent again, once each', completed.length === 5 && new Set(completed).size === 5
+            && completed.filter((p) => /\.ditamap$/.test(p)).length === 4 && completed.includes(`${ROOT}/topics/t1.dita`), completed.join(', '));
         const after = await (await fetch(`${aem}/bin/querybuilder.json?path=${ROOT}`, { headers: { Authorization: 'Basic ' + Buffer.from('admin:admin').toString('base64') } })).json();
         const guidOf = (p) => (after.hits.find((h) => h['jcr:path'] === p) || {})['jcr:content'].fmUuid;
         record('the maps keep their GUIDs (updated in place, not replaced)', mapPaths.every((p) => guidOf(p) === seed.assets[p].guid), mapPaths.map(guidOf).join(','));

@@ -5489,7 +5489,7 @@ function connectSSE(uploadId, isReconnect = false) {
         else if (d.state === 'done') {
             window._skippedUnchanged = d.skipped;
             label.textContent = 'Upload Progress';
-            if (d.skipped) showToast(d.skipped.toLocaleString() + ' file(s) skipped: already in AEM and unchanged', 'info');
+            if (d.skipped) showToast(d.skipped.toLocaleString() + ' file(s) skipped: already in AEM and unchanged. To send them again (for example a map whose links need repairing), turn off Skip files already in AEM.', 'info');
         } else {
             label.textContent = 'Upload Progress';
             showToast('Could not check AEM for existing files (' + (d.error || 'unknown error') + '); uploading all files', 'warn');

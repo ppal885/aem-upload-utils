@@ -384,6 +384,10 @@ function runUpload(config, eventCallback) {
     const stagedByTarget = new Map();
     // AEM paths of the files that finished uploading
     const uploadedTargets = new Set();
+    // AEM paths of the files sent a second time once Guides processed everything (links lib/dita-order.js cannot order)
+    const sendAgainTargets = new Set();
+    // AEM paths of the files other files of the upload link to (images too: on a UUID server they get GUIDs as well)
+    const linkedTargets = new Set();
     // false once AEM Guides is seen not to process this upload: later waves do not wait
     let guidesProcessing = true;
 
@@ -469,7 +473,8 @@ function runUpload(config, eventCallback) {
                 svcLog.debug(`fileend: ${data.fileName} (${((fileSize) / 1024).toFixed(1)} KB)`);
                 filesDone++;
                 if (data.targetFile) uploadedTargets.add(String(data.targetFile).normalize('NFC'));
-                const staged = data.targetFile && stagedByTarget.get(data.targetFile);
+                // A file that is sent a second time (sendAgain) keeps its staged copy until then
+                const staged = data.targetFile && !sendAgainTargets.has(String(data.targetFile).normalize('NFC')) && stagedByTarget.get(data.targetFile);
                 if (staged) {
                     stagedByTarget.delete(data.targetFile);
                     fsPromises.unlink(staged).catch(() => {});
@@ -697,7 +702,7 @@ function runUpload(config, eventCallback) {
      */
     async function waitForGuides(items) {
         if (!guidesProcessing || cancelled) return;
-        const targets = items.map((i) => decodedTarget(i).normalize('NFC')).filter((t) => uploadedTargets.has(t) && GUIDES_FILE.test(t));
+        const targets = items.map((i) => decodedTarget(i).normalize('NFC')).filter((t) => uploadedTargets.has(t) && (GUIDES_FILE.test(t) || linkedTargets.has(t)));
         if (!targets.length) return;
         let root;
         try { root = decodeURIComponent(new URL(url).pathname).replace(/\/+$/, ''); } catch (_) { return; }
@@ -720,6 +725,12 @@ function runUpload(config, eventCallback) {
     }
 
     async function uploadAll() {
+        // Nothing left to send (every file was already in AEM): a finished upload of 0 files
+        if (!localPaths.length) {
+            svcLog.info('Nothing to upload: every file is already in AEM');
+            if (eventCallback) { try { eventCallback('uploadplan', { files: 0, bytes: 0 }); } catch (_) {} }
+            return;
+        }
         const fsUpload = new FileSystemUpload();
         const uploadResult = new UploadResult(fsUpload.getOptions(), options);
         await fsUpload.createTargetFolder(options, uploadResult);
@@ -762,10 +773,14 @@ function runUpload(config, eventCallback) {
 
         const filesStart = Date.now();
         svcLog.info(`Uploading ${uploadFiles.length} files in ${Math.min(pipelines.target, uploadFiles.length)} parallel pipelines${pipelines.next ? ` (adaptive, up to ${MAX_UPLOAD_PIPELINES})` : ''}`);
-        const waves = await ditaOrder.uploadWaves(uploadFiles);
-        if (waves.length > 1) {
-            svcLog.info(`DITA maps found: uploading in ${waves.length} waves (${waves.map((w) => w.length).join(' + ')} files): other files first, `
-                + 'then the maps from the innermost submaps up to the top map, each after AEM Guides has processed the files it links to');
+        const plan = await ditaOrder.planUpload(uploadFiles);
+        const { waves } = plan;
+        plan.again.forEach((i) => sendAgainTargets.add(decodedTarget(i).normalize('NFC')));
+        plan.linked.forEach((i) => linkedTargets.add(decodedTarget(i).normalize('NFC')));
+        if (waves.length > 1 || plan.again.length) {
+            svcLog.info(`DITA links found: uploading in ${waves.length} wave(s) (${waves.map((w) => w.length).join(' + ')} files), each file after AEM Guides `
+                + 'has processed the files it links to (maps last)'
+                + (plan.again.length ? `; ${plan.again.length} file(s) that link to each other or sit deeper than the last wave are sent once more at the end` : ''));
         }
         for (let w = 0; w < waves.length && !cancelled; w++) {
             if (w > 0) {
@@ -776,7 +791,50 @@ function runUpload(config, eventCallback) {
             await uploadInPipelines(waves[w]);
             if (heldNotFound.size > 0) await retryNotFoundFiles(waves[w]);
         }
+        if (plan.again.length) await sendAgain(plan.again, waves.flat());
         svcLog.info(`File pass done in ${((Date.now() - filesStart) / 1000).toFixed(1)}s`);
+    }
+
+    /**
+     * Sends `items` a second time once AEM Guides has processed every file of the upload, so the links Guides could
+     * not resolve the first time (files that link to each other) get the GUIDs of their targets. The second upload
+     * updates each asset in place (it keeps its GUID) and is not counted again in the progress; a failure is
+     * reported as an error of the upload.
+     */
+    async function sendAgain(items, all) {
+        const files = items.filter((i) => uploadedTargets.has(decodedTarget(i).normalize('NFC')));
+        // The uploaded ones lose their staged copy now, as after a normal upload; a failed one keeps it
+        const removeStaged = () => files.forEach((i) => {
+            const t = decodedTarget(i).normalize('NFC');
+            sendAgainTargets.delete(t);
+            const staged = stagedByTarget.get(t);
+            if (staged) { stagedByTarget.delete(t); fsPromises.unlink(staged).catch(() => {}); }
+        });
+        if (cancelled || !files.length) { if (!cancelled) removeStaged(); return; }
+        await waitForGuides(all);
+        if (cancelled) return;
+        if (!guidesProcessing) { removeStaged(); return; }
+        svcLog.info(`Sending ${files.length} file(s) once more so AEM Guides links them to the GUIDs of the files they point at`);
+        const uploader = new DirectBinaryUpload();
+        uploader.on('fileerror', (data) => {
+            const e = data.errors && data.errors[0];
+            const msg = (e && e.message) || e || 'upload failed';
+            errors.push(`${data.fileName}: links not refreshed (second upload failed: ${msg})`);
+            svcLog.error(`Second upload of ${data.fileName} failed: ${msg}`);
+        });
+        try {
+            await uploader.uploadFiles(new DirectBinaryUploadOptions()
+                .withUrl(url)
+                .withUploadFiles(files)
+                .withMaxConcurrent(maxConcurrent)
+                .withHttpRetryCount(httpRetryCount)
+                .withHttpRetryDelay(httpRetryDelay)
+                .withHttpRequestTimeout(httpRequestTimeout)
+                .withHttpOptions(httpOptions));
+        } catch (e) {
+            errors.push(`Links of ${files.length} file(s) not refreshed: ${e.message || e}`);
+        }
+        removeStaged();
     }
 
     const promise = uploadAll()
