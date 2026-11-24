@@ -1839,10 +1839,10 @@ app.post('/api/packages/:id/install', uploadLimiter, refuseWhenDraining, async (
     }
     const installEntry = { at: new Date().toISOString(), server: target, by: req.user.key, ok: result.ok, message: result.message };
     packages.recordInstall(p, installEntry);
-    // Guides processes installed files in any order; maps are sent again in order so they link to the real GUIDs
+    // Guides processes installed files in any order; files with links are sent again in order so they link to the real GUIDs
     // (lib/package-maps.js). Until that finishes the package cannot be deleted or installed again.
     if (result.ok && p.mapWaves && p.mapWaves.length) {
-        result.message += ` Linking its ${p.maps} DITA map(s) in order after AEM Guides has processed the files: the Packages page shows when it is done.`;
+        result.message += ` Linking its ${p.maps} DITA file(s) with links (maps and topics) in order after AEM Guides has processed the files: the Packages page shows when it is done.`;
         installsRunning++;
         installingPackages.add(p.id);
         packages.linkMaps(p, installEntry, { baseUrl: target, username, password })
@@ -2604,6 +2604,13 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
         uploadSession.meta.skippedFiles = skip.skipped;
         broadcast('skipcheck', { state: skip.error ? 'failed' : 'done', skipped: skip.skipped, checked: skip.checked, error: skip.error });
         log.info(`Upload ${uploadId}: skip-unchanged ${skip.error ? 'check failed (' + skip.error + '), uploading everything' : `skipped ${skip.skipped} of ${skip.checked} files already in AEM`}`);
+    }
+
+    // A top-level path can be gone: a file sent on its own that skip-unchanged removed, or one a resumed upload
+    // already finished (finished files are deleted from staging). Uploading it would fail with ENOENT.
+    uploadConfig.localPaths = contentChildren.filter((p) => fs.existsSync(p));
+    if (uploadConfig.localPaths.length < contentChildren.length) {
+        log.info(`Upload ${uploadId}: ${contentChildren.length - uploadConfig.localPaths.length} top-level path(s) already in AEM or already sent; not uploaded again`);
     }
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {

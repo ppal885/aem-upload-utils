@@ -91,6 +91,17 @@ async function upload(damPath, chunks, extra = {}) {
         `guid=${guid} same=${sha(gotLatin) === sha(latin)} unreadable=${JSON.stringify(copy.dita && copy.dita.unreadable)}`);
     record('...while the UTF-8 one has its GUID link turned into a path, accents intact', gotUtf8.includes('href="t.dita"') && gotUtf8.includes('Café'), gotUtf8.replace(/\n/g, ' ').slice(0, 160));
 
+    // One file sent on its own (not in a folder) that is already in AEM, with Skip files already in AEM: skipped, not
+    // "Could not read local path: ENOENT" (the skip check removed the staged file the upload then started from)
+    const one = { 'kubernetes-master.ditamap': '<map><mapref href="maps/gateway.ditamap"/></map>\n' };
+    const first = await upload(`content/dam/gaps-one-${RUN}`, [{ files: one }]);
+    const again = await upload(`content/dam/gaps-one-${RUN}`, [{ files: one }], { skipUnchanged: true });
+    const hist = (await call('/api/upload/history')).body;
+    const row = (Array.isArray(hist) ? hist : hist.history || []).find((h) => h.uploadId === (again.fin.body || {}).uploadId) || {};
+    record('a single file already in AEM is skipped by Skip unchanged, without an error',
+        first.st && first.st.completedFiles === 1 && again.st && again.st.done && !again.st.failedFiles && row.success === true && !row.errorCount && row.skippedFiles === 1,
+        `first=${first.st && first.st.completedFiles} again=${JSON.stringify(again.st || again.fin.body).slice(0, 120)} history=${JSON.stringify({ success: row.success, errors: row.errors, skipped: row.skippedFiles })}`);
+
     console.log(`\n${results.filter(Boolean).length}/${results.length} passed`);
     process.exit(results.every(Boolean) ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

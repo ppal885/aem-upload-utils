@@ -293,6 +293,7 @@ async function buildPackage({
     const skipped = [];
     const maps = [];
     const dita = [];
+    const all = [];
 
     // Pass 1: count files for progress reporting. Dirent types avoid a stat per file (stat is only
     // needed to resolve symlinks, which are followed like @adobe/aem-upload's fs.stat does).
@@ -511,6 +512,7 @@ async function buildPackage({
                 await addAsset(it.abs, loaded, childZip, it.n);
                 if (MAP_FILE.test(it.n)) maps.push({ jcrPath: `${jcrPath}/${it.jcrName}`, absPath: it.abs });
                 if (DITA_FILE.test(it.n)) dita.push(`${jcrPath}/${it.jcrName}`);
+                all.push({ jcrPath: `${jcrPath}/${it.jcrName}`, absPath: it.abs });
             }
         }
     };
@@ -553,6 +555,8 @@ async function buildPackage({
             maps,
             // AEM paths of the DITA files in the package (what Guides processes)
             dita,
+            // every file of the package: [{ jcrPath, absPath }] (what DITA files link to: topics, images, ...)
+            all,
         };
     } catch (e) {
         await zip.abort();
