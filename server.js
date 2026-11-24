@@ -396,13 +396,26 @@ function createBroadcast(session) {
     return function broadcast(eventName, data) {
         const payload = JSON.stringify(data);
         const msg = `event: ${eventName}\ndata: ${payload}\n\n`;
-        if (eventName === 'done' || (eventName !== 'fileprogress' && session.events.length < SSE_EVENT_CAP)) {
+        // guideswait comes every few seconds while AEM Guides is checked: only the latest is kept (session.meta.guidesWait)
+        if (eventName === 'done' || (eventName !== 'fileprogress' && eventName !== 'guideswait' && session.events.length < SSE_EVENT_CAP)) {
             session.events.push({ eventName, data });
         }
         session.listeners.forEach((sseRes) => {
             try { sseRes.write(msg); if (typeof sseRes.flush === 'function') sseRes.flush(); } catch (_) {}
         });
     };
+}
+
+/**
+ * An upload waiting for AEM Guides (upload-service.js: files that link to others go up only after Guides has processed
+ * what they link to). Keeps the latest state for a page that connects later and passes it on. Returns true when the
+ * event was one of these.
+ */
+function guidesWaitEvent(session, broadcast, eventName, data) {
+    if (eventName !== 'guideswait') return false;
+    session.meta.guidesWait = data.state === 'done' ? null : data;
+    broadcast('guideswait', data);
+    return true;
 }
 
 /**
@@ -1273,6 +1286,7 @@ app.post('/api/upload', uploadLimiter, auth.requireAdmin, refuseWhenDraining, as
     log.info(`Upload started: ${uploadId} → ${resolvedBaseUrl}/${resolvedDamPath}`);
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
+        if (guidesWaitEvent(session, broadcast, eventName, data)) return;
         if (eventName === 'uploadplan') {
             session.meta.expectedFiles = data.files;
             session.meta.expectedBytes = data.bytes;
@@ -1513,6 +1527,7 @@ app.post('/api/upload/browser', uploadLimiter, refuseWhenDraining, refuseWhenTem
     log.info(`Browser upload started: ${uploadId} (${req.files.length} files, ${contentChildren.length} top-level paths) → ${normalizedBaseUrl}/${damPath}`);
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
+        if (guidesWaitEvent(session, broadcast, eventName, data)) return;
         if (eventName === 'uploadplan') {
             session.meta.expectedFiles = data.files;
             session.meta.expectedBytes = data.bytes;
@@ -2614,6 +2629,7 @@ async function startAemUpload({ owner, ownerName, baseUrl, damPath, username, pa
     }
 
     const { promise: uploadPromise, cancel: cancelFn } = runUpload(uploadConfig, (eventName, data) => {
+        if (guidesWaitEvent(uploadSession, broadcast, eventName, data)) return;
         if (eventName === 'pipelines') {
             uploadSession.meta.pipelines = data.pipelines;
             return;
@@ -2947,6 +2963,10 @@ app.get('/api/upload/stream/:uploadId', async (req, res) => {
     if (session.done) {
         setTimeout(() => { try { res.end(); } catch (_) {} }, 1000);
         return;
+    }
+    // A page that connects while the upload waits for AEM Guides sees that at once (these events are not buffered)
+    if (session.meta.guidesWait) {
+        try { res.write(`event: guideswait\ndata: ${JSON.stringify(session.meta.guidesWait)}\n\n`); } catch (_) { return; }
     }
 
     session.listeners.add(res);

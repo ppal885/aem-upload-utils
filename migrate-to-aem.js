@@ -52,6 +52,9 @@ if (configErr) { console.error('Configuration error:', configErr); process.exit(
         if (event === 'filestart')  process.stdout.write(`  START  ${data.fileName} (${data.fileSize} bytes)\n`);
         if (event === 'fileend')    process.stdout.write(`  DONE   ${data.fileName}\n`);
         if (event === 'fileerror')  process.stdout.write(`  ERROR  ${data.fileName}: ${(data.errors && data.errors[0]) || 'unknown'}\n`);
+        // Files that link to others go up only after AEM Guides has processed what they link to
+        if (event === 'guideswait' && data.state === 'waiting' && data.secs === 0) process.stdout.write(`  WAIT   AEM Guides is processing ${data.files} file(s) before the next files go up\n`);
+        if (event === 'guideswait' && data.state === 'again') process.stdout.write(`  AGAIN  ${data.files} file(s) that link to each other are sent once more\n`);
     });
 
     // Allow Ctrl+C to request cancel

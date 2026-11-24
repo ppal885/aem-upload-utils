@@ -97,7 +97,7 @@ async function upload(aem, localDir, folder, events) {
     // runUpload reads its timings from the environment when upload-service.js loads
     const { runUpload } = require('../upload-service');
     const { promise } = runUpload({ baseUrl: aem, username: 'admin', password: 'admin', damPath: folder, localPaths: [localDir], maxConcurrent: 4, uploadPipelines: 4 },
-        (e) => { if (events) events[e] = (events[e] || 0) + 1; });
+        (e, d) => { if (events) { events[e] = (events[e] || 0) + 1; if (e === 'guideswait') (events.waits = events.waits || []).push(d); } });
     return promise;
 }
 
@@ -121,6 +121,13 @@ async function endToEnd() {
             ['maps/inner/deep.ditamap', 'maps/gateway.ditamap'], ['maps/gateway.ditamap', 'kubernetes-master.ditamap'], ['maps/redis cache.ditamap', 'kubernetes-master.ditamap']]
             .filter(([a, b]) => !before(a, b));
         record('each file reaches AEM only after Guides processed the files it links to', late.length === 0, late.length ? `not processed before: ${JSON.stringify(late)}` : `${Date.now() - started} ms`);
+        const waits = events.waits || [];
+        const waiting = waits.filter((w) => w.state === 'waiting');
+        record('the page is told what the upload waits for: each step, how many files are processed, the second send, and when it ends',
+            waiting.some((w) => w.wave && w.waves && w.files > 0 && w.processed === 0) && waiting.some((w) => w.processed === w.files)
+            && waits.some((w) => w.state === 'again' && w.files === 2) && waits[waits.length - 1].state === 'done'
+            && waiting.every((w) => w.processed <= w.files && w.secs >= 0),
+            `${waits.length} events, last ${JSON.stringify(waits[waits.length - 1])}`);
         const sends = (rel) => completed.filter((p) => p === `${base}/${rel}`).length;
         record('topics that xref each other are sent twice, the second time after both were processed',
             sends('topics/t3.dita') === 2 && sends('topics/t4.dita') === 2 && sends('topics/t1.dita') === 1 && sends('kubernetes-master.ditamap') === 1

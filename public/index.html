@@ -161,6 +161,11 @@
         .queue-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; font-size: 13.5px;
             background: #f5f3ff; color: #4c1d95; border: 1px solid #ddd6fe; }
         .dark .queue-note { background: rgba(124, 58, 237, .12); color: #ddd6fe; border-color: rgba(124, 58, 237, .35); }
+        .guides-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; font-size: 13.5px;
+            background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+        .dark .guides-note { background: rgba(20, 115, 230, .12); color: #bfdbfe; border-color: rgba(20, 115, 230, .35); }
+        .guides-note-track { height: 4px; border-radius: 9999px; background: rgba(20, 115, 230, .18); overflow: hidden; margin-top: 6px; }
+        .guides-note-bar { height: 100%; background: #1473E6; border-radius: 9999px; transition: width .3s; }
         .resume-card { padding: 16px 18px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #1473E6; }
         .resume-title { font-size: 15px; font-weight: 700; color: #1e3a8a; }
         .resume-text { font-size: 13.5px; line-height: 1.5; color: #1e40af; margin-top: 2px; }
@@ -1000,6 +1005,12 @@
                     <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     <div><div id="queueNoticeTitle" class="font-semibold"></div>
                         <div class="text-xs mt-0.5 opacity-90">Several uploads are already running on this AEM server. Yours starts by itself when a slot frees up; your files are safe on the upload server, and you can close this tab.</div></div>
+                </div>
+                <div id="guidesNotice" class="hidden guides-note mb-4" role="status" aria-live="polite">
+                    <svg class="w-5 h-5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity=".25"/><path d="M21 12a9 9 0 00-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+                    <div class="flex-1 min-w-0"><div id="guidesNoticeTitle" class="font-semibold"></div>
+                        <div id="guidesNoticeText" class="text-xs mt-0.5 opacity-90"></div>
+                        <div id="guidesNoticeTrack" class="guides-note-track"><div id="guidesNoticeBar" class="guides-note-bar" style="width:0%"></div></div></div>
                 </div>
                 <!-- Progress bar -->
                 <div class="mb-4">
@@ -5199,6 +5210,7 @@ function resetProgress() {
     progBar.classList.add('bg-adobe-blue');
     document.getElementById('progressLabel').textContent = 'Upload Progress';
     document.getElementById('queueNotice').classList.add('hidden');
+    document.getElementById('guidesNotice').classList.add('hidden');
     document.getElementById('progressPct').textContent = '0%';
     document.getElementById('statUploaded').textContent = '0';
     document.getElementById('statRemaining').textContent = '0';
@@ -5495,6 +5507,7 @@ function connectSSE(uploadId, isReconnect = false) {
             showToast('Could not check AEM for existing files (' + (d.error || 'unknown error') + '); uploading all files', 'warn');
         }
     });
+    es.addEventListener('guideswait', (e) => showGuidesWait(JSON.parse(e.data)));
     es.addEventListener('dequeued', () => {
         document.getElementById('queueNotice').classList.add('hidden');
         document.getElementById('progressLabel').textContent = 'Upload Progress';
@@ -5720,6 +5733,7 @@ function showSummary(success, totalFiles, errorCount, duration, errors, cancelle
         : finalPct + '% — Upload Failed';
     document.getElementById('progressLabel').textContent = doneLabel;
     document.getElementById('queueNotice').classList.add('hidden');
+    document.getElementById('guidesNotice').classList.add('hidden');
     document.getElementById('progressPct').textContent = finalPct + '%';
     if (success) progBar.classList.replace('bg-adobe-blue', 'bg-green-500');
 
@@ -5928,6 +5942,39 @@ function fmtBytes(b) {
     const i = Math.min(Math.floor(Math.log(b)/Math.log(k)), s.length - 1);
     return parseFloat((b/Math.pow(k,i)).toFixed(1)) + ' ' + s[i];
 }
+// The upload waits for AEM Guides (files that link to others go up only after Guides has processed what they link
+// to, so their links get the right GUIDs): d = { state: 'waiting' | 'again' | 'done', files, processed, secs, wave, waves, again }
+function showGuidesWait(d) {
+    const box = document.getElementById('guidesNotice');
+    const label = document.getElementById('progressLabel');
+    if (d.state === 'done') {
+        box.classList.add('hidden');
+        if (/AEM Guides|once more/.test(label.textContent)) label.textContent = 'Upload Progress';
+        return;
+    }
+    const title = document.getElementById('guidesNoticeTitle');
+    const text = document.getElementById('guidesNoticeText');
+    const track = document.getElementById('guidesNoticeTrack');
+    if (d.state === 'again') {
+        title.textContent = 'Sending ' + d.files.toLocaleString() + ' file(s) once more';
+        text.textContent = 'These files link to each other, so their links could not all be set the first time. AEM Guides has now processed everything they link to; this second upload sets the right GUIDs.';
+        track.classList.add('hidden');
+        label.textContent = 'Sending linked files once more…';
+    } else {
+        const step = d.waves ? 'Step ' + d.wave + ' of ' + d.waves : 'Last step';
+        title.textContent = 'Waiting for AEM Guides: ' + (d.processed || 0).toLocaleString() + ' of ' + d.files.toLocaleString() + ' file(s) processed'
+            + (d.secs ? ' · ' + fmtDuration(d.secs * 1000) : '');
+        text.textContent = (d.again
+            ? 'Last step: then ' + d.again.toLocaleString() + ' file(s) that link to each other are sent once more.'
+            : step + ': the next files link to these, and go up only after AEM Guides has processed them so their links get the right GUIDs.')
+            + ' Nothing is stuck; you can close this tab.';
+        track.classList.remove('hidden');
+        document.getElementById('guidesNoticeBar').style.width = (d.files ? Math.round(100 * (d.processed || 0) / d.files) : 0) + '%';
+        label.textContent = 'Waiting for AEM Guides' + (d.waves ? ' (step ' + d.wave + ' of ' + d.waves + ')' : '') + '…';
+    }
+    box.classList.remove('hidden');
+}
+
 function fmtDuration(ms) {
     if (!ms) return '0s';
     if (ms < 1000) return '<1s';
